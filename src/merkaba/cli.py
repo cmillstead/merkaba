@@ -1805,6 +1805,70 @@ def code_explore(
     console.print(Markdown(summary))
 
 
+@code_app.command("review")
+def code_review(
+    path: str = typer.Argument(..., help="File or directory to review"),
+    criteria: str = typer.Option(
+        "Check for correctness, best practices, and potential issues.",
+        "--criteria", "-c",
+        help="Review criteria",
+    ),
+):
+    """Review code in a file or directory."""
+    from merkaba.orchestration.review_worker import ReviewWorker
+
+    # Collect file contents
+    file_contents: list[str] = []
+    if os.path.isdir(path):
+        for root, _dirs, files in os.walk(path):
+            for fname in sorted(files):
+                if fname.endswith(".py"):
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath) as f:
+                            content = f.read()
+                        file_contents.append(f"### {fpath}\n```python\n{content}\n```")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+    elif os.path.isfile(path):
+        try:
+            with open(path) as f:
+                content = f.read()
+            file_contents.append(f"### {path}\n```\n{content}\n```")
+        except (OSError, UnicodeDecodeError):
+            console.print(f"[red]Cannot read: {path}[/red]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[red]Path not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    if not file_contents:
+        console.print("[yellow]No files to review.[/yellow]")
+        return
+
+    output_text = "\n\n".join(file_contents)
+
+    task = {
+        "id": 0,
+        "name": f"Review: {path}",
+        "task_type": "review",
+        "payload": {
+            "output_text": output_text,
+            "review_criteria": criteria,
+        },
+    }
+
+    console.print(f"[bold blue]Reviewing {len(file_contents)} file(s)...[/bold blue]")
+    worker = ReviewWorker()
+    result = worker.execute(task)
+
+    if result.success:
+        console.print(Markdown(result.output.get("review", "")))
+    else:
+        console.print(f"[red]Review failed:[/red] {result.error}")
+        raise typer.Exit(1)
+
+
 # -- Observe command group --
 
 observe_app = typer.Typer(help="Observability tools: token usage, audit trail, tracing")
@@ -2070,6 +2134,55 @@ def security_status():
 
     console.print(f"TOTP threshold: autonomy_level >= {totp_threshold}")
     console.print(f"Rate limit: {max_approvals} approvals per {window_seconds}s")
+
+
+@security_app.command("scan")
+def security_scan(
+    full: bool = typer.Option(False, "--full", help="Run full scan (integrity + CVE + code patterns)"),
+    regenerate_baseline: bool = typer.Option(False, "--regenerate-baseline", help="Regenerate integrity baseline and exit"),
+):
+    """Run a security scan."""
+    from merkaba.security.scanner import SecurityScanner
+
+    scanner = SecurityScanner()
+
+    if regenerate_baseline:
+        hashes = scanner.regenerate_baseline()
+        console.print(f"[green]Baseline regenerated:[/green] {len(hashes)} file(s) hashed")
+        return
+
+    console.print(f"[bold blue]Running {'full' if full else 'quick'} security scan...[/bold blue]")
+    report = scanner.full_scan() if full else scanner.quick_scan()
+
+    if not report.has_issues:
+        console.print("[green]No issues found.[/green]")
+        return
+
+    if report.integrity_issues:
+        table = Table(title=f"Integrity Issues ({len(report.integrity_issues)})")
+        table.add_column("Issue", style="yellow")
+        for issue in report.integrity_issues:
+            table.add_row(issue)
+        console.print(table)
+
+    if report.cve_issues:
+        table = Table(title=f"CVE Issues ({len(report.cve_issues)})")
+        table.add_column("Package", style="cyan")
+        table.add_column("Version")
+        table.add_column("CVE", style="red")
+        table.add_column("Fix Version", style="green")
+        for cve in report.cve_issues:
+            table.add_row(cve.package, cve.version, cve.cve_id, cve.fix_version or "-")
+        console.print(table)
+
+    if report.code_warnings:
+        table = Table(title=f"Code Warnings ({len(report.code_warnings)})")
+        table.add_column("Warning", style="yellow")
+        for warning in report.code_warnings:
+            table.add_row(warning)
+        console.print(table)
+
+    raise typer.Exit(1)
 
 
 # -- Config commands --

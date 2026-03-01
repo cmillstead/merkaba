@@ -155,7 +155,7 @@ class Agent:
             print(f"|  * ... and {issue_count - 6} more")
 
         print("|")
-        print("|  Run `/security-scan` for details")
+        print("|  Run 'merkaba security scan --full' for details")
         print("+" + "=" * 60 + "+")
 
     def activate_skill(self, skill_name: str) -> bool:

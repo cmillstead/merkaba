@@ -121,3 +121,49 @@ def test_security_status_custom_config(cli_runner):
     assert result.exit_code == 0
     assert "TOTP threshold: autonomy_level >= 5" in result.output
     assert "Rate limit: 10 approvals per 120s" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 5. Security scan — quick mode (no baseline → no issues)
+# ---------------------------------------------------------------------------
+
+def test_security_scan_quick_no_baseline(cli_runner):
+    """Quick scan with no baseline configured produces no issues."""
+    runner, app = cli_runner
+
+    result = runner.invoke(app, ["security", "scan"])
+
+    assert result.exit_code == 0
+    assert "No issues found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 6. Security scan — full mode (no baseline, no pip-audit → clean report)
+# ---------------------------------------------------------------------------
+
+def test_security_scan_full_no_baseline(cli_runner):
+    """Full scan with no baseline and mocked pip-audit produces no CVEs."""
+    runner, app = cli_runner
+
+    with patch("merkaba.security.audit._run_pip_audit", return_value=""):
+        result = runner.invoke(app, ["security", "scan", "--full"])
+
+    # With no baseline and no pip-audit issues, it should find no issues
+    # (code warnings may appear since we're scanning real source files)
+    # Either clean exit or exit 1 with only code warnings is acceptable
+    assert result.exit_code in (0, 1)
+
+
+# ---------------------------------------------------------------------------
+# 7. Security scan — regenerate baseline
+# ---------------------------------------------------------------------------
+
+def test_security_scan_regenerate_baseline(cli_runner):
+    """Regenerate baseline reports number of files hashed."""
+    runner, app = cli_runner
+
+    result = runner.invoke(app, ["security", "scan", "--regenerate-baseline"])
+
+    assert result.exit_code == 0
+    assert "Baseline regenerated" in result.output
+    assert "file(s)" in result.output

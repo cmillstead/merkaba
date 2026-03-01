@@ -473,7 +473,15 @@ Two scan modes:
 2. Dependency CVE audit via `pip-audit`
 3. Code pattern self-scan (detects dangerous constructs like code execution primitives, deserialization, XSS vectors, shell injection patterns, etc.)
 
-The scanner produces a `SecurityReport` with `integrity_issues`, `cve_issues`, and `code_warnings`. There is currently no CLI command exposed for the scanner -- it runs automatically on startup (quick scan only).
+The scanner produces a `SecurityReport` with `integrity_issues`, `cve_issues`, and `code_warnings`. Quick scan runs automatically on agent startup; both modes are available via CLI:
+
+```bash
+merkaba security scan                        # Quick scan (core security files only)
+merkaba security scan --full                 # Full scan (integrity + CVE + code patterns)
+merkaba security scan --regenerate-baseline  # Regenerate integrity baseline
+```
+
+The scan command exits with code 1 when issues are found, making it suitable for CI pipelines.
 
 ---
 
@@ -914,8 +922,11 @@ The `PluginRegistry` loads plugins from two directories:
 It also loads global skill context from `~/.merkaba/skill-context.md`.
 
 ```bash
-merkaba plugins list       # List all installed plugins
-merkaba plugins inspect <name>  # Show plugin details
+merkaba plugins list             # List all installed plugins
+merkaba plugins available        # List available plugins to import
+merkaba plugins import <ref>     # Import a Claude Code plugin skill
+merkaba plugins inspect <name>   # Show plugin details
+merkaba plugins uninstall <name> # Uninstall a plugin
 ```
 
 ### Skills

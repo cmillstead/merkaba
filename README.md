@@ -184,7 +184,9 @@ merkaba approval graduation              # Show tool graduation status
 ```bash
 merkaba business add "My Service"        # Register a business
 merkaba business list                    # List businesses
-merkaba business dashboard "My Service"  # Business dashboard
+merkaba business show <id>              # Show business details
+merkaba business update <id>            # Update business settings
+merkaba business dashboard <id>         # Business dashboard
 ```
 
 ### Tasks
@@ -192,7 +194,9 @@ merkaba business dashboard "My Service"  # Business dashboard
 ```bash
 merkaba tasks list                       # Show task queue
 merkaba tasks add "Task name"            # Add a task
-merkaba tasks runs                       # Show recent task runs
+merkaba tasks pause <id>                 # Pause a task
+merkaba tasks resume <id>               # Resume a paused task
+merkaba tasks runs <id>                  # Show run history for a task
 ```
 
 ### Telegram Bot
@@ -248,9 +252,12 @@ merkaba config edit-user --business 1    # Edit business-specific USER.md
 ### Security
 
 ```bash
+merkaba security status                 # Show 2FA + rate limit status
+merkaba security scan                   # Quick security scan
+merkaba security scan --full            # Full scan (integrity + CVE + code)
+merkaba security scan --regenerate-baseline  # Regenerate integrity baseline
 merkaba security setup-2fa              # Generate TOTP secret
 merkaba security disable-2fa --yes      # Remove TOTP secret
-merkaba security status                 # Show 2FA + rate limit status
 merkaba security enable-encryption      # Enable conversation encryption
 merkaba security disable-encryption     # Disable encryption
 ```
@@ -259,8 +266,10 @@ merkaba security disable-encryption     # Disable encryption
 
 ```bash
 merkaba plugins list                     # List installed plugins
+merkaba plugins available                # List available plugins to import
 merkaba plugins import <path>            # Import a plugin
 merkaba plugins inspect <name>           # Inspect plugin details
+merkaba plugins uninstall <name>         # Uninstall a plugin
 merkaba commands list                    # List plugin commands
 ```
 

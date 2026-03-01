@@ -1,5 +1,5 @@
 # tests/test_cli_security.py
-"""Tests for security CLI commands (encryption)."""
+"""Tests for security CLI commands (encryption, scan)."""
 
 import sys
 import json
@@ -79,3 +79,66 @@ class TestEnableEncryption:
             mock_keyring.get_password.side_effect = lambda svc, key: "key" if key == "conversation_encryption_key" else None
             result = runner.invoke(app, ["security", "status"])
         assert "encryption" in result.output.lower()
+
+
+class TestSecurityScan:
+
+    def test_quick_scan_no_issues(self):
+        from merkaba.security.scanner import SecurityReport
+
+        report = SecurityReport()
+        with patch("merkaba.security.scanner.SecurityScanner.quick_scan", return_value=report):
+            result = runner.invoke(app, ["security", "scan"])
+        assert result.exit_code == 0
+        assert "No issues found" in result.output
+
+    def test_full_scan_no_issues(self):
+        from merkaba.security.scanner import SecurityReport
+
+        report = SecurityReport()
+        with patch("merkaba.security.scanner.SecurityScanner.full_scan", return_value=report):
+            result = runner.invoke(app, ["security", "scan", "--full"])
+        assert result.exit_code == 0
+        assert "full" in result.output.lower()
+
+    def test_quick_scan_with_integrity_issues(self):
+        from merkaba.security.scanner import SecurityReport
+
+        report = SecurityReport(integrity_issues=["security/permissions.py modified"])
+        with patch("merkaba.security.scanner.SecurityScanner.quick_scan", return_value=report):
+            result = runner.invoke(app, ["security", "scan"])
+        assert result.exit_code == 1
+        assert "permissions.py modified" in result.output
+
+    def test_full_scan_with_cve_issues(self):
+        from merkaba.security.scanner import SecurityReport
+        from merkaba.security.audit import CVEIssue
+
+        cve = CVEIssue(
+            package="requests",
+            version="2.28.0",
+            cve_id="CVE-2023-1234",
+            description="Test vulnerability",
+            fix_version="2.31.0",
+        )
+        report = SecurityReport(cve_issues=[cve])
+        with patch("merkaba.security.scanner.SecurityScanner.full_scan", return_value=report):
+            result = runner.invoke(app, ["security", "scan", "--full"])
+        assert result.exit_code == 1
+        assert "CVE-2023-1234" in result.output
+        assert "requests" in result.output
+
+    def test_full_scan_with_code_warnings(self):
+        from merkaba.security.scanner import SecurityReport
+
+        report = SecurityReport(code_warnings=["agent.py: dangerous pattern detected"])
+        with patch("merkaba.security.scanner.SecurityScanner.full_scan", return_value=report):
+            result = runner.invoke(app, ["security", "scan", "--full"])
+        assert result.exit_code == 1
+        assert "dangerous pattern" in result.output
+
+    def test_regenerate_baseline(self):
+        with patch("merkaba.security.scanner.SecurityScanner.regenerate_baseline", return_value={"a.py": "abc123"}):
+            result = runner.invoke(app, ["security", "scan", "--regenerate-baseline"])
+        assert result.exit_code == 0
+        assert "1 file(s)" in result.output
