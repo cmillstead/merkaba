@@ -12,6 +12,7 @@ from merkaba.tools.builtin import (
     web_fetch,
     bash,
     memory_search, set_memory_retrieval, set_active_business,
+    document_search, document_get,
 )
 from merkaba.memory.store import MemoryStore
 from merkaba.memory.retrieval import MemoryRetrieval
@@ -116,6 +117,11 @@ class Agent:
         self.registry.register(web_fetch)
         # Shell tools
         self.registry.register(bash)
+        # Document search tools (QMD)
+        if document_search is not None:
+            self.registry.register(document_search)
+        if document_get is not None:
+            self.registry.register(document_get)
 
     def _run_security_check(self):
         """Run security quick scan and display alert if issues found."""

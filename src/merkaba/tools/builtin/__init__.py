@@ -5,6 +5,12 @@ from merkaba.tools.builtin.web import web_fetch
 from merkaba.tools.builtin.shell import bash
 from merkaba.tools.builtin.memory_tools import memory_search, set_retrieval as set_memory_retrieval, set_active_business
 
+try:
+    from merkaba.tools.builtin.qmd import document_search, document_get
+except ImportError:
+    document_search = None
+    document_get = None
+
 __all__ = [
     "file_read",
     "file_write",
@@ -16,4 +22,6 @@ __all__ = [
     "memory_search",
     "set_memory_retrieval",
     "set_active_business",
+    "document_search",
+    "document_get",
 ]
