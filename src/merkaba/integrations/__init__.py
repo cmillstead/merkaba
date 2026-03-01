@@ -30,6 +30,11 @@ try:
 except ImportError:
     logger.debug("pyobjc-framework-EventKit not installed -- Calendar adapter unavailable")
 
+try:
+    from merkaba.integrations import qmd_adapter  # noqa: F401
+except ImportError:
+    logger.debug("QMD not available -- QMD adapter unavailable")
+
 __all__ = [
     "IntegrationAdapter",
     "ADAPTER_REGISTRY",
