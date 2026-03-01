@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests: 1455+](https://img.shields.io/badge/Tests-1455%2B-green.svg)](tests/)
+[![Tests: 1514+](https://img.shields.io/badge/Tests-1514%2B-green.svg)](tests/)
 
 Build autonomous AI agents with persistent memory, tool use, multi-model routing, and graduated autonomy. Local-first with optional cloud fallback. No vendor lock-in.
 
@@ -12,7 +12,7 @@ Most AI agent frameworks are cloud-first wrappers around API calls. Merkaba is d
 
 - **Local-first** — All inference runs on local models via Ollama. Your data never leaves your machine. Cloud providers (OpenAI, Anthropic) are optional fallbacks, not requirements.
 - **Graduated autonomy** — Agents start with full human approval and earn trust over time. The approval system tracks history and promotes tools that consistently get approved.
-- **Persistent memory** — SQLite + optional ChromaDB vector search. Agents remember context across sessions, with memory lifecycle management (decay, consolidation, contradiction detection).
+- **Persistent memory** — SQLite + optional ChromaDB vector search. Agents remember context across sessions, with memory lifecycle management (decay, consolidation, contradiction detection, relationship graphs).
 - **Extensible by design** — Register custom workers and adapters from private packages. Build your business logic separately, keep it private, and plug it into the framework.
 
 ## Quickstart
@@ -34,7 +34,7 @@ merkaba chat "Hello, what can you do?"
 
 ## Features
 
-- **Persistent memory** — SQLite + optional ChromaDB vector search, auto-injected into agent context
+- **Persistent memory** — SQLite + optional ChromaDB vector search, auto-injected into agent context, relationship graph traversal
 - **Model routing** — Input classifier routes simple queries to small models, complex to large
 - **Multi-provider** — Ollama (local), OpenAI, Anthropic, with configurable fallback chains
 - **Security layers** — Input classifier, permission tiers, argument validation, memory sanitization
@@ -90,7 +90,7 @@ merkaba/
 ├── llm.py               # LLM client with retry + fallback chains
 ├── llm_providers/       # Provider adapters (Ollama, Anthropic, OpenAI)
 ├── cli.py               # Typer CLI (all imports lazy)
-├── memory/              # Persistent memory (store, retrieval, vectors, lifecycle)
+├── memory/              # Persistent memory (store, retrieval, vectors, lifecycle, relationships)
 ├── orchestration/       # Supervisor, workers, scheduler, task queue
 ├── approval/            # Action queue, graduation, Telegram approval UI
 ├── security/            # Input classifier, validation, encryption, permissions
@@ -155,6 +155,7 @@ merkaba memory recall "topic"            # Search memories
 merkaba memory businesses                # List known businesses
 merkaba memory decay                     # Decay stale memories
 merkaba memory consolidate               # LLM-summarize related clusters
+merkaba memory rebuild-vectors           # Rebuild vector store from SQLite
 merkaba memory episodes                  # View episodic memory
 ```
 
@@ -513,9 +514,9 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 ## Development
 
 ```bash
-git clone https://github.com/your-username/merkaba.git && cd merkaba
+git clone https://github.com/cmillstead/merkaba.git && cd merkaba
 pip install -e ".[dev]"
-pytest  # 1455+ tests
+pytest  # 1514+ tests
 ```
 
 ## License
