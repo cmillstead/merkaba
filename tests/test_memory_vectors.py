@@ -93,3 +93,57 @@ class TestVectorMemory:
             for r in results_2:
                 assert r["metadata"]["business_id"] == 2
             vm.close()
+
+
+@requires_chromadb_and_real_ollama
+@pytest.mark.integration
+def test_delete_vectors_removes_entries(tmp_path):
+    """delete_vectors removes specific IDs from a collection."""
+    from merkaba.memory.vectors import VectorMemory
+
+    try:
+        vm = VectorMemory(persist_dir=str(tmp_path / "vectors"))
+    except (ImportError, Exception):
+        pytest.skip("ChromaDB or Ollama not available")
+
+    vm.index_fact(1, 0, "test fact one")
+    vm.index_fact(2, 0, "test fact two")
+
+    vm.delete_vectors("facts", ["1"])
+
+    results = vm.search_facts("test fact", limit=10)
+    ids = [r["id"] for r in results]
+    assert 1 not in ids
+    assert 2 in ids
+
+
+@requires_chromadb_and_real_ollama
+@pytest.mark.integration
+def test_rebuild_from_store_excludes_archived(tmp_path):
+    """rebuild_from_store re-indexes only non-archived items."""
+    from merkaba.memory.vectors import VectorMemory
+    from merkaba.memory.store import MemoryStore
+
+    store = MemoryStore(db_path=str(tmp_path / "memory.db"))
+    try:
+        vm = VectorMemory(persist_dir=str(tmp_path / "vectors"))
+    except (ImportError, Exception):
+        store.close()
+        pytest.skip("ChromaDB or Ollama not available")
+
+    bid = store.add_business("Shop", "ecommerce")
+    f1 = store.add_fact(bid, "pricing", "active", "10.00")
+    f2 = store.add_fact(bid, "pricing", "archived_item", "5.00")
+    store.archive("facts", f2)
+
+    vm.index_fact(f1, bid, "pricing: active = 10.00")
+    vm.index_fact(f2, bid, "pricing: archived_item = 5.00")
+
+    vm.rebuild_from_store(store)
+
+    results = vm.search_facts("pricing", limit=10)
+    ids = [r["id"] for r in results]
+    assert f1 in ids
+    assert f2 not in ids
+
+    store.close()

@@ -1,7 +1,10 @@
 # src/merkaba/memory/vectors.py
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import chromadb
@@ -68,6 +71,49 @@ class VectorMemory:
             ids=[str(learning_id)],
             documents=[text],
         )
+
+    # --- Deletion ---
+
+    def delete_vectors(self, collection_name: str, ids: list[str]) -> None:
+        """Remove vectors by ID from a collection."""
+        if not ids:
+            return
+        collection = self._collection(collection_name)
+        collection.delete(ids=ids)
+
+    # --- Rebuild ---
+
+    def rebuild_from_store(self, store) -> dict:
+        """Rebuild all vector collections from non-archived SQLite data.
+
+        Drops and recreates collections, then re-indexes everything.
+        Returns {"facts": N, "decisions": N, "learnings": N}.
+        """
+        stats = {"facts": 0, "decisions": 0, "learnings": 0}
+
+        for name in ("facts", "decisions", "learnings"):
+            self._client.delete_collection(name)
+        self._init_collections()
+
+        businesses = store.list_businesses()
+        business_ids = [0] + [b["id"] for b in businesses]
+        for bid in business_ids:
+            for fact in store.get_facts(bid, include_archived=False):
+                text = f"{fact['category']}: {fact['key']} = {fact['value']}"
+                self.index_fact(fact["id"], bid, text)
+                stats["facts"] += 1
+
+            for dec in store.get_decisions(bid, include_archived=False):
+                text = f"{dec['decision']} -- {dec['reasoning']}"
+                self.index_decision(dec["id"], bid, text)
+                stats["decisions"] += 1
+
+        for learn in store.get_learnings(include_archived=False):
+            self.index_learning(learn["id"], learn["insight"])
+            stats["learnings"] += 1
+
+        logger.info("Vector rebuild complete: %s", stats)
+        return stats
 
     # --- Search ---
 
