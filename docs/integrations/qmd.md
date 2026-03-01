@@ -81,8 +81,11 @@ For Merkaba agent integration, QMD runs as a persistent HTTP daemon so models st
 ### Install the launchd service (macOS)
 
 ```bash
-# Copy the plist
-cp src/merkaba/resources/com.qmd.server.plist ~/Library/LaunchAgents/
+# Copy the example and adjust the qmd binary path for your system
+cp src/merkaba/resources/com.qmd.server.plist.example ~/Library/LaunchAgents/com.qmd.server.plist
+
+# Edit the path to match your qmd install (check with: which qmd)
+# Default is /opt/homebrew/bin/qmd — adjust if yours differs
 
 # Load and start
 launchctl load ~/Library/LaunchAgents/com.qmd.server.plist

@@ -74,6 +74,9 @@ Thumbs.db
 src/merkaba/config/SOUL.md
 src/merkaba/config/USER.md
 
+# Machine-specific plists (use *.example templates)
+src/merkaba/resources/com.qmd.server.plist
+
 # Business plugins (private — never commit to public repo)
 src/merkaba/listing/
 src/merkaba/research/
