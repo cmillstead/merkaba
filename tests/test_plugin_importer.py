@@ -45,16 +45,16 @@ Use file_read to check files.
         assert (dest_dir / "myplugin" / "skills" / "myskill" / "SKILL.md").exists()
 
     def test_skip_low_compatibility_skill(self, tmp_path):
-        # Create source skill with unsupported tools (Task, WebSearch have weight 0)
-        source_dir = tmp_path / "source" / "test-org" / "myplugin" / "1.0.0" / "skills" / "taskskill"
+        # Create source skill with unsupported tools (WebSearch has weight 0)
+        source_dir = tmp_path / "source" / "test-org" / "myplugin" / "1.0.0" / "skills" / "searchskill"
         source_dir.mkdir(parents=True)
         (source_dir / "SKILL.md").write_text("""---
-name: taskskill
-description: Needs Task agent
+name: searchskill
+description: Needs web search
 ---
-# Task Skill
+# Search helper
 
-Use Task to spawn agents and WebSearch to find information.
+Use WebSearch to find information online.
 """)
 
         dest_dir = tmp_path / "dest"
@@ -63,8 +63,8 @@ Use Task to spawn agents and WebSearch to find information.
             dest_dir=str(dest_dir),
         )
 
-        result = importer.import_skill("myplugin", "taskskill")
+        result = importer.import_skill("myplugin", "searchskill")
 
         assert result.success is False
         assert result.skipped is True
-        assert "Task" in result.missing_tools or "WebSearch" in result.missing_tools
+        assert "WebSearch" in result.missing_tools

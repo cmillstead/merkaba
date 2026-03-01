@@ -14,6 +14,8 @@ TOOL_MAP = {
     r'\bEdit\b': 'file_write',
     r'\bGlob\b': 'file_list',
     r'\bGrep\b': 'file_list',
+    r'\bTodoWrite\b': 'task_queue',
+    r'\bBash\b': 'shell',
 }
 
 LLM_CONVERSION_PROMPT = """Rewrite this skill for Merkaba, a local AI agent with these tools:

@@ -57,6 +57,50 @@ class PluginImporter:
 
         return None
 
+    def find_plugin_skills(self, plugin_name: str) -> list[tuple[str, Path]]:
+        """Find all skills in a plugin. Returns list of (skill_name, skill_path)."""
+        results = []
+        for source_dir in self.source_dirs:
+            source_path = Path(source_dir)
+            if not source_path.exists():
+                continue
+
+            for org_path in source_path.iterdir():
+                if not org_path.is_dir():
+                    continue
+
+                plugin_path = org_path / plugin_name
+                if not plugin_path.exists():
+                    continue
+
+                for version_path in sorted(plugin_path.iterdir(), reverse=True):
+                    if not version_path.is_dir():
+                        continue
+
+                    skills_dir = version_path / "skills"
+                    if not skills_dir.exists():
+                        continue
+
+                    for skill_dir in sorted(skills_dir.iterdir()):
+                        skill_file = skill_dir / "SKILL.md"
+                        if skill_file.exists():
+                            results.append((skill_dir.name, skill_file))
+
+                    return results  # Only latest version
+        return results
+
+    def import_all(self, plugin_name: str, force: bool = False) -> list[ImportResult]:
+        """Import all skills from a plugin."""
+        skills = self.find_plugin_skills(plugin_name)
+        if not skills:
+            return [ImportResult(skill_name=plugin_name, error=f"No skills found in plugin: {plugin_name}")]
+
+        results = []
+        for skill_name, _ in skills:
+            result = self.import_skill(plugin_name, skill_name, force=force)
+            results.append(result)
+        return results
+
     def import_skill(self, plugin_name: str, skill_name: str, force: bool = False) -> ImportResult:
         """Import a single skill with conversion."""
         result = ImportResult(skill_name=skill_name)

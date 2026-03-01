@@ -90,15 +90,15 @@ class TestCompatibilityScoring:
         assert analyzer.compatibility_score == 100
 
     def test_mixed_tools_scores_partial(self):
-        content = "Use Read to check, then Task to dispatch."
+        content = "Use Read to check, then WebSearch to find."
         analyzer = SkillAnalyzer(content)
-        # Read=100%, Task=0%, average=50%
+        # Read=100%, WebSearch=0%, average=50%
         assert analyzer.compatibility_score == 50
 
-    def test_todowrite_scores_50(self):
+    def test_todowrite_scores_100(self):
         content = "Use TodoWrite to track progress."
         analyzer = SkillAnalyzer(content)
-        assert analyzer.compatibility_score == 50
+        assert analyzer.compatibility_score == 100
 
 
 class TestConversionStrategy:
@@ -108,17 +108,17 @@ class TestConversionStrategy:
         assert analyzer.strategy == ConversionStrategy.RULE_BASED
 
     def test_medium_score_uses_llm(self):
-        content = "Use TodoWrite to track."
+        content = "Use Read to check, then WebSearch to find."
         analyzer = SkillAnalyzer(content)
         assert analyzer.strategy == ConversionStrategy.LLM_ASSISTED
 
     def test_low_score_skips(self):
-        content = "Use Task and WebSearch."
+        content = "Use WebSearch only."
         analyzer = SkillAnalyzer(content)
-        # Task=0%, WebSearch=0%, average=0%
+        # WebSearch=0%, average=0%
         assert analyzer.strategy == ConversionStrategy.SKIP
 
     def test_missing_tools_list(self):
-        content = "Use Task and WebSearch."
+        content = "Use WebSearch."
         analyzer = SkillAnalyzer(content)
-        assert analyzer.missing_tools == {"Task", "WebSearch"}
+        assert analyzer.missing_tools == {"WebSearch"}

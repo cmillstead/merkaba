@@ -25,16 +25,16 @@ TOOL_WEIGHTS = {
     "Read": 100,
     "Write": 100,
     "Edit": 100,
-    "Glob": 100,       # Now fully supported
-    "Grep": 100,       # Now fully supported
-    "Bash": 100,       # Now fully supported
+    "Glob": 100,
+    "Grep": 100,
+    "Bash": 100,
     "WebSearch": 0,
-    "WebFetch": 100,   # Now fully supported
-    "Task": 0,
-    "TodoWrite": 50,
-    "AskUserQuestion": 50,
-    "EnterPlanMode": 50,
-    "Skill": 50,
+    "WebFetch": 100,
+    "Task": 100,            # Maps to merkaba task_queue
+    "TodoWrite": 100,       # Maps to merkaba task_queue
+    "AskUserQuestion": 100, # Maps to merkaba prompt
+    "EnterPlanMode": 100,   # Methodology, not a tool dependency
+    "Skill": 100,           # Maps to merkaba skills
 }
 
 

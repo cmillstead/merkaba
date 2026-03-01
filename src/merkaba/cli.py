@@ -317,7 +317,9 @@ def plugins_import(
     else:
         # Import all skills from plugin
         console.print(f"[yellow]Importing all skills from {plugin_name}...[/yellow]")
-        console.print("[dim]TODO: Implement bulk import[/dim]")
+        results = importer.import_all(plugin_name, force=force)
+        for result in results:
+            _print_import_result(result)
 
 
 def _print_import_result(result):
