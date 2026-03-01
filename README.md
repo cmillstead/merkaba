@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests: 1514+](https://img.shields.io/badge/Tests-1514%2B-green.svg)](tests/)
+[![Tests: 1635+](https://img.shields.io/badge/Tests-1635%2B-green.svg)](tests/)
 
 Build autonomous AI agents with persistent memory, tool use, multi-model routing, and graduated autonomy. Local-first with optional cloud fallback. No vendor lock-in.
 
@@ -543,7 +543,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 ```bash
 git clone https://github.com/cmillstead/merkaba.git && cd merkaba
 pip install -e ".[dev]"
-pytest  # 1514+ tests
+pytest  # 1635+ tests
 ```
 
 ## Acknowledgments
