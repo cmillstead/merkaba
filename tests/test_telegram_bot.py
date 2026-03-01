@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 # Check if required dependencies are available
 try:
-    from merkaba.telegram.bot import FridayBot
+    from merkaba.telegram.bot import MerkabaBot
     HAS_DEPENDENCIES = True
 except ImportError as e:
     HAS_DEPENDENCIES = False
     IMPORT_ERROR = str(e)
-    FridayBot = None
+    MerkabaBot = None
 
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
@@ -19,25 +19,25 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class TestFridayBot:
-    """Tests for FridayBot class."""
+class TestMerkabaBot:
+    """Tests for MerkabaBot class."""
 
     def test_bot_initializes_with_token(self):
-        """FridayBot should initialize with a token."""
-        bot = FridayBot(token="test_token", allowed_user_ids=[123])
+        """MerkabaBot should initialize with a token."""
+        bot = MerkabaBot(token="test_token", allowed_user_ids=[123])
         assert bot.token == "test_token"
         assert bot.allowed_user_ids == [123]
 
     def test_is_authorized_checks_user_id(self):
         """is_authorized should check if user is in allowed list."""
-        bot = FridayBot(token="test", allowed_user_ids=[111, 222])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111, 222])
         assert bot.is_authorized(111) is True
         assert bot.is_authorized(999) is False
 
     @pytest.mark.asyncio
     async def test_handle_message_rejects_unauthorized(self):
         """handle_message should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
 
         mock_update = MagicMock()
         mock_update.effective_user.id = 999
@@ -57,7 +57,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_start_authorized(self):
         """cmd_start should send welcome message for authorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 111
         update.message.reply_text = AsyncMock()
@@ -66,12 +66,12 @@ class TestFridayBot:
 
         update.message.reply_text.assert_called_once()
         msg = update.message.reply_text.call_args[0][0]
-        assert "Friday is online" in msg
+        assert "Merkaba is online" in msg
 
     @pytest.mark.asyncio
     async def test_cmd_start_unauthorized(self):
         """cmd_start should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 999
         update.message.reply_text = AsyncMock()
@@ -86,7 +86,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_help_authorized(self):
         """cmd_help should list available commands."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 111
         update.message.reply_text = AsyncMock()
@@ -102,7 +102,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_help_unauthorized(self):
         """cmd_help should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 999
         update.message.reply_text = AsyncMock()
@@ -117,7 +117,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_status_authorized(self):
         """cmd_status should report running status."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 111
         update.message.reply_text = AsyncMock()
@@ -130,7 +130,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_status_unauthorized(self):
         """cmd_status should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 999
         update.message.reply_text = AsyncMock()
@@ -145,7 +145,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_pending_unauthorized(self):
         """cmd_pending should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 999
         update.message.reply_text = AsyncMock()
@@ -158,7 +158,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_pending_no_actions(self):
         """cmd_pending should report no pending approvals when queue is empty."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 111
         update.message.reply_text = AsyncMock()
@@ -175,7 +175,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_cmd_pending_with_actions(self):
         """cmd_pending should list pending approvals."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         update = MagicMock()
         update.effective_user.id = 111
         update.message.reply_text = AsyncMock()
@@ -199,9 +199,9 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_handle_message_happy_path(self):
         """handle_message should pass message to agent and return response."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         bot.agent = MagicMock()
-        bot.agent.run.return_value = "Hello! I'm Friday."
+        bot.agent.run.return_value = "Hello! I'm Merkaba."
 
         update = MagicMock()
         update.effective_user.id = 111
@@ -212,12 +212,12 @@ class TestFridayBot:
 
         bot.agent.run.assert_called_once_with("Hi there")
         msg = update.message.reply_text.call_args[0][0]
-        assert "Hello! I'm Friday." == msg
+        assert "Hello! I'm Merkaba." == msg
 
     @pytest.mark.asyncio
     async def test_handle_message_agent_error(self):
         """handle_message should send error message when agent raises."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         bot.agent = MagicMock()
         bot.agent.run.side_effect = RuntimeError("LLM unavailable")
 
@@ -236,7 +236,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_wrap_auth_allows_authorized(self):
         """_wrap_auth should call wrapped handler for authorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         inner = AsyncMock()
         wrapped = bot._wrap_auth(inner)
 
@@ -250,7 +250,7 @@ class TestFridayBot:
     @pytest.mark.asyncio
     async def test_wrap_auth_blocks_unauthorized(self):
         """_wrap_auth should block unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         inner = AsyncMock()
         wrapped = bot._wrap_auth(inner)
 
@@ -268,7 +268,7 @@ class TestFridayBot:
 
     def test_get_agent_lazy_init(self):
         """_get_agent should create agent on first call and reuse it."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         assert bot.agent is None
 
         with patch("merkaba.telegram.bot.Agent") as MockAgent:
@@ -287,7 +287,7 @@ class TestBotSkillInvocation:
         """Bot should invoke skill when user types /skill-name."""
         from merkaba.plugins import Skill
 
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
 
         mock_skill = Skill(
             name="brainstorming",
@@ -313,7 +313,7 @@ class TestBotSkillInvocation:
     @pytest.mark.asyncio
     async def test_skill_not_found(self):
         """handle_skill_command should report when skill not found."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
         bot.plugin_registry = MagicMock()
         bot.plugin_registry.skills.get.return_value = None
 
@@ -329,7 +329,7 @@ class TestBotSkillInvocation:
     @pytest.mark.asyncio
     async def test_skill_command_unauthorized(self):
         """handle_skill_command should reject unauthorized users."""
-        bot = FridayBot(token="test", allowed_user_ids=[111])
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
 
         update = MagicMock()
         update.effective_user.id = 999
