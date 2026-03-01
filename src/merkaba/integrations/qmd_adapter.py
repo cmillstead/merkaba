@@ -5,7 +5,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from urllib.request import urlopen, Request
-from urllib.error import URLError
 
 from merkaba.integrations.base import IntegrationAdapter, register_adapter
 
@@ -111,6 +110,9 @@ class QMDAdapter(IntegrationAdapter):
         except Exception as e:
             logger.error("QMD get failed: %s", e)
             return {"ok": False, "error": str(e)}
+
+    def disconnect(self) -> None:
+        self._connected = False
 
     def _status(self, params: dict) -> dict:
         try:
