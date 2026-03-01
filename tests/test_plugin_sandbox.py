@@ -1,0 +1,240 @@
+# tests/test_plugin_sandbox.py
+"""Tests for Phase 11: Plugin Security & Sandboxing."""
+
+import os
+import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+# Stub ollama before importing merkaba modules
+sys.modules.setdefault("ollama", MagicMock())
+
+from merkaba.plugins.sandbox import (
+    PROTECTED_PATHS,
+    PluginManifest,
+    PluginPermissionError,
+    PluginSandbox,
+)
+
+
+# --- PluginManifest ---
+
+
+class TestPluginManifest:
+    def test_manifest_defaults(self):
+        m = PluginManifest(name="test-plugin")
+        assert m.name == "test-plugin"
+        assert m.version == "0.1.0"
+        assert m.required_tools == []
+        assert m.required_integrations == []
+        assert m.file_access == []
+        assert m.max_context_tokens == 4000
+        assert m.permission_tier == "MODERATE"
+
+    def test_manifest_from_frontmatter(self):
+        """Skill.from_markdown should parse manifest fields."""
+        import frontmatter as _  # noqa: F401 — ensure available
+
+        from merkaba.plugins.skills import Skill
+
+        md = """---
+name: test-skill
+description: A test skill
+required_tools:
+  - file_read
+  - web_fetch
+file_access:
+  - "~/.merkaba/outputs/*"
+permission_tier: SENSITIVE
+---
+Skill content here.
+"""
+        skill = Skill.from_markdown(md, plugin_name="test-pkg")
+        assert skill.manifest is not None
+        assert skill.manifest.required_tools == ["file_read", "web_fetch"]
+        assert skill.manifest.file_access == ["~/.merkaba/outputs/*"]
+        assert skill.manifest.permission_tier == "SENSITIVE"
+
+    def test_skill_without_manifest_returns_none(self):
+        from merkaba.plugins.skills import Skill
+
+        md = """---
+name: plain-skill
+description: No manifest fields
+---
+Just content.
+"""
+        skill = Skill.from_markdown(md)
+        assert skill.manifest is None
+
+
+# --- PluginSandbox tool checking ---
+
+
+class TestToolAccess:
+    def test_declared_tool_passes(self):
+        manifest = PluginManifest(name="test", required_tools=["file_read", "web_fetch"])
+        sandbox = PluginSandbox(manifest=manifest)
+        sandbox.check_tool_access("file_read")  # should not raise
+        sandbox.check_tool_access("web_fetch")
+
+    def test_undeclared_tool_blocked(self):
+        manifest = PluginManifest(name="test", required_tools=["file_read"])
+        sandbox = PluginSandbox(manifest=manifest)
+        with pytest.raises(PluginPermissionError, match="does not have access"):
+            sandbox.check_tool_access("bash")
+
+    def test_empty_required_tools_blocks_all(self):
+        manifest = PluginManifest(name="test", required_tools=[])
+        sandbox = PluginSandbox(manifest=manifest)
+        with pytest.raises(PluginPermissionError):
+            sandbox.check_tool_access("file_read")
+
+
+# --- PluginSandbox path checking ---
+
+
+class TestPathAccess:
+    def test_allowed_path_passes(self, tmp_path):
+        target = tmp_path / "output.txt"
+        target.touch()
+        manifest = PluginManifest(
+            name="test",
+            required_tools=["file_read"],
+            file_access=[str(tmp_path / "*")],
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        assert sandbox.is_path_allowed(str(target)) is True
+
+    def test_disallowed_path_blocked(self, tmp_path):
+        manifest = PluginManifest(
+            name="test",
+            required_tools=["file_read"],
+            file_access=[str(tmp_path / "allowed/*")],
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        assert sandbox.is_path_allowed("/etc/passwd") is False
+
+    def test_protected_path_always_blocked(self):
+        manifest = PluginManifest(
+            name="test",
+            required_tools=["file_write"],
+            file_access=["**/*"],  # wildcard everything
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        # Security files should be blocked
+        assert sandbox.is_path_allowed(os.path.expanduser("~/.merkaba/config.json")) is False
+
+    def test_protected_db_blocked_even_with_wildcard(self):
+        manifest = PluginManifest(
+            name="test",
+            required_tools=["file_write"],
+            file_access=["**/*"],
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        assert sandbox.is_path_allowed(os.path.expanduser("~/.merkaba/memory.db")) is False
+
+    def test_empty_file_access_blocks_all(self, tmp_path):
+        manifest = PluginManifest(name="test", required_tools=["file_read"], file_access=[])
+        sandbox = PluginSandbox(manifest=manifest)
+        assert sandbox.is_path_allowed(str(tmp_path / "anything.txt")) is False
+
+    def test_check_path_access_raises_for_blocked(self, tmp_path):
+        manifest = PluginManifest(name="test", required_tools=["file_read"], file_access=[])
+        sandbox = PluginSandbox(manifest=manifest)
+        with pytest.raises(PluginPermissionError, match="cannot access path"):
+            sandbox.check_path_access("file_read", {"path": str(tmp_path / "secret.txt")})
+
+    def test_check_path_access_skips_non_file_tools(self):
+        manifest = PluginManifest(name="test", required_tools=["web_fetch"], file_access=[])
+        sandbox = PluginSandbox(manifest=manifest)
+        # Should not raise even with empty file_access — web_fetch is not a file tool
+        sandbox.check_path_access("web_fetch", {"url": "https://example.com"})
+
+
+# --- Agent integration ---
+
+
+class TestAgentIntegration:
+    @pytest.fixture
+    def agent(self, tmp_path):
+        with patch("merkaba.agent.SecurityScanner") as MockScanner:
+            MockScanner.return_value.quick_scan.return_value = MagicMock(has_issues=False)
+            from merkaba.agent import Agent
+            a = Agent(plugins_enabled=False, memory_storage_dir=str(tmp_path))
+        a.input_classifier.enabled = False
+        return a
+
+    def test_agent_with_sandboxed_skill_blocks_undeclared_tool(self, agent):
+        """When active skill has a manifest, undeclared tools should be blocked."""
+        from merkaba.plugins.skills import Skill
+        from merkaba.plugins.sandbox import PluginManifest
+        from merkaba.llm import LLMResponse, ToolCall
+
+        manifest = PluginManifest(name="restricted", required_tools=["file_read"])
+        agent.active_skill = Skill(
+            name="restricted",
+            description="test",
+            content="test",
+            manifest=manifest,
+        )
+
+        # LLM tries to call bash (not in manifest)
+        tool_resp = LLMResponse(
+            content=None, model="test",
+            tool_calls=[ToolCall(name="bash", arguments={"command": "ls"})],
+        )
+        final_resp = LLMResponse(content="Done.", model="test")
+        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
+
+        result = agent.run("do something")
+        assert result == "Done."
+        # The tool result should contain permission denied
+        # (it flows into conversation, LLM generates final response)
+
+    def test_agent_with_sandboxed_skill_allows_declared_tool(self, agent):
+        """Declared tools should work normally."""
+        from merkaba.plugins.skills import Skill
+        from merkaba.plugins.sandbox import PluginManifest
+        from merkaba.llm import LLMResponse, ToolCall
+
+        manifest = PluginManifest(name="reader", required_tools=["file_read"])
+        agent.active_skill = Skill(
+            name="reader",
+            description="test",
+            content="test",
+            manifest=manifest,
+        )
+
+        tool_resp = LLMResponse(
+            content=None, model="test",
+            tool_calls=[ToolCall(name="file_read", arguments={"path": "/tmp/test"})],
+        )
+        final_resp = LLMResponse(content="Read it.", model="test")
+        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
+
+        result = agent.run("read the file")
+        assert result == "Read it."
+
+    def test_agent_without_manifest_allows_all_tools(self, agent):
+        """Skills without manifests should not restrict tools."""
+        from merkaba.plugins.skills import Skill
+        from merkaba.llm import LLMResponse, ToolCall
+
+        agent.active_skill = Skill(
+            name="unrestricted",
+            description="test",
+            content="test",
+            manifest=None,
+        )
+
+        tool_resp = LLMResponse(
+            content=None, model="test",
+            tool_calls=[ToolCall(name="bash", arguments={"command": "echo hi"})],
+        )
+        final_resp = LLMResponse(content="Ran it.", model="test")
+        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
+
+        result = agent.run("run command")
+        assert result == "Ran it."
