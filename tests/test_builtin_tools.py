@@ -18,13 +18,13 @@ def test_file_write_tool_exists():
 
 def test_file_read_execution():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        f.write("Hello, Friday!")
+        f.write("Hello, Merkaba!")
         temp_path = f.name
 
     try:
         result = file_read.execute(path=temp_path)
         assert result.success is True
-        assert result.output == "Hello, Friday!"
+        assert result.output == "Hello, Merkaba!"
     finally:
         os.unlink(temp_path)
 

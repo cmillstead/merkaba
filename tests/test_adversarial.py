@@ -244,7 +244,7 @@ class TestToolChainingExploits:
         assert not allowed, "config.json should be in DENIED_PATHS"
 
     def test_denied_paths_cover_merkaba_secrets(self):
-        """Verify that sensitive Friday files are in DENIED_PATHS."""
+        """Verify that sensitive system files are in DENIED_PATHS."""
         from merkaba.tools.builtin.files import DENIED_PATHS, DENIED_FILENAME_PATTERNS
 
         # Files that SHOULD be denied

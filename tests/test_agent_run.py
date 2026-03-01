@@ -223,7 +223,7 @@ class TestMemoryContext:
         """When retrieval returns results, memory context is injected into prompt."""
         mock_retrieval = MagicMock()
         mock_retrieval.recall.return_value = [
-            {"type": "fact", "category": "project", "key": "name", "value": "Friday"},
+            {"type": "fact", "category": "project", "key": "name", "value": "Merkaba"},
         ]
         agent.retrieval = mock_retrieval
 

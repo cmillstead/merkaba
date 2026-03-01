@@ -52,13 +52,13 @@ def test_agent_processes_simple_response(temp_memory_dir):
 
     with patch.object(agent.llm, "chat_with_fallback") as mock_chat:
         mock_chat.return_value = LLMResponse(
-            content="Hello! I'm Friday.",
+            content="Hello! I'm Merkaba.",
             model="test",
             tool_calls=None,
         )
 
         response = agent.run("Hello")
-        assert "Hello" in response or "Friday" in response
+        assert "Hello" in response or "Merkaba" in response
 
 
 def test_agent_executes_tool_calls(temp_memory_dir):

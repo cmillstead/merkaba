@@ -36,7 +36,7 @@ def test_cli_chat_uses_agent():
     """Test that chat command invokes the agent."""
     with patch("merkaba.agent.Agent") as mock_agent:
         mock_instance = mock_agent.return_value
-        mock_instance.run.return_value = "Hello from Friday!"
+        mock_instance.run.return_value = "Hello from Merkaba!"
 
         result = runner.invoke(app, ["chat", "Hello"])
 
@@ -49,7 +49,7 @@ def test_cli_chat_uses_custom_model():
     """Test that chat command passes custom model to agent."""
     with patch("merkaba.agent.Agent") as mock_agent:
         mock_instance = mock_agent.return_value
-        mock_instance.run.return_value = "Hello from Friday!"
+        mock_instance.run.return_value = "Hello from Merkaba!"
 
         result = runner.invoke(app, ["chat", "--model", "llama3", "Hello"])
 

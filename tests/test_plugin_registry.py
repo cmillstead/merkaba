@@ -93,7 +93,7 @@ class TestSkillContext:
         with tempfile.TemporaryDirectory() as tmpdir:
             context_file = os.path.join(tmpdir, "skill-context.md")
             with open(context_file, "w") as f:
-                f.write("# Friday Context\n\nBe helpful and concise.")
+                f.write("# Merkaba Context\n\nBe helpful and concise.")
 
             registry = PluginRegistry()
             registry.load_skill_context(context_file)

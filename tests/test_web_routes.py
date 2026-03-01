@@ -304,7 +304,7 @@ class TestWebSocketChat:
         client, app = app_client
 
         mock_agent = MagicMock()
-        mock_agent.run.return_value = "Hello from Friday"
+        mock_agent.run.return_value = "Hello from Merkaba"
         mock_agent.permission_manager = MagicMock()
 
         with patch("merkaba.agent.Agent", return_value=mock_agent):
@@ -320,7 +320,7 @@ class TestWebSocketChat:
                 # Second message should be the response
                 msg2 = ws.receive_json()
                 assert msg2["type"] == "response"
-                assert msg2["content"] == "Hello from Friday"
+                assert msg2["content"] == "Hello from Merkaba"
 
     def test_ws_sends_tool_events(self, app_client):
         """WebSocket should relay tool call events as thinking updates."""
@@ -374,7 +374,7 @@ class TestWebSocketChat:
         app.state.api_key = "ws-secret-key"
 
         mock_agent = MagicMock()
-        mock_agent.run.return_value = "Hello from Friday"
+        mock_agent.run.return_value = "Hello from Merkaba"
         mock_agent.permission_manager = MagicMock()
 
         with patch("merkaba.agent.Agent", return_value=mock_agent):
@@ -389,7 +389,7 @@ class TestWebSocketChat:
 
                 msg2 = ws.receive_json()
                 assert msg2["type"] == "response"
-                assert msg2["content"] == "Hello from Friday"
+                assert msg2["content"] == "Hello from Merkaba"
 
 
 # --- Chat session routes ---
