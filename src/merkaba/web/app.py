@@ -93,6 +93,7 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     from merkaba.web.routes.approvals import router as approvals_router
     from merkaba.web.routes.chat import router as chat_router
     from merkaba.web.routes.analytics import router as analytics_router
+    from merkaba.web.routes.control import router as control_router
 
     app.include_router(system_router, prefix="/api/system", dependencies=[Depends(verify_api_key)])
     app.include_router(businesses_router, prefix="/api/businesses", dependencies=[Depends(verify_api_key)])
@@ -101,6 +102,7 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     app.include_router(approvals_router, prefix="/api/approvals", dependencies=[Depends(verify_api_key)])
     app.include_router(chat_router, dependencies=[Depends(verify_api_key)])
     app.include_router(analytics_router, prefix="/api/analytics", dependencies=[Depends(verify_api_key)])
+    app.include_router(control_router, prefix="/api/control", dependencies=[Depends(verify_api_key)])
 
     # Serve React static files if built
     static_dir = Path(__file__).parent / "static"

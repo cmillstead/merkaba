@@ -1,0 +1,110 @@
+# tests/e2e/test_e2e_control.py
+"""E2E tests for the Mission Control /api/control endpoints."""
+
+import os
+import sqlite3
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+
+# Stub out heavy deps before importing
+if "ollama" not in sys.modules:
+    sys.modules["ollama"] = MagicMock()
+
+HAS_DEPS = True
+try:
+    from fastapi.testclient import TestClient
+    from merkaba.web.app import create_app
+    from merkaba.memory.store import MemoryStore
+    from merkaba.orchestration.queue import TaskQueue
+    from merkaba.approval.queue import ActionQueue
+except ImportError:
+    HAS_DEPS = False
+
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(not HAS_DEPS, reason="Missing web dependencies"),
+]
+
+
+def _make_store(cls, db_path):
+    """Create a store with check_same_thread=False for test cross-thread access."""
+    obj = object.__new__(cls)
+    obj.db_path = db_path
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
+    obj._conn.row_factory = sqlite3.Row
+    obj._conn.execute("PRAGMA foreign_keys = ON")
+    obj._create_tables()
+    return obj
+
+
+@pytest.fixture
+def app_client(tmp_path):
+    overrides = {
+        "memory_store": _make_store(MemoryStore, str(tmp_path / "memory.db")),
+        "task_queue": _make_store(TaskQueue, str(tmp_path / "tasks.db")),
+        "action_queue": _make_store(ActionQueue, str(tmp_path / "actions.db")),
+        "merkaba_base_dir": str(tmp_path / "merkaba_home"),
+    }
+    os.makedirs(overrides["merkaba_base_dir"], exist_ok=True)
+    app = create_app(db_overrides=overrides)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client, app
+
+
+@pytest.mark.e2e
+class TestControlState:
+    def test_get_control_state(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "state_update"
+        assert "system" in data
+        assert "agents" in data
+        assert "workers" in data
+        assert "connections" in data
+        # System should have expected keys
+        sys = data["system"]
+        assert "status" in sys
+        assert "memory_facts" in sys
+        assert "pending_approvals" in sys
+        assert "active_tasks" in sys
+
+    def test_control_state_has_workers(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        # Should have at least the built-in workers
+        worker_ids = [w["id"] for w in data["workers"]]
+        assert "health_check" in worker_ids
+        assert "research" in worker_ids
+
+    def test_control_state_has_agent_tools(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agents = data["agents"]
+        assert len(agents) >= 1
+        merkaba = agents[0]
+        assert merkaba["id"] == "merkaba-prime"
+        assert merkaba["name"] == "Merkaba"
+        tool_names = [t["name"] for t in merkaba["tools"]]
+        # Should have some built-in tools
+        assert len(tool_names) > 0
+
+    def test_control_connections(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        connections = data["connections"]
+        # Each worker should have a connection from merkaba-prime
+        for worker in data["workers"]:
+            assert any(
+                c["from"] == "merkaba-prime" and c["to"] == worker["id"]
+                for c in connections
+            ), f"Missing connection for worker {worker['id']}"
