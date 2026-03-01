@@ -1,8 +1,8 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, ListTodo, ShieldCheck, Brain, BarChart3 } from 'lucide-react'
+import { Radar, MessageSquare, ListTodo, ShieldCheck, Brain, BarChart3 } from 'lucide-react'
 import { BusinessProvider } from './context/BusinessContext'
 import BusinessSwitcher from './components/BusinessSwitcher'
-import Dashboard from './pages/Dashboard'
+import MissionControl from './pages/MissionControl'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import Approvals from './pages/Approvals'
@@ -18,7 +18,7 @@ function App() {
           <div className="sidebar-brand">Merkaba</div>
           <BusinessSwitcher />
           <nav>
-            <NavLink to="/" end><LayoutDashboard size={16} /> Dashboard</NavLink>
+            <NavLink to="/" end><Radar size={16} /> Mission Control</NavLink>
             <NavLink to="/chat"><MessageSquare size={16} /> Chat</NavLink>
             <NavLink to="/tasks"><ListTodo size={16} /> Tasks</NavLink>
             <NavLink to="/approvals"><ShieldCheck size={16} /> Approvals</NavLink>
@@ -28,7 +28,7 @@ function App() {
         </aside>
         <main className="main">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<MissionControl />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/approvals" element={<Approvals />} />

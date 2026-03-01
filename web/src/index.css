@@ -287,3 +287,318 @@ input:focus, textarea:focus {
 .dot-green  { background: var(--green); }
 .dot-red    { background: var(--red); }
 .dot-yellow { background: var(--yellow); }
+
+/* ========================================
+   Mission Control
+   ======================================== */
+
+.mission-control {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+  background: #06060f;
+  position: relative;
+  overflow: hidden;
+}
+
+/* HUD Status Bar */
+.hud-status-bar {
+  display: flex;
+  gap: 32px;
+  padding: 8px 20px;
+  background: rgba(18, 18, 26, 0.8);
+  border-bottom: 1px solid #1a1a3e;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  z-index: 10;
+}
+
+.hud-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-label {
+  color: #5a5a7c;
+  font-weight: 600;
+}
+
+.hud-value {
+  color: #e0e0ff;
+  font-weight: 700;
+}
+
+.hud-online { color: #00ff88; }
+.hud-offline { color: #f87171; }
+.hud-warning { color: #ff6b35; }
+
+/* Constellation Map */
+.constellation-map {
+  flex: 1;
+  width: 100%;
+}
+
+.constellation-line {
+  animation: dash-flow 2s linear infinite;
+}
+
+@keyframes dash-flow {
+  to { stroke-dashoffset: -20; }
+}
+
+.constellation-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.constellation-node:focus .constellation-glow,
+.constellation-node:hover .constellation-glow {
+  fill: rgba(0, 240, 255, 0.08);
+}
+
+.constellation-node:focus circle:nth-child(2) {
+  stroke: #00f0ff;
+  stroke-width: 2;
+}
+
+.constellation-node--active circle:nth-child(2) {
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.4));
+}
+
+/* Harness View */
+.harness-view {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.harness-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.harness-back {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+}
+
+.harness-svg {
+  flex: 1;
+  width: 100%;
+  max-height: calc(100% - 60px);
+}
+
+.harness-line {
+  animation: dash-flow 3s linear infinite;
+}
+
+.harness-model-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: rgba(18, 18, 26, 0.8);
+  border-top: 1px solid #1a1a3e;
+  width: 100%;
+  justify-content: center;
+}
+
+.harness-select {
+  background: #0a0a0f;
+  border: 1px solid #2a2a3e;
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 4px 12px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.harness-select:focus {
+  outline: none;
+  border-color: #00f0ff;
+}
+
+/* Tool Nodes */
+.tool-node {
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.2s;
+}
+
+.tool-node:hover,
+.tool-node:focus {
+  transform: scale(1.1);
+}
+
+.tool-node:focus circle {
+  stroke: #00f0ff;
+  stroke-width: 2;
+}
+
+.tool-node--selected circle {
+  stroke: #00f0ff;
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.5));
+}
+
+/* Detail Panel */
+.detail-panel {
+  width: 240px;
+  background: rgba(18, 18, 26, 0.9);
+  border-left: 1px solid #1a1a3e;
+  padding: 20px;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-y: auto;
+}
+
+.detail-panel--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-hint {
+  color: #5a5a7c;
+  font-style: italic;
+}
+
+.detail-name {
+  color: #00f0ff;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: 0.05em;
+}
+
+.detail-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+}
+
+.detail-fields dt {
+  color: #5a5a7c;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.detail-fields dd {
+  color: #e0e0ff;
+}
+
+/* Command Bar */
+.command-bar {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  padding: 6px 20px;
+  background: rgba(18, 18, 26, 0.8);
+  border-top: 1px solid #1a1a3e;
+  z-index: 10;
+}
+
+.command-hint {
+  font-family: monospace;
+  font-size: 10px;
+  color: #5a5a7c;
+  letter-spacing: 0.05em;
+}
+
+/* Command Palette */
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  padding-top: 20vh;
+  z-index: 100;
+}
+
+.command-palette {
+  background: #12121a;
+  border: 1px solid #2a2a3e;
+  border-radius: var(--radius);
+  width: 400px;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.command-palette-input {
+  background: #0a0a0f;
+  border: none;
+  border-bottom: 1px solid #2a2a3e;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--text);
+  padding: 12px 16px;
+  font-family: monospace;
+  font-size: 14px;
+  outline: none;
+}
+
+.command-palette-list {
+  list-style: none;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.command-palette-item {
+  padding: 8px 16px;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.command-palette-item:hover {
+  background: var(--bg-hover);
+}
+
+.command-palette-item--selected {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--accent);
+}
+
+.command-palette-item--empty {
+  color: var(--text-dim);
+  font-style: italic;
+  cursor: default;
+}
+
+/* Merkaba Glyph */
+.merkaba-glyph {
+  filter: drop-shadow(0 0 8px rgba(108, 99, 255, 0.4));
+}
+
+/* Scan line effect on mission control background */
+.mission-control::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(108, 99, 255, 0.015) 2px,
+    rgba(108, 99, 255, 0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mission-control > * {
+  position: relative;
+  z-index: 2;
+}
