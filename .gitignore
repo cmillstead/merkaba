@@ -70,6 +70,9 @@ Thumbs.db
 # Merkaba data
 .merkaba/
 
+# Plans (private)
+docs/plans/
+
 # Personal prompt files (use *.example templates)
 src/merkaba/config/SOUL.md
 src/merkaba/config/USER.md

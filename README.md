@@ -499,6 +499,14 @@ merkaba models list      # Show current routing
 merkaba models set code anthropic:claude-sonnet-4-20250514  # Change at runtime
 ```
 
+## Documentation
+
+The README covers installation, quickstart, and configuration. For deeper coverage of every subsystem:
+
+- **[Manual](docs/manual.md)** — Comprehensive reference covering memory (conversation trees, contradiction detection, relationship graphs, episodic memory, lifecycle), security (classifier, validation, encryption, integrity monitoring, scanner), approval system (2FA, rate limiting, graduation), orchestration (supervisor dispatch modes, code worker, exploration agent, learning extractor, health checks), LLM client (request priority, concurrency gate, fallback chains), plugin system (skills, hooks, sandbox manifests, Claude Code import), extension system (entry points for workers, adapters, CLI), and observability (audit trail, token tracking, tracing).
+- **[Architecture](docs/architecture.md)** — Module map, data flow diagrams, storage schema, security layers, design decisions.
+- **[QMD Integration](docs/integrations/qmd.md)** — On-device document search setup guide.
+
 ## Third-Party Integrations
 
 Merkaba integrates with open source tools to extend agent capabilities. These are optional — the framework works fully without them.
