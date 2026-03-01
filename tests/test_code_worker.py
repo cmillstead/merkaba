@@ -293,7 +293,8 @@ class TestReviewIntegration:
         target.write_text("good code\n")
 
         worker = _make_worker()
-        result = worker._review("Write good code", [str(target)])
+        with patch("merkaba.orchestration.workers.WORKER_REGISTRY", {}):
+            result = worker._review("Write good code", [str(target)])
 
         assert result.success is True
         assert "skipped" in str(result.output.get("review", "")).lower()
