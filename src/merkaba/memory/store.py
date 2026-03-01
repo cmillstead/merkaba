@@ -589,11 +589,16 @@ class MemoryStore:
 
     # --- Lifecycle ---
 
-    def archive(self, table: str, item_id: int) -> None:
-        """Mark an item as archived."""
+    def archive(self, table: str, item_id: int, vectors=None) -> None:
+        """Mark an item as archived. Optionally delete from vector store."""
         assert table in ("facts", "decisions", "learnings")
         self._conn.execute(f"UPDATE {table} SET archived = 1 WHERE id = ?", (item_id,))
         self._conn.commit()
+        if vectors is not None:
+            try:
+                vectors.delete_vectors(table, [str(item_id)])
+            except Exception as e:
+                logger.warning("Vector delete failed for %s/%d: %s", table, item_id, e)
 
     def unarchive(self, table: str, item_id: int) -> None:
         """Restore an archived item."""

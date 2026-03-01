@@ -299,3 +299,154 @@ def test_consolidation_skips_small_groups(store, mock_llm):
     assert stats["summaries"] == 0
     assert stats["archived"] == 0
     mock_llm.chat.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Archive with vector cleanup
+# ------------------------------------------------------------------
+
+
+def test_archive_calls_vector_delete(store):
+    """archive() with vectors parameter deletes the vector."""
+    mock_vectors = MagicMock()
+    bid = store.add_business("Shop", "ecommerce")
+    fid = store.add_fact(bid, "pricing", "avg", "4.99")
+
+    store.archive("facts", fid, vectors=mock_vectors)
+
+    mock_vectors.delete_vectors.assert_called_once_with("facts", [str(fid)])
+    assert store.get_facts(bid) == []
+
+
+def test_archive_without_vectors_still_works(store):
+    """archive() without vectors parameter works as before."""
+    bid = store.add_business("Shop", "ecommerce")
+    fid = store.add_fact(bid, "pricing", "avg", "4.99")
+
+    store.archive("facts", fid)
+    assert store.get_facts(bid) == []
+
+
+# ------------------------------------------------------------------
+# Post-consolidation vector rebuild
+# ------------------------------------------------------------------
+
+
+def test_consolidation_triggers_vector_rebuild(store, mock_llm):
+    """Consolidation with vectors triggers rebuild_from_store after archiving."""
+    mock_vectors = MagicMock()
+    mock_vectors.rebuild_from_store.return_value = {"facts": 1, "decisions": 0, "learnings": 0}
+
+    bid = store.add_business("Shop", "ecommerce")
+    for i in range(6):
+        store.add_fact(bid, "pricing", f"item_{i}", f"${i}.99")
+
+    mock_llm.chat.return_value = MagicMock(content="Summary text.")
+
+    job = MemoryConsolidationJob(store=store, llm=mock_llm, vectors=mock_vectors)
+    stats = job.run()
+
+    mock_vectors.rebuild_from_store.assert_called_once_with(store)
+    assert stats["summaries"] >= 1
+
+
+def test_consolidation_without_vectors_still_works(store, mock_llm):
+    """Consolidation without vectors parameter works as before."""
+    bid = store.add_business("Shop", "ecommerce")
+    for i in range(6):
+        store.add_fact(bid, "pricing", f"item_{i}", f"${i}.99")
+
+    mock_llm.chat.return_value = MagicMock(content="Summary text.")
+
+    job = MemoryConsolidationJob(store=store, llm=mock_llm)
+    stats = job.run()
+    assert stats["summaries"] >= 1
+
+
+# ------------------------------------------------------------------
+# Relationship extraction
+# ------------------------------------------------------------------
+
+
+def test_extract_produces_relationships(store, mock_llm):
+    """Extractor parses relationships from LLM response."""
+    bid = store.add_business("Corp", "enterprise")
+
+    mock_llm.chat.return_value = MagicMock(
+        content=json.dumps({
+            "facts": [
+                {"category": "org", "key": "ceo", "value": "Alice", "confidence": 90},
+            ],
+            "relationships": [
+                {
+                    "entity": "Alice",
+                    "entity_type": "person",
+                    "relation": "manages",
+                    "related_entity": "engineering",
+                    "related_type": "team",
+                },
+            ],
+        })
+    )
+
+    extractor = SessionExtractor(llm=mock_llm, store=store)
+    stored = extractor.extract(
+        [{"role": "user", "content": "Alice manages engineering"}],
+        business_id=bid,
+    )
+
+    assert len(stored) >= 1
+
+    rels = store.get_relationships(bid)
+    assert len(rels) == 1
+    assert rels[0]["entity_id"] == "Alice"
+    assert rels[0]["relation"] == "manages"
+    assert rels[0]["related_entity"] == "engineering"
+
+
+def test_extract_deduplicates_relationships(store, mock_llm):
+    """Existing relationships are not re-added."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "engineering")
+
+    mock_llm.chat.return_value = MagicMock(
+        content=json.dumps({
+            "facts": [],
+            "relationships": [
+                {
+                    "entity": "Alice",
+                    "entity_type": "person",
+                    "relation": "manages",
+                    "related_entity": "engineering",
+                    "related_type": "team",
+                },
+            ],
+        })
+    )
+
+    extractor = SessionExtractor(llm=mock_llm, store=store)
+    extractor.extract(
+        [{"role": "user", "content": "Alice manages engineering"}],
+        business_id=bid,
+    )
+
+    rels = store.get_relationships(bid)
+    assert len(rels) == 1
+
+
+def test_extract_backward_compat_array_format(store, mock_llm):
+    """Extractor still handles old array-of-facts format."""
+    bid = store.add_business("Shop", "ecommerce")
+
+    mock_llm.chat.return_value = MagicMock(
+        content=json.dumps([
+            {"category": "pricing", "key": "avg", "value": "4.99", "confidence": 80},
+        ])
+    )
+
+    extractor = SessionExtractor(llm=mock_llm, store=store)
+    stored = extractor.extract(
+        [{"role": "user", "content": "test"}],
+        business_id=bid,
+    )
+    assert len(stored) == 1

@@ -54,10 +54,12 @@ class SessionExtractor:
             return []
 
         prompt = (
-            "Extract key facts, decisions, and learnings from this conversation. "
-            "Return a JSON array of objects with fields: category, key, value, confidence (0-100). "
+            "Extract key facts and entity relationships from this conversation. "
+            "Return a JSON object with two arrays:\n"
+            '  "facts": [{category, key, value, confidence (0-100)}]\n'
+            '  "relationships": [{entity, entity_type, relation, related_entity, related_type}]\n'
             "Only include concrete, factual information worth remembering long-term. "
-            "Return [] if nothing worth extracting.\n\n"
+            'Return {"facts": [], "relationships": []} if nothing worth extracting.\n\n'
             f"Conversation:\n{transcript}"
         )
 
@@ -68,10 +70,37 @@ class SessionExtractor:
                 model_override=self.model,
             )
             content = getattr(response, "content", None) or ""
-            items = self._parse_response(content)
+            parsed = self._parse_response(content)
         except Exception as e:
             logger.warning("Session extraction LLM call failed: %s", e)
             return []
+
+        # Handle both dict (new format) and list (backward compat)
+        if isinstance(parsed, dict):
+            items = parsed.get("facts", [])
+            rels_list = parsed.get("relationships", [])
+        else:
+            items = parsed
+            rels_list = []
+
+        # Store relationships
+        for rel in rels_list:
+            entity = rel.get("entity", "")
+            entity_type = rel.get("entity_type", "")
+            relation = rel.get("relation", "")
+            related_entity = rel.get("related_entity", "")
+            related_type = rel.get("related_type", "")
+            if not entity or not relation or not related_entity:
+                continue
+            if self._is_duplicate_relationship(business_id, entity, relation, related_entity):
+                continue
+            self.store.add_relationship(
+                business_id=business_id,
+                entity_type=entity_type or related_type,
+                entity_id=entity,
+                relation=relation,
+                related_entity=related_entity,
+            )
 
         stored = []
         for item in items:
@@ -109,8 +138,8 @@ class SessionExtractor:
                 lines.append(f"{role}: {content}")
         return "\n".join(lines)
 
-    def _parse_response(self, content: str) -> list[dict]:
-        """Parse LLM response as JSON array, tolerating markdown fences."""
+    def _parse_response(self, content: str) -> list[dict] | dict:
+        """Parse LLM response as JSON array or object, tolerating markdown fences."""
         text = content.strip()
         # Strip markdown code fences
         if text.startswith("```"):
@@ -119,7 +148,7 @@ class SessionExtractor:
             text = "\n".join(lines)
         try:
             result = json.loads(text)
-            if isinstance(result, list):
+            if isinstance(result, (list, dict)):
                 return result
         except (json.JSONDecodeError, ValueError):
             logger.debug("Failed to parse extraction response: %s", text[:200])
@@ -140,6 +169,20 @@ class SessionExtractor:
                     return True
         return False
 
+    def _is_duplicate_relationship(
+        self, business_id: int, entity: str, relation: str, related_entity: str
+    ) -> bool:
+        """Check if an identical relationship already exists (case-insensitive)."""
+        existing = self.store.get_relationships(business_id)
+        for rel in existing:
+            if (
+                rel["entity_id"].lower() == entity.lower()
+                and rel["relation"].lower() == relation.lower()
+                and rel["related_entity"].lower() == related_entity.lower()
+            ):
+                return True
+        return False
+
 
 @dataclass
 class MemoryConsolidationJob:
@@ -149,6 +192,7 @@ class MemoryConsolidationJob:
     llm: object  # LLMClient
     model: str = "qwen3:4b"
     min_group_size: int = 5
+    vectors: object | None = None
 
     def run(self) -> dict:
         """Run consolidation across all businesses.
@@ -191,6 +235,13 @@ class MemoryConsolidationJob:
                 for fact in group_facts:
                     self.store.archive("facts", fact["id"])
                     total_archived += 1
+
+        if self.vectors is not None:
+            try:
+                self.vectors.rebuild_from_store(self.store)
+                logger.info("Vector rebuild triggered after consolidation")
+            except Exception as e:
+                logger.warning("Post-consolidation vector rebuild failed: %s", e)
 
         stats = {"groups": total_groups, "archived": total_archived, "summaries": total_summaries}
         logger.info("Consolidation complete: %s", stats)
