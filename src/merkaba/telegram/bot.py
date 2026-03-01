@@ -15,7 +15,7 @@ from telegram.ext import (
 
 from merkaba.agent import Agent
 from merkaba.plugins import PluginRegistry
-from merkaba.telegram.commands import handle_research, handle_generate, handle_cancel, handle_listing
+from merkaba.telegram.commands import handle_cancel
 
 logger = logging.getLogger(__name__)
 
@@ -168,10 +168,7 @@ class MerkabaBot:
         self.app.add_handler(CommandHandler("help", self.cmd_help))
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("pending", self.cmd_pending))
-        self.app.add_handler(CommandHandler("research", self._wrap_auth(handle_research)))
-        self.app.add_handler(CommandHandler("generate", self._wrap_auth(handle_generate)))
         self.app.add_handler(CommandHandler("cancel", self._wrap_auth(handle_cancel)))
-        self.app.add_handler(CommandHandler("listing", self._wrap_auth(handle_listing)))
 
         # Add handlers for all loaded skills (skip invalid bot command names)
         import re

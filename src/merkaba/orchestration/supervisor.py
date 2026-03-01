@@ -23,12 +23,6 @@ class DispatchMode(Enum):
 
 MODEL_DEFAULTS: dict[str, str] = {
     "health_check": "phi4:14b",
-    "research": "qwen3.5:122b",
-    "ecommerce": "qwen3.5:122b",
-    "content": "qwen3.5:122b",
-    "support": "qwen3.5:122b",
-    "integration": "gemma3:27b",
-    "review": "qwen3.5:122b",
     "code": "qwen3.5:122b",
 }
 DEFAULT_MODEL = "qwen3.5:122b"
@@ -36,7 +30,7 @@ CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 INTEGRATION_CHECK_MODEL = "qwen3:4b"
 SIMPLE_TASK_TYPES = {"health_check"}
-CREATIVE_TASK_TYPES = {"content"}
+CREATIVE_TASK_TYPES: set[str] = set()  # Extenders can add task types that use competitive dispatch
 
 VARIANT_EMPHASES = ["creativity", "clarity", "engagement"]
 
