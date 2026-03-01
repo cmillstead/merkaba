@@ -129,3 +129,24 @@ class TestControlWebSocket:
             # Second message should also be a state update (heartbeat)
             msg2 = ws.receive_json()
             assert msg2["type"] == "state_update"
+
+
+@pytest.mark.e2e
+class TestControlModel:
+    def test_change_model(self, app_client):
+        client, app = app_client
+        resp = client.post("/api/control/model", json={
+            "agent": "merkaba-prime",
+            "model": "qwen3:8b",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["model"] == "qwen3:8b"
+
+    def test_change_model_invalid_agent(self, app_client):
+        client, app = app_client
+        resp = client.post("/api/control/model", json={
+            "agent": "nonexistent",
+            "model": "qwen3:8b",
+        })
+        assert resp.status_code == 404

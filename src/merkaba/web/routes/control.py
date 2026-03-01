@@ -4,7 +4,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,15 @@ router = APIRouter(tags=["control"])
 ws_router = APIRouter(tags=["control-ws"])
 
 HEARTBEAT_INTERVAL = 2  # seconds
+
+
+class ModelChangeRequest(BaseModel):
+    agent: str
+    model: str
+
+
+# Module-level state for model override (no DB needed for v1)
+_model_overrides: dict[str, str] = {}
 
 
 def _build_state(conn: HTTPConnection) -> dict:
@@ -105,7 +115,7 @@ def _build_state(conn: HTTPConnection) -> dict:
             "id": "merkaba-prime",
             "name": "Merkaba",
             "role": "supervisor",
-            "model": "qwen3.5:122b",
+            "model": _model_overrides.get("merkaba-prime", "qwen3.5:122b"),
             "status": "active",
             "tools": tools,
             "workers": [w["id"] for w in workers],
@@ -121,6 +131,15 @@ def _build_state(conn: HTTPConnection) -> dict:
 async def get_control_state(request: Request):
     """Full state snapshot for initial Mission Control load."""
     return _build_state(request)
+
+
+@router.post("/model")
+async def change_model(body: ModelChangeRequest):
+    """Change the model assigned to an agent."""
+    if body.agent != "merkaba-prime":
+        raise HTTPException(status_code=404, detail=f"Agent '{body.agent}' not found")
+    _model_overrides[body.agent] = body.model
+    return {"agent": body.agent, "model": body.model}
 
 
 @ws_router.websocket("/ws/control")
