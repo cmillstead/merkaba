@@ -120,9 +120,10 @@ def test_memory_add_business_then_store_facts(cli_runner):
 def test_memory_recall_keyword_match(cli_runner, seeded_memory):
     runner, app = cli_runner
 
-    # VectorMemory may fail to initialize (ChromaDB), but the CLI catches
-    # that and falls back to keyword-only search via MemoryRetrieval.
-    result = runner.invoke(app, ["memory", "recall", "cotton"])
+    # Force VectorMemory to fail so the CLI falls back to keyword-only search.
+    # Without this, a real ChromaDB + mocked ollama produces empty embeddings.
+    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("skip")):
+        result = runner.invoke(app, ["memory", "recall", "cotton"])
     assert result.exit_code == 0
     # The seeded data has "organic cotton" as a fact value
     assert "cotton" in result.output.lower()
@@ -134,7 +135,8 @@ def test_memory_recall_keyword_match(cli_runner, seeded_memory):
 
 def test_memory_recall_no_match(cli_runner, seeded_memory):
     runner, app = cli_runner
-    result = runner.invoke(app, ["memory", "recall", "xyznonexistent"])
+    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("skip")):
+        result = runner.invoke(app, ["memory", "recall", "xyznonexistent"])
     assert result.exit_code == 0
     # Should indicate nothing was found
     assert "don't have any information" in result.output.lower() or "no" in result.output.lower()
@@ -160,12 +162,14 @@ def test_memory_recall_business_scoped(cli_runner):
         store.close()
 
     # Recall scoped to bakery should find bread but not oil change
-    result = runner.invoke(app, ["memory", "recall", "specialty", "--business", str(biz1)])
+    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("skip")):
+        result = runner.invoke(app, ["memory", "recall", "specialty", "--business", str(biz1)])
     assert result.exit_code == 0
     assert "sourdough" in result.output.lower() or "bread" in result.output.lower()
 
     # Recall scoped to garage should find oil change but not bread
-    result = runner.invoke(app, ["memory", "recall", "specialty", "--business", str(biz2)])
+    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("skip")):
+        result = runner.invoke(app, ["memory", "recall", "specialty", "--business", str(biz2)])
     assert result.exit_code == 0
     assert "oil" in result.output.lower() or "change" in result.output.lower()
 

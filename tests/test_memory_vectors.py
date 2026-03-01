@@ -12,16 +12,53 @@ try:
 except ImportError:
     HAS_CHROMADB = False
 
-# These tests need the REAL ollama module (not a MagicMock).
-# The conftest installs a mock for unit tests. If ollama is mocked,
-# ChromaDB's OllamaEmbeddingFunction will get a MagicMock Client
-# and embeddings will be empty.
-_OLLAMA_IS_REAL = "ollama" in sys.modules and not isinstance(sys.modules["ollama"], MagicMock)
+
+def _ollama_is_reachable():
+    """Check if Ollama is running (runtime check, not import-time)."""
+    try:
+        import httpx
+        resp = httpx.get("http://localhost:11434/api/tags", timeout=2)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
 
 requires_chromadb_and_real_ollama = pytest.mark.skipif(
-    not HAS_CHROMADB or not _OLLAMA_IS_REAL,
-    reason="Requires chromadb and real (non-mocked) ollama module with running Ollama",
+    not HAS_CHROMADB,
+    reason="Requires chromadb",
 )
+
+
+@pytest.fixture(autouse=True)
+def _real_ollama_or_skip():
+    """Swap the mocked ollama for the real module, or skip if unavailable."""
+    if not _ollama_is_reachable():
+        pytest.skip("Ollama not reachable at localhost:11434")
+
+    # Save the mock and import the real module
+    mock = sys.modules.get("ollama")
+    if mock and isinstance(mock, MagicMock):
+        del sys.modules["ollama"]
+        # Also clear submodule caches so VectorMemory picks up the real client
+        for key in list(sys.modules):
+            if key.startswith("ollama."):
+                del sys.modules[key]
+
+    try:
+        import importlib
+        real_ollama = importlib.import_module("ollama")
+    except ImportError:
+        pytest.skip("Real ollama module not installed")
+
+    yield
+
+    # Restore the mock so other tests are unaffected
+    if mock is not None:
+        sys.modules["ollama"] = mock
+        # Clear real ollama submodule caches to prevent leakage
+        for key in list(sys.modules):
+            if key.startswith("ollama."):
+                del sys.modules[key]
 
 
 @requires_chromadb_and_real_ollama

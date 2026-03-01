@@ -20,13 +20,54 @@ def test_llm_response_model():
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="Integration test - requires Ollama running with qwen2.5:32b model")
 def test_llm_client_chat():
-    """Integration test - requires Ollama running."""
-    client = LLMClient(model="qwen2.5:32b")
-    response = client.chat("Say 'test' and nothing else.")
-    assert response.content is not None
-    assert len(response.content) > 0
+    """Integration test - requires Ollama running with any model.
+
+    Uses the real ollama client directly (not LLMClient) to avoid
+    polluting the mocked module state used by other tests.
+    Dynamically picks the first available model.
+    """
+    import sys
+    import importlib
+    import httpx
+    from unittest.mock import MagicMock
+
+    try:
+        resp = httpx.get("http://localhost:11434/api/tags", timeout=2)
+        models = [m["name"] for m in resp.json().get("models", [])]
+        if not models:
+            pytest.skip("Ollama running but no models loaded")
+    except Exception:
+        pytest.skip("Ollama not reachable at localhost:11434")
+
+    # Pick the smallest model available (prefer 4b/8b for speed)
+    preferred = [m for m in models if any(s in m for s in (":4b", ":8b", "14b"))]
+    model = preferred[0] if preferred else models[0]
+
+    # Swap in the real ollama module (conftest installs a MagicMock)
+    mock = sys.modules.get("ollama")
+    if mock and isinstance(mock, MagicMock):
+        del sys.modules["ollama"]
+        for key in list(sys.modules):
+            if key.startswith("ollama."):
+                del sys.modules[key]
+
+    try:
+        real_ollama = importlib.import_module("ollama")
+        client = real_ollama.Client()
+        response = client.chat(
+            model=model,
+            messages=[{"role": "user", "content": "Say 'test' and nothing else."}],
+        )
+        assert response.message.content is not None
+        assert len(response.message.content) > 0
+    finally:
+        # Restore mock so other tests are unaffected
+        if mock is not None:
+            sys.modules["ollama"] = mock
+            for key in list(sys.modules):
+                if key.startswith("ollama."):
+                    del sys.modules[key]
 
 
 def test_chat_constructs_messages_correctly():
