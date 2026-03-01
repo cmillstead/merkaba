@@ -413,3 +413,47 @@ def test_keyword_backfill_deduplicates(semantic_retrieval):
     # Should appear exactly once, not duplicated by keyword backfill
     assert len(fact_results) == 1
     assert fact_results[0]["value"] == "9.99"
+
+
+# ------------------------------------------------------------------
+# Relationship recall tests
+# ------------------------------------------------------------------
+
+
+def test_recall_includes_relationships(retrieval):
+    """recall() returns relationship results when entities match."""
+    store = retrieval.store
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+
+    results = retrieval.recall("Alice", business_id=bid)
+    rel_results = [r for r in results if r["type"] == "relationship"]
+    assert len(rel_results) >= 1
+    assert rel_results[0]["entity_id"] == "Alice"
+    assert rel_results[0]["related_entity"] == "auth team"
+
+
+def test_recall_relationship_multi_hop(retrieval):
+    """recall() traverses relationships to find connected entities."""
+    store = retrieval.store
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+    store.add_relationship(bid, "team", "auth team", "handles", "permissions")
+
+    results = retrieval.recall("Alice permissions", business_id=bid)
+    rel_results = [r for r in results if r["type"] == "relationship"]
+    related = {r["related_entity"] for r in rel_results}
+    assert "auth team" in related
+    assert "permissions" in related
+
+
+def test_recall_no_relationship_noise(retrieval):
+    """recall() does not return relationships when no entities match."""
+    store = retrieval.store
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+    retrieval.remember(bid, "pricing", "avg", "4.99")
+
+    results = retrieval.recall("price", business_id=bid)
+    rel_results = [r for r in results if r["type"] == "relationship"]
+    assert len(rel_results) == 0

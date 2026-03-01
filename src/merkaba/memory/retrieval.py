@@ -63,6 +63,10 @@ class MemoryRetrieval:
         else:
             results = self._recall_keyword(query, business_id, effective_limit)
 
+        # Relationship traversal
+        rel_results = self._recall_relationships(query, business_id)
+        results.extend(rel_results)
+
         # Append recent episodes
         episodes = self._recall_episodes(business_id)
         results.extend(episodes)
@@ -185,6 +189,36 @@ class MemoryRetrieval:
         return results[:limit]
 
     # ------------------------------------------------------------------
+    # Relationship traversal
+    # ------------------------------------------------------------------
+
+    def _recall_relationships(
+        self, query: str, business_id: int | None
+    ) -> list[dict[str, Any]]:
+        """Find entities mentioned in query and traverse their relationships."""
+        matched_entities = self.store.find_entities(query, business_id)
+        if not matched_entities:
+            return []
+
+        seen = set()
+        results = []
+        for entity in matched_entities:
+            rels = self.store.traverse(entity, depth=2, business_id=business_id)
+            for rel in rels:
+                rel_key = (rel["entity_id"], rel["relation"], rel["related_entity"])
+                if rel_key not in seen:
+                    seen.add(rel_key)
+                    results.append({
+                        "type": "relationship",
+                        "entity_id": rel["entity_id"],
+                        "relation": rel["relation"],
+                        "related_entity": rel["related_entity"],
+                        "entity_type": rel.get("entity_type", ""),
+                        "id": rel["id"],
+                    })
+        return results
+
+    # ------------------------------------------------------------------
     # Episode search
     # ------------------------------------------------------------------
 
@@ -238,6 +272,8 @@ class MemoryRetrieval:
             return r.get("insight", "")
         elif r["type"] == "episode":
             return f"[{r.get('task_type', '')}] {r.get('summary', '')} ({r.get('outcome', '')})"
+        elif r["type"] == "relationship":
+            return f"{r.get('entity_id', '')} {r.get('relation', '')} {r.get('related_entity', '')}"
         return ""
 
     def _apply_token_budget(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
