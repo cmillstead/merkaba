@@ -1,20 +1,523 @@
-# Merkaba
+# Merkaba — Local AI Agent Framework
 
-Local AI agent framework — build autonomous agents with persistent memory, tool use, and multi-model routing.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
+[![Tests: 1455+](https://img.shields.io/badge/Tests-1455%2B-green.svg)](tests/)
 
-## Installation
+Build autonomous AI agents with persistent memory, tool use, multi-model routing, and graduated autonomy. Local-first with optional cloud fallback. No vendor lock-in.
+
+## Why Merkaba?
+
+Most AI agent frameworks are cloud-first wrappers around API calls. Merkaba is different:
+
+- **Local-first** — All inference runs on local models via Ollama. Your data never leaves your machine. Cloud providers (OpenAI, Anthropic) are optional fallbacks, not requirements.
+- **Graduated autonomy** — Agents start with full human approval and earn trust over time. The approval system tracks history and promotes tools that consistently get approved.
+- **Persistent memory** — SQLite + optional ChromaDB vector search. Agents remember context across sessions, with memory lifecycle management (decay, consolidation, contradiction detection).
+- **Extensible by design** — Register custom workers and adapters from private packages. Build your business logic separately, keep it private, and plug it into the framework.
+
+## Quickstart
 
 ```bash
+# 1. Install Ollama (or use cloud providers)
+brew install ollama && ollama serve    # macOS
+# See https://ollama.com for Linux/Windows
+
+# 2. Pull a model
+ollama pull qwen3:8b
+
+# 3. Install Merkaba
 pip install merkaba
+
+# 4. Chat
+merkaba chat "Hello, what can you do?"
 ```
+
+## Features
+
+- **Persistent memory** — SQLite + optional ChromaDB vector search, auto-injected into agent context
+- **Model routing** — Input classifier routes simple queries to small models, complex to large
+- **Multi-provider** — Ollama (local), OpenAI, Anthropic, with configurable fallback chains
+- **Security layers** — Input classifier, permission tiers, argument validation, memory sanitization
+- **Approval workflows** — Human-in-the-loop via Telegram or web UI, with optional TOTP 2FA
+- **Task orchestration** — Supervisor dispatches to specialized workers with heartbeat monitoring
+- **Web dashboard** — React SPA with real-time chat, task management, and analytics
+- **Prompt personalization** — Per-business SOUL.md/USER.md personality and context files
+- **Code agent** — Generates code from specs, verifies with linting, auto-repairs on failure
+- **Integrations** — Email, Stripe, Slack, GitHub, Apple Calendar (+ bring your own via adapters)
+- **Plugin system** — Skills, commands, hooks, and agents with sandboxed execution
+- **Conversation encryption** — Optional Fernet encryption for stored conversations
+
+## Architecture
+
+```
+                         ┌─────────────────────┐
+                         │      User Input      │
+                         └──────────┬──────────┘
+                                    │
+                         ┌──────────▼──────────┐
+                         │   Input Classifier   │  safety + complexity
+                         │   (small model)      │  routing
+                         └──────────┬──────────┘
+                            simple  │  complex
+                       ┌────────────┼────────────┐
+                       ▼                         ▼
+                ┌─────────────┐         ┌─────────────┐
+                │  Small LLM  │         │  Large LLM  │
+                │  (no tools) │         │  (+ tools)  │
+                └─────────────┘         └──────┬──────┘
+                                               │
+                                    ┌──────────▼──────────┐
+                                    │    Tool Execution    │
+                                    │  files, shell, web,  │
+                                    │  memory, search ...  │
+                                    └──────────┬──────────┘
+                                               │
+                     ┌─────────────────────────┼─────────────────────────┐
+                     ▼                         ▼                         ▼
+              ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+              │   Memory    │         │  Approvals  │         │   Workers   │
+              │  (SQLite +  │         │ (Telegram / │         │  (code +    │
+              │  ChromaDB)  │         │   Web UI)   │         │  your own)  │
+              └─────────────┘         └─────────────┘         └─────────────┘
+```
+
+<details>
+<summary>Project structure</summary>
+
+```
+merkaba/
+├── agent.py             # Memory-aware agent with model routing
+├── llm.py               # LLM client with retry + fallback chains
+├── llm_providers/       # Provider adapters (Ollama, Anthropic, OpenAI)
+├── cli.py               # Typer CLI (all imports lazy)
+├── memory/              # Persistent memory (store, retrieval, vectors, lifecycle)
+├── orchestration/       # Supervisor, workers, scheduler, task queue
+├── approval/            # Action queue, graduation, Telegram approval UI
+├── security/            # Input classifier, validation, encryption, permissions
+├── verification/        # Deterministic verifier (lint/type-check after writes)
+├── config/              # PromptLoader (SOUL.md/USER.md per-business fallback)
+├── integrations/        # Adapter base + email, Stripe, Slack, GitHub, Calendar
+├── tools/builtin/       # Agent tools (files, shell, search, web, memory)
+├── web/                 # Mission Control (FastAPI + React SPA)
+│   ├── app.py           # App factory
+│   ├── routes/          # REST + WebSocket endpoints
+│   └── static/          # Built React frontend
+├── telegram/            # Telegram bot interface
+├── observability/       # Token tracking, tracing, audit trail
+├── plugins/             # Plugin support with sandboxing
+└── examples/            # Extension examples (custom worker, adapter)
+```
+
+</details>
+
+## CLI Reference
+
+```bash
+merkaba chat "Hello"             # Single message
+merkaba chat                     # Interactive mode
+merkaba web                      # Start web dashboard on port 5173
+merkaba memory status            # Show memory stats
+merkaba memory recall "topic"    # Search memories
+```
+
+<details>
+<summary>Full CLI reference</summary>
+
+### Chat
+
+```bash
+merkaba chat "Hello"                     # Single message
+merkaba chat                             # Interactive mode
+merkaba chat -m gemma3:27b "Hi"          # Use specific model
+```
+
+### Mission Control (Web UI)
+
+```bash
+merkaba web                              # Start web dashboard on port 5173
+merkaba web --port 8080                  # Custom port
+```
+
+Provides a React dashboard with:
+- System status, task queue, and approval management
+- Business overview with per-business switcher
+- Per-business config editing (SOUL.md/USER.md prompt files)
+- Cross-business analytics (tasks, approvals, memory)
+- Memory browser with search
+- Real-time chat with file upload and tool streaming (WebSocket)
+- Chat history with session management
+
+### Memory
+
+```bash
+merkaba memory status                    # Show memory stats
+merkaba memory recall "topic"            # Search memories
+merkaba memory businesses                # List known businesses
+merkaba memory decay                     # Decay stale memories
+merkaba memory consolidate               # LLM-summarize related clusters
+merkaba memory episodes                  # View episodic memory
+```
+
+### Scheduler
+
+```bash
+merkaba scheduler run                    # Execute one scheduler tick
+merkaba scheduler start                  # Run scheduler loop
+merkaba scheduler workers                # Show registered workers
+merkaba scheduler install                # Install macOS launchd agent
+merkaba scheduler remove                 # Remove launchd agent
+```
+
+### Approvals
+
+```bash
+merkaba approval list                    # Show pending approvals
+merkaba approval approve <id>            # Approve an action
+merkaba approval deny <id> --reason "…"  # Deny with reason
+merkaba approval stats                   # Approval statistics
+merkaba approval graduation              # Show tool graduation status
+```
+
+### Business Management
+
+```bash
+merkaba business add "My Service"        # Register a business
+merkaba business list                    # List businesses
+merkaba business dashboard "My Service"  # Business dashboard
+```
+
+### Tasks
+
+```bash
+merkaba tasks list                       # Show task queue
+merkaba tasks add "Task name"            # Add a task
+merkaba tasks runs                       # Show recent task runs
+```
+
+### Telegram Bot
+
+```bash
+merkaba telegram setup                   # Configure bot token and user ID
+merkaba telegram status                  # Check bot configuration
+merkaba serve                            # Start with Telegram bot
+```
+
+### Code Agent
+
+```bash
+merkaba code run "Add validation" --target src/user.py
+merkaba code run "Build a parser" --explore src/ --high-stakes
+merkaba code review src/user.py --criteria "Check error handling"
+merkaba code explore src/orchestration/
+```
+
+### Model Management
+
+```bash
+merkaba models list                      # Show task_type → model mapping
+merkaba models check                     # Check loaded models + fallback coverage
+merkaba models set <task_type> <model>   # Override model for a task type
+merkaba models providers                 # Show cloud provider status
+```
+
+### Integrations
+
+```bash
+merkaba integrations list                # Show registered adapters
+merkaba integrations test <name>         # Test adapter connectivity
+merkaba integrations setup <name>        # Configure adapter credentials
+```
+
+### Backup & Restore
+
+```bash
+merkaba backup run                       # Backup all databases and config
+merkaba backup list                      # List available backups
+merkaba backup restore <ts> <db>         # Restore from backup
+```
+
+### Prompt Config
+
+```bash
+merkaba config show-prompt               # Show resolved prompt chain
+merkaba config edit-soul                 # Edit global SOUL.md
+merkaba config edit-user --business 1    # Edit business-specific USER.md
+```
+
+### Security
+
+```bash
+merkaba security setup-2fa              # Generate TOTP secret
+merkaba security disable-2fa --yes      # Remove TOTP secret
+merkaba security status                 # Show 2FA + rate limit status
+merkaba security enable-encryption      # Enable conversation encryption
+merkaba security disable-encryption     # Disable encryption
+```
+
+### Plugins
+
+```bash
+merkaba plugins list                     # List installed plugins
+merkaba plugins import <path>            # Import a plugin
+merkaba plugins inspect <name>           # Inspect plugin details
+merkaba commands list                    # List plugin commands
+```
+
+### Observability
+
+```bash
+merkaba observe tokens                   # Token usage stats
+merkaba observe audit                    # Audit trail
+merkaba observe trace                    # Tracing logs
+```
+
+</details>
+
+## Extending Merkaba
+
+Merkaba is designed to be extended by private packages. The two main extension points:
+
+### Custom Workers
+
+Workers execute tasks dispatched by the supervisor. Subclass `Worker` and register for a task type:
+
+```python
+# my_package/workers/analytics.py
+from merkaba.orchestration.workers import Worker, WorkerResult, register_worker
+
+class AnalyticsWorker(Worker):
+    def execute(self, task: dict) -> WorkerResult:
+        prompt = task.get("prompt", "")
+        response = self._ask_llm(prompt)
+        return WorkerResult(success=True, output={"response": response})
+
+register_worker("analytics", AnalyticsWorker)
+```
+
+### Custom Adapters
+
+Adapters connect to external services. Subclass `IntegrationAdapter` and register:
+
+```python
+# my_package/adapters/crm.py
+from merkaba.integrations.base import IntegrationAdapter, register_adapter
+
+class CRMAdapter(IntegrationAdapter):
+    def connect(self) -> bool:
+        self._connected = True
+        return True
+
+    def execute(self, action: str, params: dict | None = None) -> dict:
+        return {"status": "ok", "action": action}
+
+    def health_check(self) -> dict:
+        return {"healthy": self.is_connected}
+
+register_adapter("crm", CRMAdapter)
+```
+
+See [`src/merkaba/examples/`](src/merkaba/examples/) for complete examples.
+
+## Configuration
+
+Merkaba stores all data in `~/.merkaba/`:
+
+```
+~/.merkaba/
+├── config.json      # API keys, model overrides, cloud providers
+├── SOUL.md          # Global agent personality/behavior
+├── USER.md          # Global owner context
+├── memory.db        # Businesses, facts, decisions, relationships, learnings
+├── tasks.db         # Task definitions, schedules, run history
+├── actions.db       # Approval queue, approval stats
+├── businesses/      # Per-business overrides
+│   └── {id}/
+│       ├── SOUL.md  # Business-specific personality
+│       └── USER.md  # Business-specific owner context
+├── conversations/   # JSON session logs
+├── memory_vectors/  # ChromaDB collections (optional)
+├── backups/         # Timestamped database backups
+├── plugins/         # Locally imported plugins
+└── logs/            # Scheduler logs
+```
+
+## Setup Scenarios
+
+Merkaba supports local-only, cloud-only, and hybrid configurations. Choose what fits your hardware and privacy requirements.
+
+### Fully Local (Ollama)
+
+Everything runs on your machine. No API keys, no cloud, no data leaving your network.
+
+```bash
+# Install Ollama
+brew install ollama && ollama serve          # macOS
+curl -fsSL https://ollama.com/install.sh | sh  # Linux
+
+# Pull models (pick one setup)
+ollama pull qwen3:8b                         # Minimum: 8GB VRAM, basic agent
+ollama pull qwen3:8b && ollama pull qwen3:4b # Better: adds classifier routing
+ollama pull qwen3.5:122b && ollama pull qwen3:8b && ollama pull qwen3:4b  # Full: 80GB+ VRAM
+
+# No config needed — defaults to Ollama
+merkaba chat "Hello"
+```
+
+**Hardware requirements:**
+
+| Setup | VRAM | Models | Experience |
+|-------|------|--------|------------|
+| Minimum | 6 GB | `qwen3:8b` | Basic chat, no routing |
+| Recommended | 12 GB | `qwen3:8b` + `qwen3:4b` | Classifier routing, fast |
+| Full | 80 GB+ | `qwen3.5:122b` + `qwen3:8b` + `qwen3:4b` | Best quality, all features |
+| Mac Studio | 64-512 GB unified | Any combination | Unified memory handles large models |
+
+### Cloud Only (no GPU needed)
+
+Run entirely on cloud APIs. No local GPU required.
+
+```bash
+pip install merkaba[cloud]
+```
+
+`~/.merkaba/config.json`:
+```json
+{
+  "cloud_providers": {
+    "anthropic": {"api_key": "sk-ant-..."}
+  },
+  "models": {
+    "task_types": {
+      "complex": "anthropic:claude-sonnet-4-20250514",
+      "simple": "anthropic:claude-haiku-4-5-20251001",
+      "classifier": "anthropic:claude-haiku-4-5-20251001"
+    }
+  }
+}
+```
+
+```bash
+merkaba chat "Hello"   # Uses Anthropic
+```
+
+Or with OpenAI:
+```json
+{
+  "cloud_providers": {
+    "openai": {"api_key": "sk-..."}
+  },
+  "models": {
+    "task_types": {
+      "complex": "openai:gpt-4o",
+      "simple": "openai:gpt-4o-mini",
+      "classifier": "openai:gpt-4o-mini"
+    }
+  }
+}
+```
+
+API keys can also be set via environment variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
+
+### Hybrid (Local + Cloud Fallback)
+
+Use local models by default, fall back to cloud when they're unavailable or overloaded.
+
+```bash
+pip install merkaba[cloud]
+ollama pull qwen3.5:122b && ollama pull qwen3:8b && ollama pull qwen3:4b
+```
+
+`~/.merkaba/config.json`:
+```json
+{
+  "cloud_providers": {
+    "anthropic": {"api_key": "sk-ant-..."},
+    "openai": {"api_key": "sk-..."}
+  },
+  "models": {
+    "fallback_chains": {
+      "complex": {
+        "primary": "qwen3.5:122b",
+        "fallbacks": ["qwen3:8b", "anthropic:claude-sonnet-4-20250514"]
+      },
+      "simple": {
+        "primary": "qwen3:8b",
+        "fallbacks": ["openai:gpt-4o-mini"]
+      }
+    }
+  }
+}
+```
+
+If Ollama goes down or a model is unloaded, merkaba automatically tries the next model in the chain.
+
+### OpenRouter (Access Many Providers)
+
+Use [OpenRouter](https://openrouter.ai) to access models from many providers through a single API key.
+
+```bash
+pip install merkaba[openai]   # OpenRouter uses the OpenAI-compatible API
+```
+
+```json
+{
+  "cloud_providers": {
+    "openrouter": {
+      "api_key": "sk-or-...",
+      "base_url": "https://openrouter.ai/api/v1"
+    }
+  }
+}
+```
+
+```bash
+merkaba chat -m openrouter:anthropic/claude-sonnet-4-20250514 "Hello"
+merkaba chat -m openrouter:google/gemini-2.5-pro "Hello"
+```
+
+### Per-Task Model Routing
+
+Assign different models to different task types:
+
+```json
+{
+  "models": {
+    "task_types": {
+      "code": "qwen3.5:122b",
+      "health_check": "phi4:14b",
+      "complex": "anthropic:claude-sonnet-4-20250514",
+      "simple": "qwen3:8b",
+      "classifier": "qwen3:4b"
+    }
+  }
+}
+```
+
+```bash
+merkaba models list      # Show current routing
+merkaba models set code anthropic:claude-sonnet-4-20250514  # Change at runtime
+```
+
+## Security
+
+Merkaba has 13 security layers including input classification, permission tiers, approval workflows with optional TOTP 2FA, conversation encryption, memory sanitization, and plugin sandboxing.
+
+See [SECURITY.md](SECURITY.md) for the full security model.
+
+## Requirements
+
+- Python 3.11+
+- [Ollama](https://ollama.com) for local inference (or configure cloud providers)
+- Node.js 18+ to rebuild web frontend (optional — pre-built SPA included)
 
 ## Development
 
 ```bash
+git clone https://github.com/your-username/merkaba.git && cd merkaba
 pip install -e ".[dev]"
-pytest tests/
+pytest  # 1455+ tests
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)
