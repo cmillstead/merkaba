@@ -499,6 +499,16 @@ merkaba models list      # Show current routing
 merkaba models set code anthropic:claude-sonnet-4-20250514  # Change at runtime
 ```
 
+## Third-Party Integrations
+
+Merkaba integrates with open source tools to extend agent capabilities. These are optional — the framework works fully without them.
+
+| Tool | Purpose | License |
+|------|---------|---------|
+| [QMD](https://github.com/tobi/qmd) | On-device document search (hybrid BM25 + vector + re-ranking) | MIT |
+
+See [docs/integrations/](docs/integrations/) for setup guides.
+
 ## Security
 
 Merkaba has 13 security layers including input classification, permission tiers, approval workflows with optional TOTP 2FA, conversation encryption, memory sanitization, and plugin sandboxing.
