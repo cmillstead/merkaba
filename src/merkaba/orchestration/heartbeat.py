@@ -1,0 +1,95 @@
+# src/friday/orchestration/heartbeat.py
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+from friday.orchestration.queue import TaskQueue
+
+logger = logging.getLogger(__name__)
+
+TRIAGE_PROMPT = """You are Friday's heartbeat monitor. Analyze the current state and decide what to do.
+
+Recent task runs:
+{recent_runs}
+
+Task stats:
+{stats}
+
+Failed tasks:
+{failed_tasks}
+
+Respond with exactly one of:
+- IDLE (nothing needs attention)
+- INVESTIGATE <topic> (something looks off, needs investigation)
+- ACT <action> (take a specific action)
+
+Response:"""
+
+
+@dataclass
+class Heartbeat:
+    """Light model triage — runs periodically to check if Friday needs to act."""
+
+    queue: TaskQueue
+    model: str = "qwen3:4b"
+
+    def check(self) -> str:
+        """Run heartbeat triage. Returns: IDLE | INVESTIGATE <topic> | ACT <action>"""
+        context = self._gather_context()
+        prompt = TRIAGE_PROMPT.format(**context)
+
+        try:
+            import ollama
+
+            response = ollama.chat(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response["message"]["content"].strip()
+            return self._parse_response(raw)
+        except Exception as e:
+            logger.error("Heartbeat model call failed: %s", e)
+            return "IDLE"
+
+    def _gather_context(self) -> dict[str, str]:
+        stats = self.queue.stats()
+        failed = self.queue.list_tasks(status="failed")
+        failed_summary = "\n".join(
+            f"- {t['name']} (id={t['id']}, type={t['task_type']})" for t in failed
+        ) or "None"
+
+        # Get recent runs across all tasks
+        recent_runs = self._get_recent_runs(limit=10)
+        runs_summary = "\n".join(
+            f"- task_id={r['task_id']} status={r['status']} at={r['started_at']}"
+            for r in recent_runs
+        ) or "None"
+
+        stats_summary = ", ".join(f"{k}={v}" for k, v in stats.items())
+
+        return {
+            "recent_runs": runs_summary,
+            "stats": stats_summary,
+            "failed_tasks": failed_summary,
+        }
+
+    def _get_recent_runs(self, limit: int = 10) -> list[dict[str, Any]]:
+        cursor = self.queue._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM task_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def _parse_response(self, raw: str) -> str:
+        # Extract the first line that starts with IDLE, INVESTIGATE, or ACT
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("IDLE"):
+                return "IDLE"
+            if line.startswith("INVESTIGATE"):
+                return line
+            if line.startswith("ACT"):
+                return line
+        logger.warning("Unparseable heartbeat response: %s", raw)
+        return "IDLE"
