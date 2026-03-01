@@ -376,3 +376,83 @@ def test_parse_episode_json_malformed(store):
     result = store._parse_episode_json(malformed)
     assert result["key_decisions"] == []
     assert result["tags"] == []
+
+
+# --- Traversal ---
+
+
+def test_traverse_single_hop(store):
+    """traverse returns direct relationships."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+    store.add_relationship(bid, "person", "Bob", "manages", "billing team")
+
+    results = store.traverse("Alice", depth=1, business_id=bid)
+    assert len(results) == 1
+    assert results[0]["related_entity"] == "auth team"
+
+
+def test_traverse_multi_hop(store):
+    """traverse follows edges up to depth."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+    store.add_relationship(bid, "team", "auth team", "handles", "permissions")
+
+    results = store.traverse("Alice", depth=2, business_id=bid)
+    entities = {r["related_entity"] for r in results}
+    assert "auth team" in entities
+    assert "permissions" in entities
+
+
+def test_traverse_bidirectional(store):
+    """traverse follows edges in both directions."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+
+    results = store.traverse("auth team", depth=1, business_id=bid)
+    assert len(results) >= 1
+    entity_ids = {r["entity_id"] for r in results}
+    assert "Alice" in entity_ids
+
+
+def test_traverse_respects_depth_limit(store):
+    """traverse stops at depth limit."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "a", "A", "links", "B")
+    store.add_relationship(bid, "b", "B", "links", "C")
+    store.add_relationship(bid, "c", "C", "links", "D")
+
+    results = store.traverse("A", depth=1, business_id=bid)
+    entities = {r["related_entity"] for r in results}
+    assert "B" in entities
+    assert "C" not in entities
+
+
+def test_traverse_no_cycles(store):
+    """traverse does not loop on circular references."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "a", "A", "links", "B")
+    store.add_relationship(bid, "b", "B", "links", "A")
+
+    results = store.traverse("A", depth=5, business_id=bid)
+    assert len(results) <= 4
+
+
+def test_find_entities_matches_query(store):
+    """find_entities returns entity names that appear in query."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+    store.add_relationship(bid, "person", "Bob", "manages", "billing")
+
+    matches = store.find_entities("who does Alice manage", business_id=bid)
+    assert "Alice" in matches
+    assert "Bob" not in matches
+
+
+def test_find_entities_empty_when_no_match(store):
+    """find_entities returns empty list when no entities match."""
+    bid = store.add_business("Corp", "enterprise")
+    store.add_relationship(bid, "person", "Alice", "manages", "auth team")
+
+    matches = store.find_entities("what is the weather", business_id=bid)
+    assert matches == []

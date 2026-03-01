@@ -352,6 +352,87 @@ class MemoryStore:
             rows.append(d)
         return rows
 
+    # --- Traversal ---
+
+    def traverse(
+        self, entity: str, depth: int = 2, business_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """BFS traversal over relationships table starting from entity.
+
+        Follows edges bidirectionally up to depth hops.
+        Returns flat list of relationship dicts encountered.
+        """
+        visited_entities: set[str] = {entity.lower()}
+        result: list[dict[str, Any]] = []
+        frontier: set[str] = {entity}
+
+        for _ in range(depth):
+            if not frontier:
+                break
+            next_frontier: set[str] = set()
+            for current in frontier:
+                rels = self._get_edges(current, business_id)
+                for rel in rels:
+                    if rel["entity_id"].lower() == current.lower():
+                        other = rel["related_entity"]
+                    else:
+                        other = rel["entity_id"]
+
+                    result.append(rel)
+                    if other.lower() not in visited_entities:
+                        visited_entities.add(other.lower())
+                        next_frontier.add(other)
+            frontier = next_frontier
+
+        return result
+
+    def _get_edges(
+        self, entity: str, business_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Get all relationships where entity appears as either endpoint."""
+        cursor = self._conn.cursor()
+        if business_id is not None:
+            cursor.execute(
+                "SELECT * FROM relationships WHERE business_id = ? AND (entity_id = ? COLLATE NOCASE OR related_entity = ? COLLATE NOCASE)",
+                (business_id, entity, entity),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM relationships WHERE entity_id = ? COLLATE NOCASE OR related_entity = ? COLLATE NOCASE",
+                (entity, entity),
+            )
+        rows = []
+        for row in cursor.fetchall():
+            d = dict(row)
+            if d["metadata"]:
+                try:
+                    d["metadata"] = json.loads(d["metadata"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            rows.append(d)
+        return rows
+
+    def find_entities(
+        self, query: str, business_id: int | None = None
+    ) -> list[str]:
+        """Find known entity names that appear as substrings in the query."""
+        cursor = self._conn.cursor()
+        if business_id is not None:
+            cursor.execute(
+                "SELECT DISTINCT entity_id FROM relationships WHERE business_id = ? "
+                "UNION SELECT DISTINCT related_entity FROM relationships WHERE business_id = ?",
+                (business_id, business_id),
+            )
+        else:
+            cursor.execute(
+                "SELECT DISTINCT entity_id FROM relationships "
+                "UNION SELECT DISTINCT related_entity FROM relationships"
+            )
+        all_entities = [row[0] for row in cursor.fetchall()]
+
+        query_lower = query.lower()
+        return [e for e in all_entities if e.lower() in query_lower]
+
     # --- State CRUD ---
 
     def set_state(
