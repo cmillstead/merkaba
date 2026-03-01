@@ -150,3 +150,45 @@ class TestControlModel:
             "model": "qwen3:8b",
         })
         assert resp.status_code == 404
+
+
+@pytest.mark.e2e
+class TestControlIntegration:
+    """Integration tests verifying model changes flow through state and WebSocket."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_model_overrides(self):
+        """Clear module-level model overrides so each test starts from defaults."""
+        from merkaba.web.routes.control import _model_overrides
+        _model_overrides.clear()
+        yield
+        _model_overrides.clear()
+
+    def test_state_then_model_change_reflects_in_state(self, app_client):
+        client, app = app_client
+        # Get initial state — should use the default model
+        resp = client.get("/api/control/state")
+        initial_model = resp.json()["agents"][0]["model"]
+        assert initial_model == "qwen3.5:122b"
+
+        # Change model
+        client.post("/api/control/model", json={
+            "agent": "merkaba-prime",
+            "model": "qwen3:8b",
+        })
+
+        # Verify state reflects the change
+        resp = client.get("/api/control/state")
+        assert resp.json()["agents"][0]["model"] == "qwen3:8b"
+
+    def test_ws_reflects_model_change(self, app_client):
+        client, app = app_client
+        # Change model first
+        client.post("/api/control/model", json={
+            "agent": "merkaba-prime",
+            "model": "qwen3:8b",
+        })
+        # WebSocket should show updated model
+        with client.websocket_connect("/ws/control") as ws:
+            msg = ws.receive_json()
+            assert msg["agents"][0]["model"] == "qwen3:8b"
