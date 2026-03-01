@@ -10,7 +10,7 @@ type View =
   | { mode: 'harness'; nodeId: string; nodeType: 'agent' | 'worker' }
 
 export default function MissionControl() {
-  const { state, connected, sendCommand } = useControlSocket()
+  const { state, connected } = useControlSocket()
   const [view, setView] = useState<View>({ mode: 'constellation' })
 
   const handleSelectNode = useCallback((nodeId: string, nodeType: 'agent' | 'worker') => {
@@ -22,14 +22,12 @@ export default function MissionControl() {
   }, [])
 
   const handleModelChange = useCallback((model: string) => {
-    sendCommand({ type: 'change_model', agent: 'merkaba-prime', model })
-    // Also update via REST for persistence
     fetch('/api/control/model', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent: 'merkaba-prime', model }),
     })
-  }, [sendCommand])
+  }, [])
 
   const agent = view.mode === 'harness'
     ? state.agents.find(a => a.id === view.nodeId) ?? null

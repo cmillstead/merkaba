@@ -23,7 +23,8 @@ class ModelChangeRequest(BaseModel):
     model: str
 
 
-# Module-level state for model override (no DB needed for v1)
+# v1: Display-only model override, not persisted across restarts.
+# Does not affect actual agent model routing — that requires config changes.
 _model_overrides: dict[str, str] = {}
 
 
