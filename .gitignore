@@ -67,5 +67,18 @@ Thumbs.db
 # Logs
 *.log
 
-# Friday/Merkaba data
+# Merkaba data
 .merkaba/
+
+# Business plugins (private — never commit to public repo)
+src/merkaba/listing/
+src/merkaba/research/
+src/merkaba/generation/
+src/merkaba/integrations/etsy_adapter.py
+src/merkaba/integrations/twitter_adapter.py
+src/merkaba/orchestration/ecommerce_worker.py
+src/merkaba/orchestration/content_worker.py
+src/merkaba/orchestration/integration_worker.py
+src/merkaba/orchestration/support_worker.py
+src/merkaba/orchestration/review_worker.py
+src/merkaba/telegram/briefing.py
