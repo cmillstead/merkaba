@@ -9,18 +9,30 @@ from pathlib import Path
 import frontmatter
 
 
-# Patterns that may indicate dangerous content in skills
-# Note: These are regex patterns used to DETECT dangerous code, not execute it
+# Patterns that may indicate dangerous content in skills or generated code.
+# Note: These are regex patterns used to DETECT dangerous code, not execute it.
+# Adapted from Claude Code security-guidance plugin (Anthropic, MIT license).
 DANGEROUS_SKILL_PATTERNS = [
+    # Shell injection
     r"curl.*\|.*sh",      # curl pipe to shell
     r"wget.*\|.*sh",      # wget pipe to shell
+    r"bash\s+-c",         # bash -c execution
+    # Python code execution
     r"eval\s*\(",         # eval calls
     r"exec\s*\(",         # exec calls
     r"subprocess",        # subprocess module
-    r"os\.system",        # os.system calls (pattern to detect, not usage)
-    r"bash\s+-c",         # bash -c execution
+    r"os\.system",        # os.system calls
+    # Deserialization
+    r"pickle\.loads?\(",  # pickle deserialization (arbitrary code execution)
+    # XSS vectors
     r"<script>",          # embedded scripts
     r"javascript:",       # javascript protocol
+    r"\.innerHTML\s*=",   # innerHTML assignment
+    r"dangerouslySetInnerHTML",  # React unsafe HTML
+    r"document\.write\s*\(",    # document.write
+    # JavaScript code injection
+    r"new\s+Function\s*\(",     # dynamic Function constructor
+    r"child_process\.exec\s*\(",  # Node.js shell exec (use execFile instead)
 ]
 
 
