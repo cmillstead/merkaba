@@ -8,7 +8,6 @@ from merkaba.memory import ConversationLog, ConversationTree
 from merkaba.tools.registry import ToolRegistry
 from merkaba.tools.builtin import (
     file_read, file_write, file_list,
-    etsy_search, analyze_results, save_research,
     grep, glob,
     web_fetch,
     bash,
@@ -117,10 +116,6 @@ class Agent:
         self.registry.register(web_fetch)
         # Shell tools
         self.registry.register(bash)
-        # Research tools
-        self.registry.register(etsy_search)
-        self.registry.register(analyze_results)
-        self.registry.register(save_research)
 
     def _run_security_check(self):
         """Run security quick scan and display alert if issues found."""

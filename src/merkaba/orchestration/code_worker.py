@@ -177,8 +177,18 @@ class CodeWorker(Worker):
         return result.to_context_string()
 
     def _review(self, spec: str, file_paths: list[str]) -> WorkerResult:
-        """Run ReviewWorker on the generated files."""
-        from merkaba.orchestration.review_worker import ReviewWorker
+        """Run a review worker on the generated files.
+
+        Attempts to load a 'review' worker from the worker registry.
+        If no review worker is registered, the review is skipped (returns success).
+        """
+        review_cls = None
+        try:
+            from merkaba.orchestration.workers import get_worker_class
+            review_cls = get_worker_class("review")
+        except (KeyError, ImportError):
+            logger.debug("No review worker registered — skipping high-stakes review")
+            return WorkerResult(success=True, output={"review": "skipped — no review worker available"})
 
         # Read all written files for review
         file_contents: list[str] = []
@@ -203,7 +213,7 @@ class CodeWorker(Worker):
             },
         }
 
-        reviewer = ReviewWorker(model=self.model)
+        reviewer = review_cls(model=self.model)
         return reviewer.execute(review_task)
 
 

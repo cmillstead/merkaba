@@ -20,9 +20,8 @@ LLM_CONVERSION_PROMPT = """Rewrite this skill for Merkaba, a local AI agent with
 - file_read: Read file contents
 - file_write: Write to files
 - file_list: List files in directory
-- etsy_search: Search Etsy marketplace
-- analyze_results: Analyze search results
-- save_research: Save research data
+- memory_search: Search agent memory
+- shell: Execute shell commands
 
 Remove or adapt references to unavailable tools (Bash, WebSearch, Task, TodoWrite).
 Keep the core methodology intact. Output ONLY the converted markdown, no explanation.
