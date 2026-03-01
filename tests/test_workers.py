@@ -114,7 +114,7 @@ def mock_llm_client():
 
 def test_health_check_worker_valid_json(mock_llm_client):
     worker = HealthCheckWorker()
-    mock_llm_client.chat.return_value = MagicMock(
+    mock_llm_client.chat_with_fallback.return_value = MagicMock(
         content='{"status": "healthy", "issues": [], "recommendations": ["keep going"]}'
     )
     worker._llm = mock_llm_client
@@ -128,7 +128,7 @@ def test_health_check_worker_valid_json(mock_llm_client):
 
 def test_health_check_worker_invalid_json(mock_llm_client):
     worker = HealthCheckWorker()
-    mock_llm_client.chat.return_value = MagicMock(content="Not JSON at all")
+    mock_llm_client.chat_with_fallback.return_value = MagicMock(content="Not JSON at all")
     worker._llm = mock_llm_client
 
     task = {"id": 2, "name": "Health", "task_type": "health_check"}
@@ -144,7 +144,7 @@ def test_health_check_worker_invalid_json(mock_llm_client):
 
 def test_research_worker_valid_json(mock_llm_client):
     worker = ResearchWorker()
-    mock_llm_client.chat.return_value = MagicMock(
+    mock_llm_client.chat_with_fallback.return_value = MagicMock(
         content='{"findings": ["f1"], "recommendations": ["r1"]}',
         tool_calls=None,
     )
@@ -161,7 +161,7 @@ def test_research_worker_valid_json(mock_llm_client):
 
 def test_research_worker_invalid_json(mock_llm_client):
     worker = ResearchWorker()
-    mock_llm_client.chat.return_value = MagicMock(
+    mock_llm_client.chat_with_fallback.return_value = MagicMock(
         content="free text response",
         tool_calls=None,
     )

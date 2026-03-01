@@ -6,10 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure ollama is mocked before any merkaba imports that might load it
-_original_ollama = sys.modules.get("ollama")
-_mock_ollama_module = MagicMock()
-sys.modules["ollama"] = _mock_ollama_module
+# Ensure ollama is mocked before any merkaba imports (conftest installs one
+# with proper exception classes; setdefault avoids overwriting it).
+sys.modules.setdefault("ollama", MagicMock())
 
 from merkaba.agent import Agent
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
@@ -38,16 +37,6 @@ def agent(tmp_path):
         # Disable session extraction to keep tests simple
         a._extract_session_memories = MagicMock()
         yield a
-
-
-# Restore ollama module after all tests in this module
-@pytest.fixture(autouse=True, scope="module")
-def _restore_ollama():
-    yield
-    if _original_ollama is not None:
-        sys.modules["ollama"] = _original_ollama
-    else:
-        sys.modules.pop("ollama", None)
 
 
 # ---------- 1. Classifier blocks unsafe input ----------
@@ -177,7 +166,7 @@ class TestExtraContext:
         prompt = agent._build_system_prompt()
 
         assert "Custom context: you are a helpful coding assistant" in prompt
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt
 
     def test_no_extra_context_by_default(self, agent):
         """Without extra_context set, the prompt should just be the base."""
@@ -210,7 +199,7 @@ class TestActiveSkill:
         assert prompt.startswith("SKILL INSTRUCTIONS: Do something special")
         # Followed by separator and system prompt
         assert "---" in prompt
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt
 
     def test_skill_and_extra_context_together(self, agent):
         """Both active_skill and extra_context should appear in the prompt."""
@@ -222,7 +211,7 @@ class TestActiveSkill:
 
         assert "SKILL CONTENT" in prompt
         assert "EXTRA CONTEXT" in prompt
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt
 
 
 # ---------- 6. System prompt includes memory context ----------
@@ -242,7 +231,7 @@ class TestMemoryContext:
 
         assert "[MEMORY]" in prompt
         assert "[Fact]" in prompt
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt
 
     def test_no_memory_context_when_no_results(self, agent):
         """When retrieval returns empty, no memory section appears."""
@@ -293,7 +282,7 @@ class TestPluginSkillContext:
         prompt = agent._build_system_prompt()
 
         assert "GLOBAL SKILL CONTEXT: always be polite" in prompt
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt
 
     def test_empty_skill_context_not_appended(self, agent):
         """When skill_context is empty string, it should not be appended."""
@@ -473,4 +462,4 @@ class TestPromptFileIntegration:
                 prompt_dir=str(nonexistent),
             )
         prompt = agent._build_system_prompt()
-        assert "Friday" in prompt
+        assert "Merkaba" in prompt

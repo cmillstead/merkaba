@@ -29,7 +29,7 @@ def agent(tmp_path):
 class TestBasicFlow:
     def test_simple_message_returns_text(self, agent):
         """LLM returns plain text — agent should return it."""
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="Hello!", model="test")
         )
         result = agent.run("Hi there")
@@ -43,7 +43,7 @@ class TestBasicFlow:
             tool_calls=[ToolCall(name="file_read", arguments={"path": "/tmp/x"})],
         )
         final_resp = LLMResponse(content="Done reading.", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
+        agent.llm.chat_with_fallback = MagicMock(side_effect=[tool_resp, final_resp])
         result = agent.run("Read /tmp/x")
         assert result == "Done reading."
 
@@ -58,7 +58,7 @@ class TestBasicFlow:
             tool_calls=[ToolCall(name="file_read", arguments={"path": "/tmp/b"})],
         )
         final = LLMResponse(content="Read both.", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool1, tool2, final])
+        agent.llm.chat_with_fallback = MagicMock(side_effect=[tool1, tool2, final])
         result = agent.run("Read both files")
         assert result == "Read both."
 
@@ -69,7 +69,7 @@ class TestBasicFlow:
             content=None, model="test",
             tool_calls=[ToolCall(name="file_read", arguments={"path": "/tmp/x"})],
         )
-        agent.llm.chat_with_retry = MagicMock(return_value=tool_resp)
+        agent.llm.chat_with_fallback = MagicMock(return_value=tool_resp)
         result = agent.run("loop forever")
         assert "iteration limit" in result.lower()
 
@@ -80,7 +80,7 @@ class TestBasicFlow:
 class TestErrorHandling:
     def test_llm_unavailable_returns_error(self, agent):
         """LLMUnavailableError should return a user-friendly message."""
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             side_effect=LLMUnavailableError("Connection refused")
         )
         result = agent.run("hello")
@@ -93,7 +93,7 @@ class TestErrorHandling:
             tool_calls=[ToolCall(name="nonexistent_tool", arguments={})],
         )
         final = LLMResponse(content="OK", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final])
+        agent.llm.chat_with_fallback = MagicMock(side_effect=[tool_resp, final])
         result = agent.run("use nonexistent tool")
         # Verify the tool result was added to conversation with error
         tool_msg = [m for m in agent.conversation if m["role"] == "tool"]
@@ -120,11 +120,11 @@ class TestClassifierRouting:
         agent.input_classifier.classify = MagicMock(
             return_value=(True, "", "simple")
         )
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="Hi!", model="qwen3:8b")
         )
         agent.run("hello there")
-        _, kwargs = agent.llm.chat_with_retry.call_args
+        _, kwargs = agent.llm.chat_with_fallback.call_args
         assert kwargs.get("tools") is None
 
     def test_complex_complexity_sends_tools(self, agent):
@@ -133,11 +133,11 @@ class TestClassifierRouting:
         agent.input_classifier.classify = MagicMock(
             return_value=(True, "", "complex")
         )
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="Here's what I found.", model="qwen3.5:122b")
         )
         agent.run("research bittensor subnet 59")
-        _, kwargs = agent.llm.chat_with_retry.call_args
+        _, kwargs = agent.llm.chat_with_fallback.call_args
         assert kwargs.get("tools") is not None
 
 
@@ -153,7 +153,7 @@ class TestCallbacks:
             tool_calls=[ToolCall(name="file_read", arguments={"path": "/tmp/x"})],
         )
         final = LLMResponse(content="Done.", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final])
+        agent.llm.chat_with_fallback = MagicMock(side_effect=[tool_resp, final])
 
         agent.run("read file", on_tool_call=lambda name, args, result: calls.append((name, args, result)))
         assert len(calls) == 1
@@ -167,31 +167,33 @@ class TestCallbacks:
 
 class TestMemoryRecall:
     def test_memory_recall_injected_into_prompt(self, agent, memory_store):
-        """Seed a fact, verify 'YOU ALREADY KNOW' appears in system prompt."""
+        """Seed a fact, verify memory context appears in system prompt."""
         from merkaba.memory.retrieval import MemoryRetrieval
         agent.retrieval = MemoryRetrieval(store=memory_store)
         bid = memory_store.add_business(name="TestBiz", type="test")
         memory_store.add_fact(bid, "crypto", "bittensor", "decentralized AI network")
         agent.active_business_id = bid
 
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="Bittensor is cool.", model="test")
         )
         agent.run("tell me about bittensor")
-        _, kwargs = agent.llm.chat_with_retry.call_args
-        assert "YOU ALREADY KNOW" in kwargs.get("system_prompt", "")
+        _, kwargs = agent.llm.chat_with_fallback.call_args
+        prompt = kwargs.get("system_prompt", "")
+        assert "[MEMORY]" in prompt
+        assert "bittensor" in prompt.lower()
 
     def test_memory_recall_empty_when_no_match(self, agent, memory_store):
         """Empty store should not inject memory context."""
         from merkaba.memory.retrieval import MemoryRetrieval
         agent.retrieval = MemoryRetrieval(store=memory_store)
 
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="I don't know.", model="test")
         )
         agent.run("what is quantum computing?")
-        _, kwargs = agent.llm.chat_with_retry.call_args
-        assert "YOU ALREADY KNOW" not in kwargs.get("system_prompt", "")
+        _, kwargs = agent.llm.chat_with_fallback.call_args
+        assert "[MEMORY]" not in kwargs.get("system_prompt", "")
 
     def test_active_business_scopes_recall(self, agent, memory_store):
         """Two businesses — only the active one's facts should be recalled."""
@@ -204,11 +206,11 @@ class TestMemoryRecall:
         memory_store.add_fact(bid2, "crypto", "ethereum", "smart contracts")
 
         agent.active_business_id = bid1
-        agent.llm.chat_with_retry = MagicMock(
+        agent.llm.chat_with_fallback = MagicMock(
             return_value=LLMResponse(content="Bitcoin info.", model="test")
         )
         agent.run("tell me about crypto")
-        _, kwargs = agent.llm.chat_with_retry.call_args
+        _, kwargs = agent.llm.chat_with_fallback.call_args
         prompt = kwargs.get("system_prompt", "")
         if "YOU ALREADY KNOW" in prompt:
             assert "bitcoin" in prompt.lower() or "digital gold" in prompt.lower()

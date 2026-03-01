@@ -27,15 +27,15 @@ def extractor(memory):
 
 @pytest.fixture
 def mock_ollama():
-    """Inject a mock ollama module so the lazy import picks it up."""
-    mock = MagicMock()
-    original = sys.modules.get("ollama")
-    sys.modules["ollama"] = mock
-    yield mock
-    if original is not None:
-        sys.modules["ollama"] = original
-    else:
-        del sys.modules["ollama"]
+    """Return the existing ollama mock with call state fully reset for this test."""
+    import ollama
+    ollama.chat.reset_mock()
+    ollama.chat.side_effect = None
+    ollama.chat.return_value = MagicMock()
+    yield ollama
+    # Clean up after each test to prevent leaking side_effects
+    ollama.chat.side_effect = None
+    ollama.chat.reset_mock()
 
 
 def _make_task(task_id=1, name="Test Task", task_type="check", business_id=None):

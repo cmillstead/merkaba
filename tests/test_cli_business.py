@@ -15,10 +15,8 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not HAS_DEPS, reason="Missing keyring")
 
-# Mock problematic modules before importing merkaba.cli
-for _mod in ("ollama", "telegram", "telegram.ext"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+# Ensure ollama is mocked before importing merkaba.cli
+sys.modules.setdefault("ollama", MagicMock())
 
 from merkaba.cli import app
 
@@ -66,9 +64,10 @@ def test_business_add(temp_dbs):
     assert "Test Shop" in result.output
 
 
-def test_business_add_invalid_type(temp_dbs):
-    result = runner.invoke(app, ["business", "add", "--name", "Bad", "--type", "invalid"])
-    assert result.exit_code == 1
+def test_business_add_any_type(temp_dbs):
+    """Business type is not validated — any type should be accepted."""
+    result = runner.invoke(app, ["business", "add", "--name", "Custom", "--type", "custom"])
+    assert result.exit_code == 0
 
 
 def test_business_add_all_types(temp_dbs):

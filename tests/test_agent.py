@@ -50,7 +50,7 @@ def test_agent_has_builtin_tools(temp_memory_dir):
 def test_agent_processes_simple_response(temp_memory_dir):
     agent = Agent(memory_storage_dir=temp_memory_dir)
 
-    with patch.object(agent.llm, "chat") as mock_chat:
+    with patch.object(agent.llm, "chat_with_fallback") as mock_chat:
         mock_chat.return_value = LLMResponse(
             content="Hello! I'm Friday.",
             model="test",
@@ -85,7 +85,7 @@ def test_agent_executes_tool_calls(temp_memory_dir):
                 tool_calls=None,
             )
 
-    with patch.object(agent.llm, "chat", side_effect=mock_chat):
+    with patch.object(agent.llm, "chat_with_fallback", side_effect=mock_chat):
         response = agent.run("List the /tmp directory")
         assert call_count == 2  # Tool call + final response
 
@@ -144,7 +144,7 @@ def test_agent_permission_denial_in_tool_execution(temp_memory_dir):
                 tool_calls=None,
             )
 
-    with patch.object(agent.llm, "chat", side_effect=mock_chat):
+    with patch.object(agent.llm, "chat_with_fallback", side_effect=mock_chat):
         response = agent.run("Write a file")
         # Check that conversation includes permission denied message
         tool_result = next(
@@ -155,13 +155,14 @@ def test_agent_permission_denial_in_tool_execution(temp_memory_dir):
         assert "Permission denied" in tool_result["content"]
 
 
-def test_agent_has_research_tools(temp_memory_dir):
-    """Test that Agent has research tools registered."""
+def test_agent_has_core_tools(temp_memory_dir):
+    """Test that Agent has core framework tools registered."""
     agent = Agent(memory_storage_dir=temp_memory_dir)
     tools = agent.registry.list_tools()
-    assert "etsy_search" in tools
-    assert "analyze_results" in tools
-    assert "save_research" in tools
+    assert "file_read" in tools
+    assert "file_write" in tools
+    assert "bash" in tools
+    assert "memory_search" in tools
 
 
 def test_agent_runs_security_check_on_init():

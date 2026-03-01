@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
 class TestTelegramSetupCommand:
     """Tests for merkaba telegram setup command."""
 
-    @patch("merkaba.cli.TelegramConfig")
+    @patch("merkaba.telegram.TelegramConfig")
     def test_telegram_setup_saves_config(self, mock_config):
         """telegram setup should save bot token and user ID."""
         mock_config_instance = MagicMock()
@@ -41,7 +41,7 @@ class TestTelegramSetupCommand:
         mock_config_instance.save_bot_token.assert_called_once_with("123:ABC-token")
         mock_config_instance.save_allowed_user_ids.assert_called_once_with([987654321])
 
-    @patch("merkaba.cli.TelegramConfig")
+    @patch("merkaba.telegram.TelegramConfig")
     def test_telegram_setup_shows_success(self, mock_config):
         """telegram setup should show success message."""
         mock_config.return_value = MagicMock()
@@ -58,7 +58,7 @@ class TestTelegramSetupCommand:
 class TestTelegramStatusCommand:
     """Tests for merkaba telegram status command."""
 
-    @patch("merkaba.cli.TelegramConfig")
+    @patch("merkaba.telegram.TelegramConfig")
     def test_telegram_status_not_configured(self, mock_config):
         """telegram status should show not configured when missing."""
         mock_config_instance = MagicMock()
@@ -69,7 +69,7 @@ class TestTelegramStatusCommand:
 
         assert "not configured" in result.output.lower()
 
-    @patch("merkaba.cli.TelegramConfig")
+    @patch("merkaba.telegram.TelegramConfig")
     def test_telegram_status_configured(self, mock_config):
         """telegram status should show configured when set up."""
         mock_config_instance = MagicMock()
@@ -85,7 +85,7 @@ class TestTelegramStatusCommand:
 class TestServeCommand:
     """Tests for merkaba serve command."""
 
-    @patch("merkaba.cli.TelegramConfig")
+    @patch("merkaba.telegram.TelegramConfig")
     def test_serve_requires_telegram_config(self, mock_config):
         """serve should fail if telegram not configured."""
         mock_config_instance = MagicMock()
@@ -97,10 +97,9 @@ class TestServeCommand:
         assert result.exit_code != 0
         assert "telegram" in result.output.lower()
 
-    @patch("merkaba.cli.asyncio")
-    @patch("merkaba.cli.FridayBot")
-    @patch("merkaba.cli.TelegramConfig")
-    def test_serve_starts_bot(self, mock_config, mock_bot, mock_asyncio):
+    @patch("merkaba.telegram.MerkabaBot")
+    @patch("merkaba.telegram.TelegramConfig")
+    def test_serve_starts_bot(self, mock_config, mock_bot):
         """serve should start the bot when configured."""
         mock_config_instance = MagicMock()
         mock_config_instance.is_configured.return_value = True
@@ -110,9 +109,6 @@ class TestServeCommand:
 
         mock_bot_instance = MagicMock()
         mock_bot.return_value = mock_bot_instance
-
-        # Mock asyncio.run to avoid actually running
-        mock_asyncio.run = MagicMock()
 
         result = runner.invoke(app, ["serve"])
 

@@ -190,6 +190,10 @@ class CodeWorker(Worker):
             logger.debug("No review worker registered — skipping high-stakes review")
             return WorkerResult(success=True, output={"review": "skipped — no review worker available"})
 
+        if review_cls is None:
+            logger.debug("No review worker registered — skipping high-stakes review")
+            return WorkerResult(success=True, output={"review": "skipped — no review worker available"})
+
         # Read all written files for review
         file_contents: list[str] = []
         for path in file_paths:

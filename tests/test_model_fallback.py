@@ -7,21 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Stub ollama before importing merkaba.llm
-ollama_stub = MagicMock()
-
-
-class FakeResponseError(Exception):
-    pass
-
-
-class FakeRequestError(Exception):
-    pass
-
-
-ollama_stub.ResponseError = FakeResponseError
-ollama_stub.RequestError = FakeRequestError
-sys.modules.setdefault("ollama", ollama_stub)
+# Use the ollama mock installed by conftest (which has proper exception classes).
+# If conftest hasn't run yet (shouldn't happen), install a proper mock.
+import ollama as _ollama_mod
+FakeResponseError = _ollama_mod.ResponseError
+FakeRequestError = _ollama_mod.RequestError
 
 from merkaba.llm import (
     AllModelsUnavailableError,

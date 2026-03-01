@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
 class TestPluginListCommand:
     """Tests for merkaba plugins list."""
 
-    @patch("merkaba.cli.PluginRegistry")
+    @patch("merkaba.plugins.PluginRegistry")
     def test_plugins_list_shows_skills(self, mock_registry):
         """plugins list should show loaded skills."""
         mock_instance = MagicMock()
@@ -46,7 +46,7 @@ class TestPluginListCommand:
 class TestCommandsListCommand:
     """Tests for merkaba commands list."""
 
-    @patch("merkaba.cli.PluginRegistry")
+    @patch("merkaba.plugins.PluginRegistry")
     def test_commands_list_shows_commands(self, mock_registry):
         """commands list should show available commands."""
         mock_instance = MagicMock()
@@ -69,7 +69,7 @@ class TestPluginImportCommand:
         assert result.exit_code == 0
         assert "import" in result.stdout.lower()
 
-    @patch("merkaba.cli.PluginImporter")
+    @patch("merkaba.plugins.importer.PluginImporter")
     def test_import_skill_success(self, mock_importer_class):
         """plugins import should import a skill successfully."""
         from merkaba.plugins.importer import ImportResult
@@ -90,7 +90,7 @@ class TestPluginImportCommand:
         assert result.exit_code == 0
         assert "100%" in result.stdout or "test-skill" in result.stdout
 
-    @patch("merkaba.cli.PluginImporter")
+    @patch("merkaba.plugins.importer.PluginImporter")
     def test_import_skill_skipped(self, mock_importer_class):
         """plugins import should show skipped skills."""
         from merkaba.plugins.importer import ImportResult
@@ -112,7 +112,7 @@ class TestPluginImportCommand:
         assert result.exit_code == 0
         assert "skipped" in result.stdout.lower() or "30%" in result.stdout
 
-    @patch("merkaba.cli.PluginImporter")
+    @patch("merkaba.plugins.importer.PluginImporter")
     def test_import_skill_error(self, mock_importer_class):
         """plugins import should show errors."""
         from merkaba.plugins.importer import ImportResult

@@ -44,7 +44,7 @@ class TestAgentPluginIntegration:
         mock_response = MagicMock()
         mock_response.tool_calls = None
         mock_response.content = "Done"
-        mock_llm_instance.chat.return_value = mock_response
+        mock_llm_instance.chat_with_fallback.return_value = mock_response
         mock_llm.return_value = mock_llm_instance
 
         agent = Agent(plugins_enabled=True)
@@ -52,7 +52,7 @@ class TestAgentPluginIntegration:
         agent.run("Hello")
 
         # Check that skill content was in the prompt
-        call_args = mock_llm_instance.chat.call_args
+        call_args = mock_llm_instance.chat_with_fallback.call_args
         system_prompt = call_args.kwargs.get("system_prompt", "")
         assert "special thing" in system_prompt
 
@@ -65,7 +65,7 @@ class TestAgentPluginIntegration:
         mock_response = MagicMock()
         mock_response.tool_calls = None
         mock_response.content = "Hello!"
-        mock_llm_instance.chat.return_value = mock_response
+        mock_llm_instance.chat_with_fallback.return_value = mock_response
         mock_llm.return_value = mock_llm_instance
 
         agent = Agent(plugins_enabled=False)

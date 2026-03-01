@@ -1,6 +1,9 @@
 # tests/test_memory_vectors.py
+import sys
 import tempfile
 import os
+from unittest.mock import MagicMock
+
 import pytest
 
 try:
@@ -9,12 +12,19 @@ try:
 except ImportError:
     HAS_CHROMADB = False
 
-requires_chromadb = pytest.mark.skipif(
-    not HAS_CHROMADB, reason="chromadb not installed"
+# These tests need the REAL ollama module (not a MagicMock).
+# The conftest installs a mock for unit tests. If ollama is mocked,
+# ChromaDB's OllamaEmbeddingFunction will get a MagicMock Client
+# and embeddings will be empty.
+_OLLAMA_IS_REAL = "ollama" in sys.modules and not isinstance(sys.modules["ollama"], MagicMock)
+
+requires_chromadb_and_real_ollama = pytest.mark.skipif(
+    not HAS_CHROMADB or not _OLLAMA_IS_REAL,
+    reason="Requires chromadb and real (non-mocked) ollama module with running Ollama",
 )
 
 
-@requires_chromadb
+@requires_chromadb_and_real_ollama
 @pytest.mark.integration
 class TestVectorMemory:
     """Integration tests for VectorMemory (requires ChromaDB + Ollama)."""

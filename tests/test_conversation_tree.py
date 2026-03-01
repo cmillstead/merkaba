@@ -178,23 +178,27 @@ class TestAgentTreeIntegration:
         agent._verifier.verify = MagicMock(return_value=fail_result)
 
         fw_tool = agent.registry.get("file_write")
-        fw_tool.execute = MagicMock(return_value=ToolResult(success=True, output="Wrote 5 bytes"))
+        original_execute = fw_tool.execute
+        try:
+            fw_tool.execute = MagicMock(return_value=ToolResult(success=True, output="Wrote 5 bytes"))
 
-        # 3 LLM calls: tool(fail) -> tool(fail again, triggers branch) -> final
-        tool_resp = LLMResponse(
-            content=None, model="test",
-            tool_calls=[ToolCall(name="file_write", arguments={"path": "/tmp/bad.py", "content": "x="})],
-        )
-        final_resp = LLMResponse(content="Fixed.", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, tool_resp, final_resp])
+            # 3 LLM calls: tool(fail) -> tool(fail again, triggers branch) -> final
+            tool_resp = LLMResponse(
+                content=None, model="test",
+                tool_calls=[ToolCall(name="file_write", arguments={"path": "/tmp/bad.py", "content": "x="})],
+            )
+            final_resp = LLMResponse(content="Fixed.", model="test")
+            agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, tool_resp, final_resp])
 
-        result = agent.run("Write some code")
-        assert result == "Fixed."
+            result = agent.run("Write some code")
+            assert result == "Fixed."
 
-        # Verify branching occurred: there should be a system message in the tree
-        system_msgs = [m for m in agent._tree.messages.values() if m.role == "system"]
-        assert len(system_msgs) >= 1
-        assert "failed verification" in system_msgs[0].content.lower()
+            # Verify branching occurred: there should be a system message in the tree
+            system_msgs = [m for m in agent._tree.messages.values() if m.role == "system"]
+            assert len(system_msgs) >= 1
+            assert "failed verification" in system_msgs[0].content.lower()
+        finally:
+            fw_tool.execute = original_execute
 
     def test_agent_single_failure_no_branch(self, agent):
         """One verification failure doesn't trigger branching."""
@@ -209,20 +213,24 @@ class TestAgentTreeIntegration:
         agent._verifier.verify = MagicMock(return_value=fail_result)
 
         fw_tool = agent.registry.get("file_write")
-        fw_tool.execute = MagicMock(return_value=ToolResult(success=True, output="Wrote 5 bytes"))
+        original_execute = fw_tool.execute
+        try:
+            fw_tool.execute = MagicMock(return_value=ToolResult(success=True, output="Wrote 5 bytes"))
 
-        tool_resp = LLMResponse(
-            content=None, model="test",
-            tool_calls=[ToolCall(name="file_write", arguments={"path": "/tmp/bad.py", "content": "x="})],
-        )
-        final_resp = LLMResponse(content="Done.", model="test")
-        agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
+            tool_resp = LLMResponse(
+                content=None, model="test",
+                tool_calls=[ToolCall(name="file_write", arguments={"path": "/tmp/bad.py", "content": "x="})],
+            )
+            final_resp = LLMResponse(content="Done.", model="test")
+            agent.llm.chat_with_retry = MagicMock(side_effect=[tool_resp, final_resp])
 
-        agent.run("Write code")
+            agent.run("Write code")
 
-        # No system messages — branch was NOT triggered
-        system_msgs = [m for m in agent._tree.messages.values() if m.role == "system"]
-        assert len(system_msgs) == 0
+            # No system messages — branch was NOT triggered
+            system_msgs = [m for m in agent._tree.messages.values() if m.role == "system"]
+            assert len(system_msgs) == 0
+        finally:
+            fw_tool.execute = original_execute
 
     def test_agent_system_message_in_format(self, agent):
         """System/branch_summary messages appear in formatted output."""

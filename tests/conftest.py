@@ -3,6 +3,26 @@
 
 import pytest
 import sys
+from unittest.mock import MagicMock
+
+# Install a well-behaved ollama mock BEFORE any test module tries to import it.
+# Many test modules do sys.modules.setdefault("ollama", MagicMock()) at module
+# level. A bare MagicMock has ResponseError/RequestError as Mock objects (not
+# exception classes), which breaks ``except ollama.RequestError`` at runtime.
+# By installing a mock with real exception subclasses first, all subsequent
+# setdefault calls are no-ops and every test sees a consistent mock.
+if "ollama" not in sys.modules:
+    _ollama_mock = MagicMock()
+
+    class _FakeResponseError(Exception):
+        pass
+
+    class _FakeRequestError(Exception):
+        pass
+
+    _ollama_mock.ResponseError = _FakeResponseError
+    _ollama_mock.RequestError = _FakeRequestError
+    sys.modules["ollama"] = _ollama_mock
 
 # Track missing optional dependencies
 MISSING_DEPS = []
@@ -107,16 +127,14 @@ def action_queue(tmp_db_path):
 
 @pytest.fixture
 def mock_ollama():
-    """Inject a MagicMock as the ollama module, restore on teardown."""
-    from unittest.mock import MagicMock
-    original = sys.modules.get("ollama")
-    mock = MagicMock()
-    sys.modules["ollama"] = mock
-    yield mock
-    if original is not None:
-        sys.modules["ollama"] = original
-    else:
-        sys.modules.pop("ollama", None)
+    """Return the existing ollama mock with call state reset for this test."""
+    import ollama
+    ollama.reset_mock()
+    ollama.chat.side_effect = None
+    ollama.chat.return_value = MagicMock()
+    yield ollama
+    ollama.chat.side_effect = None
+    ollama.chat.reset_mock()
 
 
 @pytest.fixture

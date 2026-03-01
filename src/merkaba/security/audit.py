@@ -40,8 +40,16 @@ def scan_dependencies() -> list[CVEIssue]:
     except json.JSONDecodeError:
         return []
 
+    # pip-audit JSON format varies by version:
+    # v2.6+: {"dependencies": [...], "fixes": [...]}
+    # older: [{"name": ..., "vulns": [...]}, ...]
+    if isinstance(data, dict):
+        data = data.get("dependencies", [])
+
     issues = []
     for pkg in data:
+        if not isinstance(pkg, dict):
+            continue
         for vuln in pkg.get("vulns", []):
             fix_versions = vuln.get("fix_versions", [])
             issues.append(CVEIssue(

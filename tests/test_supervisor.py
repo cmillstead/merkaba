@@ -178,9 +178,9 @@ def test_select_dispatch_mode_simple_task_type(supervisor):
     assert supervisor.select_dispatch_mode(task) == DispatchMode.DIRECT
 
 
-def test_select_dispatch_mode_competitive(supervisor):
-    """Content task with action=draft_post returns COMPETITIVE."""
-    task = {"id": 102, "task_type": "content", "payload": {"action": "draft_post"}}
+def test_select_dispatch_mode_competitive_via_override(supervisor):
+    """Explicit dispatch_mode override returns COMPETITIVE."""
+    task = {"id": 102, "task_type": "general", "payload": {"dispatch_mode": "competitive"}}
     assert supervisor.select_dispatch_mode(task) == DispatchMode.COMPETITIVE
 
 

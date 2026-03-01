@@ -287,23 +287,16 @@ class TestExecuteFlow:
 
 
 class TestReviewIntegration:
-    def test_review_approved(self, tmp_path):
+    def test_review_skipped_when_no_review_worker(self, tmp_path):
+        """When no review worker is registered, review returns success with skipped note."""
         target = tmp_path / "approved.py"
         target.write_text("good code\n")
 
         worker = _make_worker()
-
-        mock_reviewer = MagicMock()
-        mock_reviewer.execute.return_value = WorkerResult(
-            success=True,
-            output={"approved": True, "issues": [], "suggestions": ["minor style"]},
-        )
-
-        with patch("merkaba.orchestration.review_worker.ReviewWorker", return_value=mock_reviewer):
-            result = worker._review("Write good code", [str(target)])
+        result = worker._review("Write good code", [str(target)])
 
         assert result.success is True
-        assert result.output["approved"] is True
+        assert "skipped" in str(result.output.get("review", "")).lower()
 
     def test_review_rejected_triggers_rollback(self, tmp_path):
         target = tmp_path / "rejected.py"

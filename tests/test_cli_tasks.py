@@ -16,10 +16,10 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not HAS_DEPS, reason="Missing keyring")
 
-# Mock problematic modules before importing merkaba.cli
-for _mod in ("ollama", "telegram", "telegram.ext"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+# Ensure ollama is mocked before importing merkaba.cli.
+# Do NOT mock telegram / telegram.ext — if installed, the real module should be used;
+# if not installed, conftest marks those tests as skipped.
+sys.modules.setdefault("ollama", MagicMock())
 
 from merkaba.cli import app
 

@@ -180,12 +180,13 @@ class TestDispatchModeSelection:
         }
         assert supervisor.select_dispatch_mode(task) == DispatchMode.EXPLORE_THEN_EXECUTE
 
-    def test_creative_task_triggers_competitive(self, supervisor):
+    def test_explicit_competitive_override(self, supervisor):
+        """Explicit dispatch_mode override triggers COMPETITIVE."""
         task = {
             "id": 3,
             "name": "Blog Post",
-            "task_type": "content",
-            "payload": {"action": "draft_post", "topic": "AI"},
+            "task_type": "general",
+            "payload": {"dispatch_mode": "competitive"},
         }
         assert supervisor.select_dispatch_mode(task) == DispatchMode.COMPETITIVE
 
@@ -219,7 +220,7 @@ class TestIntegrationVerification:
             mock_instance = MagicMock()
             mock_response = MagicMock()
             mock_response.content = "CONNECTED"
-            mock_instance.chat_with_retry.return_value = mock_response
+            mock_instance.chat_with_fallback.return_value = mock_response
             MockLLM.return_value = mock_instance
 
             status = supervisor.verify_integration(task, result)
@@ -240,7 +241,7 @@ class TestIntegrationVerification:
             mock_instance = MagicMock()
             mock_response = MagicMock()
             mock_response.content = "DISCONNECTED"
-            mock_instance.chat_with_retry.return_value = mock_response
+            mock_instance.chat_with_fallback.return_value = mock_response
             MockLLM.return_value = mock_instance
 
             status = supervisor.verify_integration(task, result)

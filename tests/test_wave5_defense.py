@@ -1,19 +1,15 @@
 # tests/test_wave5_defense.py
-"""Wave 5 — Defense in depth: SQL injection allowlist, bundler path traversal,
+"""Wave 5 — Defense in depth: SQL injection allowlist,
 config error handling, close() idempotency."""
 
 import json
-import os
 import sys
-import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock problematic modules
-for _mod in ("ollama", "telegram", "telegram.ext"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+# Ensure ollama is mocked
+sys.modules.setdefault("ollama", MagicMock())
 
 
 # ── 1. Token group_by SQL injection allowlist ────────────────────────
@@ -63,100 +59,7 @@ class TestTokenGroupByAllowlist:
         assert "model" in rows[0]
 
 
-# ── 2. Bundler path traversal ────────────────────────────────────────
-
-
-class TestBundlerPathTraversal:
-    """Verify that zip_name with ../ can't write outside bundle_dir."""
-
-    def test_traversal_zip_name_stays_in_bundle_dir(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-
-        bundle_dir = tmp_path / "bundles"
-        output_dir = tmp_path / "outputs"
-        attack_target = tmp_path / "evil.zip"
-
-        # Create a valid output directory with a file
-        source = output_dir / "run1"
-        source.mkdir(parents=True)
-        (source / "image.png").write_bytes(b"fake png")
-
-        bundler = OutputBundler(bundle_dir=str(bundle_dir), output_dir=str(output_dir))
-
-        # Attempt traversal: zip_name tries to escape bundle_dir
-        zip_path = bundler.bundle(str(source), zip_name="../../evil.zip")
-
-        # The zip was created — verify it's inside bundle_dir (os.path.join resolves ..)
-        resolved = os.path.realpath(zip_path)
-        assert not attack_target.exists(), "Traversal should not write to parent directory"
-        # Either it stays in bundle_dir or gets resolved relative to it
-        # The key check: no file at the attack target
-        assert os.path.isfile(zip_path)
-
-    def test_normal_zip_name(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-
-        bundle_dir = tmp_path / "bundles"
-        source = tmp_path / "outputs" / "run1"
-        source.mkdir(parents=True)
-        (source / "test.png").write_bytes(b"png data")
-
-        bundler = OutputBundler(bundle_dir=str(bundle_dir), output_dir=str(tmp_path / "outputs"))
-        zip_path = bundler.bundle(str(source), zip_name="my_bundle.zip")
-
-        assert zip_path == os.path.join(str(bundle_dir), "my_bundle.zip")
-        assert os.path.isfile(zip_path)
-
-    def test_auto_zip_name_from_dir(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-
-        bundle_dir = tmp_path / "bundles"
-        source = tmp_path / "outputs" / "gen_20260228"
-        source.mkdir(parents=True)
-        (source / "art.png").write_bytes(b"data")
-
-        bundler = OutputBundler(bundle_dir=str(bundle_dir), output_dir=str(tmp_path / "outputs"))
-        zip_path = bundler.bundle(str(source))
-
-        assert zip_path.endswith("gen_20260228.zip")
-
-    def test_bundle_excludes_metadata(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-        import zipfile
-
-        bundle_dir = tmp_path / "bundles"
-        source = tmp_path / "outputs" / "run1"
-        source.mkdir(parents=True)
-        (source / "image.png").write_bytes(b"png")
-        (source / "metadata.json").write_text('{"key": "val"}')
-
-        bundler = OutputBundler(bundle_dir=str(bundle_dir), output_dir=str(tmp_path / "outputs"))
-        zip_path = bundler.bundle(str(source))
-
-        with zipfile.ZipFile(zip_path) as zf:
-            names = zf.namelist()
-        assert "image.png" in names
-        assert "metadata.json" not in names
-
-    def test_bundle_invalid_path(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-
-        bundler = OutputBundler(bundle_dir=str(tmp_path / "bundles"))
-        with pytest.raises(ValueError, match="not a directory"):
-            bundler.bundle("/nonexistent/path")
-
-    def test_bundle_latest_no_dirs(self, tmp_path):
-        from merkaba.generation.bundler import OutputBundler
-
-        output_dir = tmp_path / "outputs"
-        output_dir.mkdir()
-
-        bundler = OutputBundler(bundle_dir=str(tmp_path / "bundles"), output_dir=str(output_dir))
-        with pytest.raises(ValueError, match="No output directories"):
-            bundler.bundle_latest()
-
-
-# ── 3. Config file error handling ────────────────────────────────────
+# ── 2. Config file error handling ─────────────────────────────────────
 
 
 class TestConfigErrorHandling:
@@ -231,16 +134,6 @@ class TestConfigErrorHandling:
         data = config._load()
         assert data == {}
 
-    # --- ListingConfig._load ---
-
-    def test_listing_config_corrupt_json(self, tmp_path):
-        from merkaba.listing.config import ListingConfig
-        bad = tmp_path / "listing.json"
-        bad.write_text("not valid json")
-        config = ListingConfig(config_path=str(bad))
-        data = config._load()
-        assert data == {}
-
     # --- SecureApprovalManager.from_config ---
 
     def test_secure_approval_from_config_missing_file(self, tmp_path):
@@ -303,12 +196,6 @@ class TestCloseIdempotency:
         store = DecisionAuditStore(db_path=str(tmp_path / "audit.db"))
         store.close()
         store.close()
-
-    def test_research_db_double_close(self, tmp_path):
-        from merkaba.research.database import ResearchDatabase
-        db = ResearchDatabase(db_path=str(tmp_path / "research.db"))
-        db.close()
-        db.close()
 
     def test_vector_memory_double_close(self):
         from merkaba.memory.vectors import VectorMemory

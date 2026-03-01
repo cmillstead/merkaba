@@ -62,10 +62,10 @@ class TestAllowedCommands:
         allowed, reason = is_allowed("pytest tests/")
         assert allowed is True, f"pytest should be allowed: {reason}"
 
-    def test_allows_python(self):
-        """python should be allowed."""
+    def test_blocks_python(self):
+        """python should be blocked (removed from allowlist for security)."""
         allowed, reason = is_allowed('python -c "print(1)"')
-        assert allowed is True, f"python should be allowed: {reason}"
+        assert allowed is False, "python should be blocked"
 
     def test_allows_uv(self):
         """uv should be allowed."""
@@ -556,10 +556,10 @@ class TestEdgeCases:
         allowed, reason = is_allowed("/bin/rm file.txt")
         assert allowed is False
 
-    def test_usr_bin_path_to_allowed(self):
-        """Commands in /usr/bin should be checked by basename."""
+    def test_usr_bin_path_to_blocked(self):
+        """Commands in /usr/bin should be checked by basename (python blocked)."""
         allowed, reason = is_allowed("/usr/bin/python -c print")
-        assert allowed is True
+        assert allowed is False
 
     def test_full_path_with_subcommand(self):
         """Full path to command with subcommand should be validated correctly."""

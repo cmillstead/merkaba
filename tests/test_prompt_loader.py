@@ -7,7 +7,7 @@ class TestPromptLoader:
     def test_returns_builtin_defaults_when_no_files(self, tmp_path):
         loader = PromptLoader(base_dir=str(tmp_path))
         soul, user = loader.load()
-        assert "Friday" in soul
+        assert "Merkaba" in soul
         assert len(user) > 0
 
     def test_loads_global_soul_file(self, tmp_path):
@@ -52,7 +52,7 @@ class TestPromptLoader:
         loader.seed()
         assert (tmp_path / "SOUL.md").exists()
         assert (tmp_path / "USER.md").exists()
-        assert "Friday" in (tmp_path / "SOUL.md").read_text()
+        assert "Merkaba" in (tmp_path / "SOUL.md").read_text()
 
     def test_seed_does_not_overwrite_existing(self, tmp_path):
         (tmp_path / "SOUL.md").write_text("My custom soul")

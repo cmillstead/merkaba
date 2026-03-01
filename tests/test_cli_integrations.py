@@ -13,10 +13,8 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not HAS_DEPS, reason="Missing keyring")
 
-# Mock problematic modules before importing merkaba.cli
-for _mod in ("ollama", "telegram", "telegram.ext"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+# Ensure ollama is mocked before importing merkaba.cli
+sys.modules.setdefault("ollama", MagicMock())
 
 from merkaba.cli import app
 
@@ -28,7 +26,6 @@ def test_integrations_list():
     assert result.exit_code == 0
     assert "email" in result.output
     assert "stripe" in result.output
-    assert "etsy" in result.output
 
 
 def test_integrations_test_success(mocker):

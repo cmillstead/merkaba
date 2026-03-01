@@ -31,7 +31,7 @@ def test_llm_client_chat():
 
 def test_chat_constructs_messages_correctly():
     """Test that chat correctly constructs messages for Ollama."""
-    with patch('merkaba.llm.ollama.Client') as mock_client_class:
+    with patch('ollama.Client') as mock_client_class:
         mock_instance = mock_client_class.return_value
 
         # Mock the response
@@ -39,6 +39,9 @@ def test_chat_constructs_messages_correctly():
         mock_response.message.content = "Hello!"
         mock_response.message.tool_calls = None
         mock_response.model = "test-model"
+        mock_response.prompt_eval_count = 10
+        mock_response.eval_count = 5
+        mock_response.total_duration = 1_000_000
         mock_instance.chat.return_value = mock_response
 
         client = LLMClient(model="test-model")
@@ -55,7 +58,7 @@ def test_chat_constructs_messages_correctly():
 
 def test_chat_parses_tool_calls():
     """Test that tool calls from Ollama are correctly parsed."""
-    with patch('merkaba.llm.ollama.Client') as mock_client_class:
+    with patch('ollama.Client') as mock_client_class:
         mock_instance = mock_client_class.return_value
 
         # Mock a response with tool calls
@@ -67,6 +70,9 @@ def test_chat_parses_tool_calls():
         mock_response.message.content = None
         mock_response.message.tool_calls = [mock_tool_call]
         mock_response.model = "test-model"
+        mock_response.prompt_eval_count = 10
+        mock_response.eval_count = 5
+        mock_response.total_duration = 1_000_000
         mock_instance.chat.return_value = mock_response
 
         client = LLMClient(model="test-model")
@@ -80,13 +86,16 @@ def test_chat_parses_tool_calls():
 
 def test_chat_without_system_prompt():
     """Test chat works without a system prompt."""
-    with patch('merkaba.llm.ollama.Client') as mock_client_class:
+    with patch('ollama.Client') as mock_client_class:
         mock_instance = mock_client_class.return_value
 
         mock_response = Mock()
         mock_response.message.content = "Response"
         mock_response.message.tool_calls = None
         mock_response.model = "test-model"
+        mock_response.prompt_eval_count = 10
+        mock_response.eval_count = 5
+        mock_response.total_duration = 1_000_000
         mock_instance.chat.return_value = mock_response
 
         client = LLMClient(model="test-model")
