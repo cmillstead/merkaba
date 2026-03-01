@@ -5,7 +5,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: path.resolve(__dirname, '../src/friday/web/static'),
+    outDir: path.resolve(__dirname, '../src/merkaba/web/static'),
     emptyOutDir: true,
   },
   server: {
