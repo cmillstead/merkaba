@@ -1,4 +1,4 @@
-# src/friday/plugins/hooks.py
+# src/merkaba/plugins/hooks.py
 """Hook loading and management."""
 
 from dataclasses import dataclass, field

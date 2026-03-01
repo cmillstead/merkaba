@@ -1,4 +1,4 @@
-# src/friday/plugins/analyzer.py
+# src/merkaba/plugins/analyzer.py
 """Skill compatibility analysis."""
 
 import re
@@ -78,7 +78,7 @@ class SkillAnalyzer:
 
     def _determine_strategy(self) -> None:
         """Determine conversion strategy based on score."""
-        # Find tools with no Friday equivalent
+        # Find tools with no Merkaba equivalent
         self.missing_tools = {
             tool for tool in self.detected_tools
             if TOOL_WEIGHTS.get(tool, 0) == 0

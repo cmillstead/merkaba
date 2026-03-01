@@ -2,7 +2,7 @@ const BASE = '';
 
 function getHeaders(): HeadersInit {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  const key = localStorage.getItem('friday_api_key');
+  const key = localStorage.getItem('merkaba_api_key');
   if (key) headers['X-API-Key'] = key;
   return headers;
 }

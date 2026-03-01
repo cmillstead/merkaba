@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from friday.config.prompts import PromptLoader
+from merkaba.config.prompts import PromptLoader
 
 router = APIRouter(tags=["businesses"])
 
@@ -40,7 +40,7 @@ class BusinessConfigUpdate(BaseModel):
 @router.get("/{business_id}/config")
 async def get_business_config(business_id: int, request: Request):
     """Get per-business SOUL.md and USER.md content with fallback info."""
-    base_dir = getattr(request.app.state, "friday_base_dir", None)
+    base_dir = getattr(request.app.state, "merkaba_base_dir", None)
     loader = PromptLoader(base_dir=base_dir)
     soul, user = loader.load(business_id=business_id)
     info = loader.resolve(business_id=business_id)
@@ -57,7 +57,7 @@ async def update_business_config(
     business_id: int, body: BusinessConfigUpdate, request: Request
 ):
     """Update per-business SOUL.md and/or USER.md files."""
-    base_dir = getattr(request.app.state, "friday_base_dir", None)
+    base_dir = getattr(request.app.state, "merkaba_base_dir", None)
     loader = PromptLoader(base_dir=base_dir)
     biz_dir = loader.base_dir / "businesses" / str(business_id)
     biz_dir.mkdir(parents=True, exist_ok=True)

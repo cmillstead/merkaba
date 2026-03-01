@@ -7,11 +7,11 @@ import logging
 import os
 from typing import Any
 
-from friday.llm_providers.base import LLMProvider, ProviderResponse
+from merkaba.llm_providers.base import LLMProvider, ProviderResponse
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.expanduser("~/.friday/config.json")
+CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 # Cached provider instances (lazy-init)
 _providers: dict[str, LLMProvider] = {}
@@ -46,7 +46,7 @@ def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | 
     provider: LLMProvider | None = None
 
     if prefix == "ollama":
-        from friday.llm_providers.ollama_provider import OllamaProvider
+        from merkaba.llm_providers.ollama_provider import OllamaProvider
         provider = OllamaProvider()
         _providers[prefix] = provider
         return provider
@@ -58,7 +58,7 @@ def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | 
             return None
         try:
             import anthropic as _  # noqa: F811 — verify SDK is installed
-            from friday.llm_providers.anthropic_provider import AnthropicProvider
+            from merkaba.llm_providers.anthropic_provider import AnthropicProvider
             provider = AnthropicProvider(api_key=api_key)
         except (ImportError, ModuleNotFoundError):
             logger.debug("anthropic package not installed")
@@ -73,7 +73,7 @@ def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | 
             return None
         try:
             import openai as _  # noqa: F811 — verify SDK is installed
-            from friday.llm_providers.openai_provider import OpenAIProvider
+            from merkaba.llm_providers.openai_provider import OpenAIProvider
             provider = OpenAIProvider(api_key=api_key)
         except (ImportError, ModuleNotFoundError):
             logger.debug("openai package not installed")
@@ -90,7 +90,7 @@ def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | 
         base_url = config.get("base_url", "https://openrouter.ai/api/v1")
         try:
             import openai as _  # noqa: F811 — verify SDK is installed
-            from friday.llm_providers.openai_provider import OpenAIProvider
+            from merkaba.llm_providers.openai_provider import OpenAIProvider
             provider = OpenAIProvider(api_key=api_key, base_url=base_url)
         except (ImportError, ModuleNotFoundError):
             logger.debug("openai package not installed")
@@ -111,7 +111,7 @@ def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | 
             return None
         try:
             import openai as _  # noqa: F811 — verify SDK is installed
-            from friday.llm_providers.openai_provider import OpenAIProvider
+            from merkaba.llm_providers.openai_provider import OpenAIProvider
             provider = OpenAIProvider(api_key=api_key, base_url=base_url)
         except (ImportError, ModuleNotFoundError):
             logger.debug("openai package not installed")

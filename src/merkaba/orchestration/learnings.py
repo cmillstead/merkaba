@@ -1,15 +1,15 @@
-# src/friday/orchestration/learnings.py
+# src/merkaba/orchestration/learnings.py
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.memory.store import MemoryStore
-from friday.orchestration.workers import WorkerResult
+from merkaba.memory.store import MemoryStore
+from merkaba.orchestration.workers import WorkerResult
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT = """You are Friday's learning extractor. Analyze these recent task results and extract generalizable insights.
+EXTRACTION_PROMPT = """You are Merkaba's learning extractor. Analyze these recent task results and extract generalizable insights.
 
 Recent completed tasks:
 {task_summaries}

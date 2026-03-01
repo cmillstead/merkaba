@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from friday.llm_providers.base import ProviderResponse
+from merkaba.llm_providers.base import ProviderResponse
 
 logger = logging.getLogger(__name__)
 

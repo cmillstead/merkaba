@@ -1,5 +1,5 @@
-# src/friday/telegram/bot.py
-"""Telegram bot handler for Friday."""
+# src/merkaba/telegram/bot.py
+"""Telegram bot handler for Merkaba."""
 
 import logging
 from dataclasses import dataclass, field
@@ -13,16 +13,16 @@ from telegram.ext import (
     filters,
 )
 
-from friday.agent import Agent
-from friday.plugins import PluginRegistry
-from friday.telegram.commands import handle_research, handle_generate, handle_cancel, handle_listing
+from merkaba.agent import Agent
+from merkaba.plugins import PluginRegistry
+from merkaba.telegram.commands import handle_research, handle_generate, handle_cancel, handle_listing
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class FridayBot:
-    """Telegram bot that interfaces with Friday agent."""
+class MerkabaBot:
+    """Telegram bot that interfaces with Merkaba agent."""
 
     token: str
     allowed_user_ids: list[int]
@@ -69,7 +69,7 @@ class FridayBot:
             return
 
         await update.message.reply_text(
-            "Friday is online!\n\n"
+            "Merkaba is online!\n\n"
             "I can help you with:\n"
             "* /research <query> - Search Etsy marketplace\n"
             "* /generate <prompt> - Generate images\n"
@@ -105,7 +105,7 @@ class FridayBot:
             return
 
         # TODO: Implement task status tracking
-        await update.message.reply_text("Friday is running\nNo active tasks")
+        await update.message.reply_text("Merkaba is running\nNo active tasks")
 
     async def handle_skill_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, skill_name: str
@@ -143,7 +143,7 @@ class FridayBot:
             await update.message.reply_text("You are not authorized to use this bot.")
             return
 
-        from friday.approval.queue import ActionQueue
+        from merkaba.approval.queue import ActionQueue
         queue = ActionQueue()
         try:
             actions = queue.list_actions(status="pending")
@@ -189,7 +189,7 @@ class FridayBot:
 
         # Add approval inline button handler + 2FA handler (before general text handler)
         try:
-            from friday.approval.telegram import get_approval_handler, get_2fa_handler
+            from merkaba.approval.telegram import get_approval_handler, get_2fa_handler
             self.app.add_handler(get_approval_handler())
             self.app.add_handler(get_2fa_handler())
         except ImportError:
@@ -205,5 +205,5 @@ class FridayBot:
     def run(self):
         """Run the bot (blocking). Manages its own event loop."""
         app = self.build_app()
-        logger.info("Starting Friday Telegram bot...")
+        logger.info("Starting Merkaba Telegram bot...")
         app.run_polling()

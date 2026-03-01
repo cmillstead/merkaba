@@ -1,4 +1,4 @@
-# src/friday/plugins/commands.py
+# src/merkaba/plugins/commands.py
 """Command loading and management."""
 
 from dataclasses import dataclass, field

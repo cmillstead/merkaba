@@ -1,4 +1,4 @@
-# src/friday/integrations/email_adapter.py
+# src/merkaba/integrations/email_adapter.py
 """Email integration adapter — SMTP send, IMAP read, LLM-based parse."""
 
 import email
@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from email.message import EmailMessage
 from typing import Any
 
-from friday.integrations.base import IntegrationAdapter, register_adapter
-from friday.integrations.credentials import CredentialManager
+from merkaba.integrations.base import IntegrationAdapter, register_adapter
+from merkaba.integrations.credentials import CredentialManager
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class EmailAdapter(IntegrationAdapter):
 
     def _get_llm(self):
         if self._llm is None:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
             self._llm = LLMClient()
         return self._llm
 

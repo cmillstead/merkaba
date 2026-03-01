@@ -1,4 +1,4 @@
-# src/friday/security/sanitizer.py
+# src/merkaba/security/sanitizer.py
 """Sanitize memory values before injection into system prompts."""
 
 import re

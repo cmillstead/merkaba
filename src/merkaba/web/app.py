@@ -8,14 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 
-from friday.memory.store import MemoryStore
-from friday.memory.retrieval import MemoryRetrieval
-from friday.orchestration.queue import TaskQueue
-from friday.approval.queue import ActionQueue
+from merkaba.memory.store import MemoryStore
+from merkaba.memory.retrieval import MemoryRetrieval
+from merkaba.orchestration.queue import TaskQueue
+from merkaba.approval.queue import ActionQueue
 
 
 def _load_api_key() -> str | None:
-    config_path = os.path.expanduser("~/.friday/config.json")
+    config_path = os.path.expanduser("~/.merkaba/config.json")
     try:
         with open(config_path) as f:
             return json.load(f).get("api_key")
@@ -48,16 +48,16 @@ def _make_lifespan(db_overrides: dict | None = None):
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = db_overrides["task_queue"]
             app.state.action_queue = db_overrides["action_queue"]
-            app.state.friday_base_dir = db_overrides.get("friday_base_dir")
+            app.state.merkaba_base_dir = db_overrides.get("merkaba_base_dir")
 
         else:
             try:
-                from friday.observability.tracing import setup_logging
+                from merkaba.observability.tracing import setup_logging
                 setup_logging()
             except Exception:
                 pass
             app.state.api_key = _load_api_key()
-            app.state.friday_base_dir = None  # use ~/.friday default
+            app.state.merkaba_base_dir = None  # use ~/.merkaba default
             app.state.memory_store = MemoryStore()
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = TaskQueue()
@@ -72,7 +72,7 @@ def _make_lifespan(db_overrides: dict | None = None):
 
 def create_app(db_overrides: dict | None = None) -> FastAPI:
     app = FastAPI(
-        title="Friday Mission Control",
+        title="Merkaba Mission Control",
         version="0.1.0",
         lifespan=_make_lifespan(db_overrides),
     )
@@ -86,13 +86,13 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     )
 
     # Register routes
-    from friday.web.routes.system import router as system_router
-    from friday.web.routes.businesses import router as businesses_router
-    from friday.web.routes.memory import router as memory_router
-    from friday.web.routes.tasks import router as tasks_router
-    from friday.web.routes.approvals import router as approvals_router
-    from friday.web.routes.chat import router as chat_router
-    from friday.web.routes.analytics import router as analytics_router
+    from merkaba.web.routes.system import router as system_router
+    from merkaba.web.routes.businesses import router as businesses_router
+    from merkaba.web.routes.memory import router as memory_router
+    from merkaba.web.routes.tasks import router as tasks_router
+    from merkaba.web.routes.approvals import router as approvals_router
+    from merkaba.web.routes.chat import router as chat_router
+    from merkaba.web.routes.analytics import router as analytics_router
 
     app.include_router(system_router, prefix="/api/system", dependencies=[Depends(verify_api_key)])
     app.include_router(businesses_router, prefix="/api/businesses", dependencies=[Depends(verify_api_key)])

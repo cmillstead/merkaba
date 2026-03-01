@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from friday.llm_providers.base import LLMProvider, ProviderResponse
+from merkaba.llm_providers.base import LLMProvider, ProviderResponse
 
 logger = logging.getLogger(__name__)
 

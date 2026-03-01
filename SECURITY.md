@@ -1,12 +1,12 @@
-# Friday Security Model
+# Merkaba Security Model
 
-Friday is a local AI assistant with tool access, approval workflows, and
+Merkaba is a local AI assistant with tool access, approval workflows, and
 persistent memory.  This document describes its security architecture,
 threat model, and defense layers.
 
 ## Threat Model
 
-Friday operates on the user's machine with the user's permissions.
+Merkaba operates on the user's machine with the user's permissions.
 The primary threats are:
 
 | Threat | Vector | Mitigation |
@@ -44,7 +44,7 @@ All tool arguments are scanned before execution:
 
 Three tiers of file protection:
 
-- **DENIED_PATHS**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.friday/config.json`,
+- **DENIED_PATHS**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.merkaba/config.json`,
   `/etc/passwd`, `/etc/shadow`, etc. — blocked for all operations
 - **DENIED_FILENAME_PATTERNS**: `.env`, `credentials.json`, `secrets.yaml`,
   SSH keys — blocked by filename anywhere on disk
@@ -117,7 +117,7 @@ Every tool has a permission tier:
 
 - **Manifest-based permissions**: Plugins declare file access, network hosts,
   and tool access in their manifest
-- **Protected paths**: Security-critical Friday files blocked from plugin access
+- **Protected paths**: Security-critical Merkaba files blocked from plugin access
 - **Runtime enforcement**: `PluginSandbox.is_path_allowed()` checked before
   every plugin file operation
 
@@ -127,8 +127,8 @@ Every tool has a permission tier:
 |--------|---------|--------|
 | Integration API keys | OS keychain (`security/secrets.py`) | Retrieved per-use, not cached |
 | TOTP secret | OS keychain | Loaded into memory only when 2FA configured |
-| Web API key | `~/.friday/config.json` | Blocked from file_read/bash tools |
-| Conversation history | `~/.friday/conversations/*.json` | Unencrypted JSON on disk |
+| Web API key | `~/.merkaba/config.json` | Blocked from file_read/bash tools |
+| Conversation history | `~/.merkaba/conversations/*.json` | Unencrypted JSON on disk |
 
 ## Known Limitations
 

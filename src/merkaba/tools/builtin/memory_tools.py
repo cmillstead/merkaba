@@ -1,6 +1,6 @@
-"""Memory search tool for the agent — lets it query Friday's structured memory."""
+"""Memory search tool for the agent — lets it query Merkaba's structured memory."""
 
-from friday.tools.base import Tool, PermissionTier
+from merkaba.tools.base import Tool, PermissionTier
 
 # This will be set by the Agent when it wires up memory.
 # Using a mutable container so the tool closure captures the reference.
@@ -14,7 +14,7 @@ def set_active_business(business_id: int | None):
 
 
 def _memory_search(query: str, limit: int = 5) -> str:
-    """Search Friday's structured memory for facts, decisions, and learnings."""
+    """Search Merkaba's structured memory for facts, decisions, and learnings."""
     retrieval = _retrieval_ref.get("instance")
     if retrieval is None:
         return "Memory system not available."
@@ -43,7 +43,7 @@ def set_retrieval(retrieval_instance):
 memory_search = Tool(
     name="memory_search",
     description=(
-        "Search Friday's long-term memory for facts, decisions, and learnings. "
+        "Search Merkaba's long-term memory for facts, decisions, and learnings. "
         "Use this BEFORE doing web research to check if you already know the answer. "
         "Returns structured results from past research, stored facts, and decisions."
     ),

@@ -1,4 +1,4 @@
-# src/friday/orchestration/health.py
+# src/merkaba/orchestration/health.py
 import os
 import shutil
 import sqlite3
@@ -38,7 +38,7 @@ class HealthReport:
 class SystemHealthMonitor:
     """Checks system health: Ollama, databases, disk space, etc."""
 
-    friday_dir: str = field(default_factory=lambda: os.path.expanduser("~/.friday"))
+    merkaba_dir: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba"))
     ollama_url: str = "http://localhost:11434"
 
     def check_ollama(self) -> HealthCheck:
@@ -52,7 +52,7 @@ class SystemHealthMonitor:
             return HealthCheck("ollama", False, f"unreachable: {e}")
 
     def check_db(self, db_name: str = "tasks.db") -> HealthCheck:
-        db_path = os.path.join(self.friday_dir, db_name)
+        db_path = os.path.join(self.merkaba_dir, db_name)
         if not os.path.exists(db_path):
             return HealthCheck(f"db:{db_name}", True, "not created yet")
         try:
@@ -68,7 +68,7 @@ class SystemHealthMonitor:
         try:
             import chromadb
             client = chromadb.PersistentClient(
-                path=os.path.join(self.friday_dir, "chroma")
+                path=os.path.join(self.merkaba_dir, "chroma")
             )
             collections = client.list_collections()
             return HealthCheck("chromadb", True, f"{len(collections)} collection(s)")
@@ -79,7 +79,7 @@ class SystemHealthMonitor:
 
     def check_disk_space(self) -> HealthCheck:
         try:
-            usage = shutil.disk_usage(self.friday_dir)
+            usage = shutil.disk_usage(self.merkaba_dir)
             pct_used = (usage.used / usage.total) * 100
             if pct_used > 90:
                 return HealthCheck("disk", False, f"{pct_used:.1f}% used — low space")

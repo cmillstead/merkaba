@@ -1,5 +1,5 @@
-# src/friday/plugins/uninstaller.py
-"""Plugin uninstaller — scan and remove plugin artifacts from Claude Code and Friday."""
+# src/merkaba/plugins/uninstaller.py
+"""Plugin uninstaller — scan and remove plugin artifacts from Claude Code and Merkaba."""
 
 import glob
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class UninstallTarget:
     """A file or directory that belongs to a plugin."""
     path: str
-    category: str       # e.g. "commands", "agents", "plugin-cache", "framework", "manifest", "cache", "friday-import"
+    category: str       # e.g. "commands", "agents", "plugin-cache", "framework", "manifest", "cache", "merkaba-import"
     description: str    # human-readable, e.g. "command directory"
 
 
@@ -29,16 +29,16 @@ class UninstallResult:
 
 
 class PluginUninstaller:
-    """Scans for and removes plugin artifacts across Claude Code and Friday directories."""
+    """Scans for and removes plugin artifacts across Claude Code and Merkaba directories."""
 
     def __init__(
         self,
         claude_dir: str | None = None,
-        friday_dir: str | None = None,
+        merkaba_dir: str | None = None,
         settings_path: str | None = None,
     ):
         self.claude_dir = claude_dir or os.path.expanduser("~/.claude")
-        self.friday_dir = friday_dir or os.path.expanduser("~/.friday")
+        self.merkaba_dir = merkaba_dir or os.path.expanduser("~/.merkaba")
         self.settings_path = settings_path or os.path.join(self.claude_dir, "settings.json")
 
     def scan(self, name: str) -> list[UninstallTarget]:
@@ -118,13 +118,13 @@ class PluginUninstaller:
                     description="cache file",
                 ))
 
-        # 7. Friday imports: ~/.friday/plugins/{name}/
-        friday_plugin_dir = os.path.join(self.friday_dir, "plugins", name)
-        if os.path.isdir(friday_plugin_dir):
+        # 7. Merkaba imports: ~/.merkaba/plugins/{name}/
+        merkaba_plugin_dir = os.path.join(self.merkaba_dir, "plugins", name)
+        if os.path.isdir(merkaba_plugin_dir):
             targets.append(UninstallTarget(
-                path=friday_plugin_dir,
-                category="friday-import",
-                description="Friday plugin import",
+                path=merkaba_plugin_dir,
+                category="merkaba-import",
+                description="Merkaba plugin import",
             ))
 
         # 8. Check settings.json for enabledPlugins reference

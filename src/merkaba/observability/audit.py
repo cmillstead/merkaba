@@ -1,4 +1,4 @@
-# src/friday/observability/audit.py
+# src/merkaba/observability/audit.py
 import json
 import os
 import sqlite3
@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 class DecisionAuditStore:
     """SQLite-backed decision audit trail."""
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.friday/memory.db"))
+    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -139,7 +139,7 @@ def record_decision(
         if store is None:
             return
         if trace_id is None:
-            from friday.observability.tracing import get_trace_id
+            from merkaba.observability.tracing import get_trace_id
             trace_id = get_trace_id()
         store.record(
             decision_type=decision_type,

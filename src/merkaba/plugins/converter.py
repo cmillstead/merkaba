@@ -1,4 +1,4 @@
-# src/friday/plugins/converter.py
+# src/merkaba/plugins/converter.py
 """Skill conversion strategies."""
 
 import re
@@ -16,7 +16,7 @@ TOOL_MAP = {
     r'\bGrep\b': 'file_list',
 }
 
-LLM_CONVERSION_PROMPT = """Rewrite this skill for Friday, a local AI agent with these tools:
+LLM_CONVERSION_PROMPT = """Rewrite this skill for Merkaba, a local AI agent with these tools:
 - file_read: Read file contents
 - file_write: Write to files
 - file_list: List files in directory
@@ -34,7 +34,7 @@ Original skill:
 
 @dataclass
 class SkillConverter:
-    """Converts skill content to Friday-compatible format."""
+    """Converts skill content to Merkaba-compatible format."""
 
     content: str
     model: str = "qwen3.5:122b"
@@ -47,8 +47,8 @@ class SkillConverter:
         return result
 
     def apply_llm_assisted(self) -> str:
-        """Use LLM to rewrite skill for Friday compatibility."""
-        from friday.agent import Agent  # Lazy import to avoid circular dependency
+        """Use LLM to rewrite skill for Merkaba compatibility."""
+        from merkaba.agent import Agent  # Lazy import to avoid circular dependency
 
         agent = Agent(model=self.model)
         # Use replace instead of format to avoid issues with braces in content

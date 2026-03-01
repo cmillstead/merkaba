@@ -1,9 +1,9 @@
-# src/friday/memory/contradiction.py
+# src/merkaba/memory/contradiction.py
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.memory.store import MemoryStore
+from merkaba.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class ContradictionDetector:
         """Use classifier model to determine if two texts contradict."""
         try:
             if self._llm is None:
-                from friday.llm import LLMClient
+                from merkaba.llm import LLMClient
                 self._llm = LLMClient()
 
             prompt = (
@@ -115,7 +115,7 @@ class ContradictionDetector:
                 f"Statement B (existing): {existing_text}\n\n"
                 f"Reply with exactly YES or NO."
             )
-            from friday.llm import RequestPriority
+            from merkaba.llm import RequestPriority
             response = self._llm.chat_with_retry(
                 message=prompt,
                 system_prompt="You detect contradictions. Reply YES or NO only.",

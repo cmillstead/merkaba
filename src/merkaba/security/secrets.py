@@ -1,10 +1,10 @@
-# src/friday/security/secrets.py
+# src/merkaba/security/secrets.py
 """Secure secrets management using OS keychain."""
 
 import keyring
 import keyring.errors
 
-SERVICE_NAME = "friday-ai"
+SERVICE_NAME = "merkaba-ai"
 
 
 def store_secret(key: str, value: str) -> None:

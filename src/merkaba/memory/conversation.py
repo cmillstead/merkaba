@@ -1,4 +1,4 @@
-# src/friday/memory/conversation.py
+# src/merkaba/memory/conversation.py
 import json
 import os
 import uuid
@@ -11,7 +11,7 @@ from typing import Any
 class ConversationLog:
     """Persistent conversation logging."""
 
-    storage_dir: str = field(default_factory=lambda: os.path.expanduser("~/.friday/conversations"))
+    storage_dir: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/conversations"))
     session_id: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d-%H%M%S"))
     encryptor: Any = field(default=None)
     _history: list[dict[str, Any]] = field(default_factory=list, init=False)
@@ -30,7 +30,7 @@ class ConversationLog:
             try:
                 with open(self._filepath, "r") as f:
                     raw = f.read()
-                if raw.startswith("FRIDAY_ENC:"):
+                if raw.startswith("MERKABA_ENC:"):
                     if not self.encryptor:
                         self._history = []
                         return

@@ -117,7 +117,7 @@ export default function BusinessConfig() {
           <div style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 8 }}>
             Adapter health monitoring coming soon. Configure adapters via CLI:
             <code style={{ display: 'block', marginTop: 8, padding: 8, background: 'var(--bg)', borderRadius: 'var(--radius)', fontSize: 12 }}>
-              friday integrations connect slack
+              merkaba integrations connect slack
             </code>
           </div>
         </div>

@@ -1,4 +1,4 @@
-# src/friday/tools/base.py
+# src/merkaba/tools/base.py
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Callable

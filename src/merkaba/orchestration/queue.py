@@ -1,4 +1,4 @@
-# src/friday/orchestration/queue.py
+# src/merkaba/orchestration/queue.py
 import json
 import logging
 import os
@@ -18,7 +18,7 @@ class TaskQueue:
 
     MAX_TASK_FAILURES = 3
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.friday/tasks.db"))
+    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/tasks.db"))
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):

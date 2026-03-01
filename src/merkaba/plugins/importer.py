@@ -1,11 +1,11 @@
-# src/friday/plugins/importer.py
+# src/merkaba/plugins/importer.py
 """Plugin import orchestration."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from friday.plugins.analyzer import SkillAnalyzer, ConversionStrategy
-from friday.plugins.converter import SkillConverter
+from merkaba.plugins.analyzer import SkillAnalyzer, ConversionStrategy
+from merkaba.plugins.converter import SkillConverter
 
 
 @dataclass

@@ -13,7 +13,7 @@ class TelegramConfig:
 
     def __post_init__(self):
         if self.config_path is None:
-            self.config_path = os.path.expanduser("~/.friday/config.json")
+            self.config_path = os.path.expanduser("~/.merkaba/config.json")
         self._ensure_config_exists()
 
     def _ensure_config_exists(self):

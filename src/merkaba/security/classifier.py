@@ -1,4 +1,4 @@
-# src/friday/security/classifier.py
+# src/merkaba/security/classifier.py
 """Pre-flight semantic classifier for detecting prompt injection attempts.
 
 Uses a lightweight LLM to classify user input before it reaches the main agent.

@@ -22,7 +22,7 @@ async def list_approvals(
 @router.post("/{action_id}/approve")
 async def approve_action(action_id: int, request: Request):
     """Approve a pending action (with rate limiting, 2FA skipped for web)."""
-    from friday.approval.secure import RateLimitExceeded, SecureApprovalManager
+    from merkaba.approval.secure import RateLimitExceeded, SecureApprovalManager
 
     queue = request.app.state.action_queue
     manager = SecureApprovalManager.from_config(queue)

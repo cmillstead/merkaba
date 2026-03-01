@@ -1,4 +1,4 @@
-# src/friday/orchestration/supervisor.py
+# src/merkaba/orchestration/supervisor.py
 import json
 import logging
 import os
@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from friday.memory.store import MemoryStore
-from friday.memory.retrieval import MemoryRetrieval
-from friday.orchestration.workers import Worker, WorkerResult, get_worker_class
-from friday.orchestration.learnings import LearningExtractor
+from merkaba.memory.store import MemoryStore
+from merkaba.memory.retrieval import MemoryRetrieval
+from merkaba.orchestration.workers import Worker, WorkerResult, get_worker_class
+from merkaba.orchestration.learnings import LearningExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "code": "qwen3.5:122b",
 }
 DEFAULT_MODEL = "qwen3.5:122b"
-CONFIG_PATH = os.path.expanduser("~/.friday/config.json")
+CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 INTEGRATION_CHECK_MODEL = "qwen3:4b"
 SIMPLE_TASK_TYPES = {"health_check"}
@@ -75,7 +75,7 @@ class Supervisor:
     def __post_init__(self):
         vectors = None
         try:
-            from friday.memory.vectors import VectorMemory
+            from merkaba.memory.vectors import VectorMemory
             vectors = VectorMemory()
         except Exception:
             logger.debug("VectorMemory unavailable, using keyword fallback")
@@ -113,7 +113,7 @@ class Supervisor:
         """Handle a task from the scheduler. This is the on_task_due callback."""
         # Set trace ID for this task
         try:
-            from friday.observability.tracing import new_trace_id
+            from merkaba.observability.tracing import new_trace_id
             new_trace_id(f"task-{task['id']}")
         except Exception:
             pass
@@ -134,7 +134,7 @@ class Supervisor:
 
         # Record dispatch decision
         try:
-            from friday.observability.audit import record_decision
+            from merkaba.observability.audit import record_decision
             record_decision(
                 decision_type="dispatch_mode",
                 decision=mode.value,
@@ -196,7 +196,7 @@ class Supervisor:
 
     def _handle_explore_then_execute(self, task: dict, worker_class: type[Worker]) -> WorkerResult:
         """Run exploration agents first, then inject context into the worker."""
-        from friday.orchestration.explorer import ExplorationOrchestrator
+        from merkaba.orchestration.explorer import ExplorationOrchestrator
 
         payload = task.get("payload") or {}
         explore_paths = payload.get("explore_paths", [])
@@ -239,9 +239,9 @@ class Supervisor:
         )
 
         try:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
             llm = LLMClient()
-            from friday.llm import RequestPriority
+            from merkaba.llm import RequestPriority
             response = llm.chat_with_fallback(
                 message=prompt,
                 system_prompt="You are an integration checker. Reply with one word only.",
@@ -305,9 +305,9 @@ class Supervisor:
         )
 
         try:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
             llm = LLMClient()
-            from friday.llm import RequestPriority
+            from merkaba.llm import RequestPriority
             response = llm.chat_with_fallback(
                 message=prompt,
                 system_prompt="You are a content judge. Pick the best option by number.",
@@ -321,7 +321,7 @@ class Supervisor:
                     idx = int(ch) - 1
                     if 0 <= idx < len(successful):
                         try:
-                            from friday.observability.audit import record_decision
+                            from merkaba.observability.audit import record_decision
                             record_decision(
                                 decision_type="competition_winner",
                                 decision=f"option_{idx + 1}",
@@ -349,19 +349,19 @@ class Supervisor:
         )
 
     def _build_tool_registry(self, task: dict):
-        from friday.tools.registry import ToolRegistry
+        from merkaba.tools.registry import ToolRegistry
         registry = ToolRegistry()
         autonomy = task.get("autonomy_level", 1)
 
         try:
-            from friday.tools.builtin import file_read, file_list, grep, glob
+            from merkaba.tools.builtin import file_read, file_list, grep, glob
             for tool in [file_read, file_list, grep, glob]:
                 registry.register(tool)
             if autonomy >= 2:
-                from friday.tools.builtin import web_fetch
+                from merkaba.tools.builtin import web_fetch
                 registry.register(web_fetch)
             if autonomy >= 3:
-                from friday.tools.builtin import bash
+                from merkaba.tools.builtin import bash
                 registry.register(bash)
         except ImportError:
             logger.warning("Could not import builtin tools")
@@ -413,7 +413,7 @@ class Supervisor:
         if not business_id:
             return
         try:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
 
             llm = LLMClient()
             prompt = (
@@ -422,7 +422,7 @@ class Supervisor:
                 f"Outcome: {'success' if result.success else 'failure'}\n"
                 f"Details: {result.output or result.error}"
             )
-            from friday.llm import RequestPriority
+            from merkaba.llm import RequestPriority
             response = llm.chat_with_fallback(
                 message=prompt,
                 system_prompt="You are a concise summarizer. Write 2-3 sentences.",

@@ -1,11 +1,11 @@
-# src/friday/orchestration/scheduler.py
+# src/merkaba/orchestration/scheduler.py
 import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.orchestration.queue import TaskQueue
+from merkaba.orchestration.queue import TaskQueue
 
 logger = logging.getLogger(__name__)
 

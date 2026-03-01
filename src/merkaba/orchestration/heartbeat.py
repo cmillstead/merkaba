@@ -1,13 +1,13 @@
-# src/friday/orchestration/heartbeat.py
+# src/merkaba/orchestration/heartbeat.py
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-from friday.orchestration.queue import TaskQueue
+from merkaba.orchestration.queue import TaskQueue
 
 logger = logging.getLogger(__name__)
 
-TRIAGE_PROMPT = """You are Friday's heartbeat monitor. Analyze the current state and decide what to do.
+TRIAGE_PROMPT = """You are Merkaba's heartbeat monitor. Analyze the current state and decide what to do.
 
 Recent task runs:
 {recent_runs}
@@ -28,7 +28,7 @@ Response:"""
 
 @dataclass
 class Heartbeat:
-    """Light model triage — runs periodically to check if Friday needs to act."""
+    """Light model triage — runs periodically to check if Merkaba needs to act."""
 
     queue: TaskQueue
     model: str = "qwen3:4b"

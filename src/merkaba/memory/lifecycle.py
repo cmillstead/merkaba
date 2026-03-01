@@ -1,9 +1,9 @@
-# src/friday/memory/lifecycle.py
+# src/merkaba/memory/lifecycle.py
 import json
 import logging
 from dataclasses import dataclass, field
-from friday.memory.store import MemoryStore
-from friday.security.sanitizer import sanitize_memory_value
+from merkaba.memory.store import MemoryStore
+from merkaba.security.sanitizer import sanitize_memory_value
 
 logger = logging.getLogger(__name__)
 

@@ -1,12 +1,12 @@
-# src/friday/telegram/commands.py
-"""Telegram command handlers for Friday."""
+# src/merkaba/telegram/commands.py
+"""Telegram command handlers for Merkaba."""
 
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from friday.research import ApifyClient, ResearchDatabase, analyze_listings
-from friday.listing import ListingConfig, EtsyClient, EtsyClientError
+from merkaba.research import ApifyClient, ResearchDatabase, analyze_listings
+from merkaba.listing import ListingConfig, EtsyClient, EtsyClientError
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ async def handle_listing(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not tokens:
             await update.message.reply_text(
                 "Not authenticated with Etsy\n\n"
-                "Run `friday listing auth` in terminal to authenticate"
+                "Run `merkaba listing auth` in terminal to authenticate"
             )
         elif config.is_token_expired():
             await update.message.reply_text("Etsy token expired. Re-authenticate in terminal.")
@@ -146,7 +146,7 @@ async def handle_listing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif subcommand == "create":
         await update.message.reply_text(
             "Listing creation via Telegram coming soon.\n"
-            "Use `friday listing create <bundle>` in terminal for now."
+            "Use `merkaba listing create <bundle>` in terminal for now."
         )
 
     else:

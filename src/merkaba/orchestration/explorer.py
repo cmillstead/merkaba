@@ -1,4 +1,4 @@
-# src/friday/orchestration/explorer.py
+# src/merkaba/orchestration/explorer.py
 """Exploration agents for context scouting before complex task execution."""
 
 import logging
@@ -36,12 +36,12 @@ class ExplorationAgent:
 
     def _get_llm(self):
         if self._llm is None:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
             self._llm = LLMClient()
         return self._llm
 
     def _ask(self, prompt: str, system_prompt: str = "You are a concise code analyst.") -> str:
-        from friday.llm import RequestPriority
+        from merkaba.llm import RequestPriority
         llm = self._get_llm()
         response = llm.chat_with_retry(
             message=prompt,

@@ -1,17 +1,17 @@
-# src/friday/security/scanner.py
-"""Security scanner orchestration for Friday AI agent."""
+# src/merkaba/security/scanner.py
+"""Security scanner orchestration for Merkaba AI agent."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from friday.security.integrity import (
+from merkaba.security.integrity import (
     compute_directory_hashes,
     compare_with_baseline,
     load_baseline,
     save_baseline,
 )
-from friday.security.audit import scan_dependencies, CVEIssue
-from friday.plugins.skills import scan_skill_content
+from merkaba.security.audit import scan_dependencies, CVEIssue
+from merkaba.plugins.skills import scan_skill_content
 
 
 # Core security files that quick_scan checks
@@ -151,7 +151,7 @@ class SecurityScanner:
             for rel_path in CORE_SECURITY_FILES:
                 file_path = self.source_dir / rel_path
                 if file_path.exists():
-                    from friday.security.integrity import compute_file_hash
+                    from merkaba.security.integrity import compute_file_hash
                     file_hash = compute_file_hash(file_path)
                     if file_hash:
                         current[rel_path] = file_hash

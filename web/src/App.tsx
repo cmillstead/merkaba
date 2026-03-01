@@ -15,7 +15,7 @@ function App() {
     <BusinessProvider>
       <div className="layout">
         <aside className="sidebar">
-          <div className="sidebar-brand">Friday</div>
+          <div className="sidebar-brand">Merkaba</div>
           <BusinessSwitcher />
           <nav>
             <NavLink to="/" end><LayoutDashboard size={16} /> Dashboard</NavLink>

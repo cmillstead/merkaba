@@ -22,7 +22,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelectedState] = useState<number | null>(() => {
-    const stored = localStorage.getItem('friday_business')
+    const stored = localStorage.getItem('merkaba_business')
     return stored ? Number(stored) : null
   })
 
@@ -36,9 +36,9 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
   const setSelected = (id: number | null) => {
     setSelectedState(id)
     if (id !== null) {
-      localStorage.setItem('friday_business', String(id))
+      localStorage.setItem('merkaba_business', String(id))
     } else {
-      localStorage.removeItem('friday_business')
+      localStorage.removeItem('merkaba_business')
     }
   }
 

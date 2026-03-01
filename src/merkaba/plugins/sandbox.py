@@ -1,4 +1,4 @@
-# src/friday/plugins/sandbox.py
+# src/merkaba/plugins/sandbox.py
 """Plugin sandboxing — manifest-based tool and path restrictions."""
 
 import os
@@ -8,12 +8,12 @@ from pathlib import Path
 
 
 PROTECTED_PATHS = [
-    "**/friday/security/*",
-    "**/friday/approval/*",
-    "**/.friday/config.json",
-    "**/.friday/memory.db",
-    "**/.friday/actions.db",
-    "**/.friday/tasks.db",
+    "**/merkaba/security/*",
+    "**/merkaba/approval/*",
+    "**/.merkaba/config.json",
+    "**/.merkaba/memory.db",
+    "**/.merkaba/actions.db",
+    "**/.merkaba/tasks.db",
 ]
 
 FILE_TOOLS = {"file_read", "file_write", "file_list"}

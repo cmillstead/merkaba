@@ -33,9 +33,9 @@ async def system_status(request: Request):
     return {
         "ollama": ollama_ok,
         "databases": {
-            "memory": _file_size("~/.friday/memory.db"),
-            "tasks": _file_size("~/.friday/tasks.db"),
-            "actions": _file_size("~/.friday/actions.db"),
+            "memory": _file_size("~/.merkaba/memory.db"),
+            "tasks": _file_size("~/.merkaba/tasks.db"),
+            "actions": _file_size("~/.merkaba/actions.db"),
         },
         "counts": {
             "memory": memory_store.stats(),
@@ -52,7 +52,7 @@ async def token_usage(
 ):
     """Token usage summary, grouped by model or worker_type."""
     try:
-        from friday.observability.tokens import TokenUsageStore
+        from merkaba.observability.tokens import TokenUsageStore
     except ImportError as e:
         return {"usage": [], "error": f"TokenUsageStore not available: {e}"}
     store = None

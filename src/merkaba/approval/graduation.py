@@ -1,8 +1,8 @@
-# src/friday/approval/graduation.py
+# src/merkaba/approval/graduation.py
 import logging
 from dataclasses import dataclass
 
-from friday.approval.queue import ActionQueue
+from merkaba.approval.queue import ActionQueue
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class GraduationChecker:
 
         if approved >= self.threshold:
             try:
-                from friday.observability.audit import record_decision
+                from merkaba.observability.audit import record_decision
                 record_decision(
                     decision_type="graduation_suggestion",
                     decision=f"promote_{action_type}",

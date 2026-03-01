@@ -1,4 +1,4 @@
-# src/friday/observability/tracing.py
+# src/merkaba/observability/tracing.py
 import json
 import logging
 import os
@@ -50,7 +50,7 @@ def setup_logging(
     log_dir: str | None = None,
     level: int = logging.INFO,
 ) -> None:
-    """Configure the 'friday' logger with JSON file handler and trace filter.
+    """Configure the 'merkaba' logger with JSON file handler and trace filter.
 
     Idempotent — calling multiple times is safe.
     """
@@ -60,13 +60,13 @@ def setup_logging(
     _setup_done = True
 
     if log_dir is None:
-        log_dir = os.path.expanduser("~/.friday/logs")
+        log_dir = os.path.expanduser("~/.merkaba/logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    logger = logging.getLogger("friday")
+    logger = logging.getLogger("merkaba")
     logger.setLevel(level)
 
-    log_path = os.path.join(log_dir, "friday.jsonl")
+    log_path = os.path.join(log_dir, "merkaba.jsonl")
     handler = logging.FileHandler(log_path, encoding="utf-8")
     handler.setFormatter(JsonFormatter())
     handler.addFilter(TraceIdFilter())

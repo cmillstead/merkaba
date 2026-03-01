@@ -1,4 +1,4 @@
-# src/friday/orchestration/workers.py
+# src/merkaba/orchestration/workers.py
 import json
 import logging
 from dataclasses import dataclass, field
@@ -53,18 +53,18 @@ class Worker:
 
     def _get_llm(self):
         if self._llm is None:
-            from friday.llm import LLMClient
+            from merkaba.llm import LLMClient
             self._llm = LLMClient(model=self.model)
         return self._llm
 
     def _ask_llm(self, prompt: str, system_prompt: str | None = None) -> str:
-        from friday.llm import RequestPriority
+        from merkaba.llm import RequestPriority
         llm = self._get_llm()
         response = llm.chat_with_fallback(message=prompt, system_prompt=system_prompt, tier="complex", priority=RequestPriority.SCHEDULED)
         return response.content or ""
 
     def _ask_llm_with_tools(self, prompt: str, system_prompt: str | None = None) -> str:
-        from friday.llm import RequestPriority
+        from merkaba.llm import RequestPriority
         llm = self._get_llm()
         tools_fmt = self.tools.to_ollama_format() if self.tools and self.tools.list_tools() else None
         conversation = [{"role": "user", "content": prompt}]

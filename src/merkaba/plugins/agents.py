@@ -1,4 +1,4 @@
-# src/friday/plugins/agents.py
+# src/merkaba/plugins/agents.py
 """Agent configuration loading and management."""
 
 from dataclasses import dataclass, field

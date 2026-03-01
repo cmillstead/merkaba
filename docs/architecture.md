@@ -1,13 +1,13 @@
-# Friday Architecture
+# Merkaba Architecture
 
 ## Overview
 
-Friday is a local-first AI agent system running entirely on your Mac. It uses Ollama for LLM inference, SQLite for persistence, and has no cloud dependency for core operation. The system is built around graduated autonomy — it starts by asking for approval on actions, and earns the right to act more independently over time.
+Merkaba is a local-first AI agent system running entirely on your Mac. It uses Ollama for LLM inference, SQLite for persistence, and has no cloud dependency for core operation. The system is built around graduated autonomy — it starts by asking for approval on actions, and earns the right to act more independently over time.
 
 ## Module Map
 
 ```
-src/friday/
+src/merkaba/
 ├── agent.py             # Core agent loop with memory injection and model routing
 ├── llm.py               # Ollama client wrapper (LLMClient, LLMResponse, ToolCall)
 ├── cli.py               # Typer CLI — all heavy imports are lazy
@@ -74,7 +74,7 @@ src/friday/
 │   └── static/            # Built React SPA (Vite + TypeScript)
 │
 ├── telegram/
-│   ├── bot.py            # FridayBot — python-telegram-bot Application wrapper
+│   ├── bot.py            # MerkabaBot — python-telegram-bot Application wrapper
 │   ├── briefing.py       # System prompt context for Telegram sessions
 │   ├── commands.py       # /research, /generate, /listing handlers
 │   └── config.py         # Bot token + allowed user IDs
@@ -128,7 +128,7 @@ User input
 
 ```
 launchd (every 60s)
-  → friday scheduler run
+  → merkaba scheduler run
   → Scheduler.tick()
   → TaskQueue.get_due_tasks()
   → Supervisor.handle_task(task)
@@ -163,7 +163,7 @@ Worker produces needs_approval items
 
 ## Storage
 
-All data lives in `~/.friday/`:
+All data lives in `~/.merkaba/`:
 
 | File | Contents |
 |------|----------|
@@ -198,7 +198,7 @@ All data lives in `~/.friday/`:
 
 - **Local-first**: All LLM inference through Ollama on localhost. No cloud API keys for core operation.
 - **SQLite everywhere**: Memory, tasks, approvals, research — all SQLite. Simple, portable, no server process.
-- **Lazy CLI imports**: Every command imports its modules inside the function body to keep `friday --help` instant and avoid import-time failures (SOCKS proxy, missing deps).
+- **Lazy CLI imports**: Every command imports its modules inside the function body to keep `merkaba --help` instant and avoid import-time failures (SOCKS proxy, missing deps).
 - **Graduated autonomy**: `autonomy_level` on businesses and tasks controls what tools workers can use and which actions need approval.
 - **Dual-path memory**: ChromaDB for semantic similarity when available; keyword matching as fallback.
 - **Thread-safe DB access**: `check_same_thread=False` on SQLite connections for web chat's executor thread pattern.

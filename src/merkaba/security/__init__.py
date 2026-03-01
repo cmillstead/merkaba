@@ -1,10 +1,10 @@
-# src/friday/security/__init__.py
-"""Security module for Friday AI agent."""
+# src/merkaba/security/__init__.py
+"""Security module for Merkaba AI agent."""
 
-from friday.security.permissions import PermissionManager, PermissionDenied
-from friday.security.validation import validate_tool_arguments, ValidationError
-from friday.security.secrets import store_secret, get_secret, delete_secret
-from friday.security.integrity import (
+from merkaba.security.permissions import PermissionManager, PermissionDenied
+from merkaba.security.validation import validate_tool_arguments, ValidationError
+from merkaba.security.secrets import store_secret, get_secret, delete_secret
+from merkaba.security.integrity import (
     compute_file_hash,
     compute_directory_hashes,
     compare_with_baseline,
@@ -12,9 +12,9 @@ from friday.security.integrity import (
     load_baseline,
     IntegrityReport,
 )
-from friday.security.audit import scan_dependencies, CVEIssue
-from friday.security.scanner import SecurityScanner, SecurityReport
-from friday.security.classifier import InputClassifier
+from merkaba.security.audit import scan_dependencies, CVEIssue
+from merkaba.security.scanner import SecurityScanner, SecurityReport
+from merkaba.security.classifier import InputClassifier
 
 __all__ = [
     "PermissionManager",

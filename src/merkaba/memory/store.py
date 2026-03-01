@@ -1,4 +1,4 @@
-# src/friday/memory/store.py
+# src/merkaba/memory/store.py
 import json
 import logging
 import os
@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MemoryStore:
-    """SQLite-backed structured memory for Friday."""
+    """SQLite-backed structured memory for Merkaba."""
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.friday/memory.db"))
+    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
     contradiction_detector: Any = field(default=None, repr=False)
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 

@@ -1,8 +1,8 @@
-# src/friday/security.py
+# src/merkaba/security.py
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
-from friday.tools.base import PermissionTier
+from merkaba.tools.base import PermissionTier
 
 
 class PermissionDenied(Exception):

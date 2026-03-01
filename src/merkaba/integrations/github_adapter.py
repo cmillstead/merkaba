@@ -1,12 +1,12 @@
-# src/friday/integrations/github_adapter.py
+# src/merkaba/integrations/github_adapter.py
 """GitHub integration adapter — repos, issues, PRs, comments via PyGithub."""
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.integrations.base import IntegrationAdapter, register_adapter
-from friday.integrations.credentials import CredentialManager
+from merkaba.integrations.base import IntegrationAdapter, register_adapter
+from merkaba.integrations.credentials import CredentialManager
 
 logger = logging.getLogger(__name__)
 

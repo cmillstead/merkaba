@@ -8,8 +8,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
-UPLOAD_DIR = os.path.expanduser("~/.friday/uploads")
-CONVERSATIONS_DIR = os.path.expanduser("~/.friday/conversations")
+UPLOAD_DIR = os.path.expanduser("~/.merkaba/uploads")
+CONVERSATIONS_DIR = os.path.expanduser("~/.merkaba/conversations")
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +80,12 @@ async def upload_file(file: UploadFile):
 
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
-    """WebSocket endpoint for chat with Friday agent."""
+    """WebSocket endpoint for chat with Merkaba agent."""
     await websocket.accept()
 
     # Lazy import to avoid loading agent at module level
-    from friday.agent import Agent
-    from friday.tools.base import PermissionTier
+    from merkaba.agent import Agent
+    from merkaba.tools.base import PermissionTier
 
     agent = Agent()
     logger.debug("Agent created. retrieval=%s", agent.retrieval is not None)

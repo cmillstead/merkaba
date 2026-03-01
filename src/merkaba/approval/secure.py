@@ -1,4 +1,4 @@
-# src/friday/approval/secure.py
+# src/merkaba/approval/secure.py
 """Secure approval manager with TOTP 2FA and rate limiting."""
 
 import json
@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-from friday.approval.queue import ActionQueue
+from merkaba.approval.queue import ActionQueue
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class SecureApprovalManager:
     def _audit(self, decision_type: str, decision: str) -> None:
         """Record to audit trail. Fire-and-forget."""
         try:
-            from friday.observability.audit import record_decision
+            from merkaba.observability.audit import record_decision
 
             record_decision(decision_type=decision_type, decision=decision)
         except Exception:
@@ -141,7 +141,7 @@ class SecureApprovalManager:
         # Load TOTP secret
         totp_secret = None
         try:
-            from friday.security.secrets import get_secret
+            from merkaba.security.secrets import get_secret
 
             totp_secret = get_secret("totp_secret")
         except Exception:
@@ -150,7 +150,7 @@ class SecureApprovalManager:
         # Load config
         totp_threshold = 3
         rate_config = RateLimitConfig()
-        config_path = os.path.expanduser("~/.friday/config.json")
+        config_path = os.path.expanduser("~/.merkaba/config.json")
         try:
             with open(config_path) as f:
                 config = json.load(f)

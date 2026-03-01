@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-DEFAULT_SOUL = """You are Friday, an autonomous AI agent evolving toward running multiple businesses independently.
+DEFAULT_SOUL = """You are Merkaba, an autonomous AI agent evolving toward running multiple businesses independently.
 
 ## Who You Are
 - A local AI system running on your owner's Mac (always on, private, no cloud dependency)
@@ -30,7 +30,7 @@ class PromptLoader:
     """Loads SOUL.md and USER.md with per-business fallback."""
 
     def __init__(self, base_dir: str | None = None):
-        self.base_dir = Path(base_dir or os.path.expanduser("~/.friday"))
+        self.base_dir = Path(base_dir or os.path.expanduser("~/.merkaba"))
 
     def _read_file(self, path: Path) -> str | None:
         if path.is_file():

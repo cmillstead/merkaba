@@ -72,7 +72,7 @@ export default function Memory() {
           </div>
 
           {!searched && results.length === 0 && (
-            <div className="empty">Enter a query to search Friday's memory</div>
+            <div className="empty">Enter a query to search Merkaba's memory</div>
           )}
           {searched && results.length === 0 && (
             <div className="empty">No results found</div>

@@ -1,8 +1,8 @@
-# src/friday/tools/builtin/search.py
+# src/merkaba/tools/builtin/search.py
 import os
 import re
 from pathlib import Path
-from friday.tools.base import Tool, PermissionTier
+from merkaba.tools.base import Tool, PermissionTier
 
 
 def _grep(pattern: str, path: str) -> str:

@@ -1,4 +1,4 @@
-# src/friday/security/audit.py
+# src/merkaba/security/audit.py
 """Dependency CVE auditing via pip-audit."""
 
 import json

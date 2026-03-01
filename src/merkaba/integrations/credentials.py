@@ -1,10 +1,10 @@
-# src/friday/integrations/credentials.py
+# src/merkaba/integrations/credentials.py
 """Credential manager for integration adapters.
 
 Builds on security/secrets.py. Keys namespaced as integration:{adapter}:{key}.
 """
 
-from friday.security.secrets import store_secret, get_secret, delete_secret
+from merkaba.security.secrets import store_secret, get_secret, delete_secret
 
 
 class CredentialManager:

@@ -1,4 +1,4 @@
-# src/friday/plugins/skills.py
+# src/merkaba/plugins/skills.py
 """Skill loading and management."""
 
 import os
@@ -48,7 +48,7 @@ def scan_skill_content(content: str) -> list[str]:
 
 def _parse_manifest(post) -> "PluginManifest | None":
     """Parse PluginManifest from frontmatter if manifest fields are present."""
-    from friday.plugins.sandbox import PluginManifest
+    from merkaba.plugins.sandbox import PluginManifest
 
     has_manifest = any(
         post.get(k) is not None

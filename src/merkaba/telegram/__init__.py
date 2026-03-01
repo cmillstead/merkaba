@@ -1,12 +1,12 @@
-"""Telegram bot integration for Friday."""
+"""Telegram bot integration for Merkaba."""
 
-from friday.telegram.config import TelegramConfig
+from merkaba.telegram.config import TelegramConfig
 
-__all__ = ["TelegramConfig", "FridayBot"]
+__all__ = ["TelegramConfig", "MerkabaBot"]
 
 
 def __getattr__(name):
-    if name == "FridayBot":
-        from friday.telegram.bot import FridayBot
-        return FridayBot
+    if name == "MerkabaBot":
+        from merkaba.telegram.bot import MerkabaBot
+        return MerkabaBot
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

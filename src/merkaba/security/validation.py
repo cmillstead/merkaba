@@ -1,4 +1,4 @@
-# src/friday/security/validation.py
+# src/merkaba/security/validation.py
 """Input validation for tool arguments to prevent prompt injection and type mismatches."""
 
 import re

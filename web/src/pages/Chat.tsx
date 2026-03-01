@@ -152,7 +152,7 @@ export default function Chat() {
   return (
     <div className="chat-container">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1>Chat with Friday</h1>
+        <h1>Chat with Merkaba</h1>
         <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn btn-dim" onClick={newChat} title="New chat">
             <Plus size={14} /> New
@@ -234,7 +234,7 @@ export default function Chat() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && send()}
-          placeholder={connected ? 'Message Friday...' : 'Connecting...'}
+          placeholder={connected ? 'Message Merkaba...' : 'Connecting...'}
           disabled={!connected}
         />
         <button className="btn btn-primary" onClick={send} disabled={!connected}>

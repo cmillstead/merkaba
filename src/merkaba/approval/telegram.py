@@ -1,4 +1,4 @@
-# src/friday/approval/telegram.py
+# src/merkaba/approval/telegram.py
 import logging
 import time
 from typing import Any
@@ -6,8 +6,8 @@ from typing import Any
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-from friday.approval.queue import ActionQueue
-from friday.approval.secure import (
+from merkaba.approval.queue import ActionQueue
+from merkaba.approval.secure import (
     RateLimitExceeded,
     SecureApprovalManager,
     TotpInvalid,

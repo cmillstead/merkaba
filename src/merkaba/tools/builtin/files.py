@@ -1,8 +1,8 @@
-# src/friday/tools/builtin/files.py
+# src/merkaba/tools/builtin/files.py
 import os
 import re
 from pathlib import Path
-from friday.tools.base import Tool, PermissionTier
+from merkaba.tools.base import Tool, PermissionTier
 
 
 # Denied directory paths (will block any path under these)
@@ -15,7 +15,7 @@ DENIED_PATHS = [
     "~/.azure",
     "~/.netrc",
     "~/.git-credentials",
-    "~/.friday/config.json",
+    "~/.merkaba/config.json",
     "/etc/passwd",
     "/etc/shadow",
     "/etc/sudoers",

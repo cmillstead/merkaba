@@ -1,10 +1,10 @@
-# src/friday/tools/builtin/shell.py
+# src/merkaba/tools/builtin/shell.py
 """Secure shell command execution with allowlist-based filtering."""
 import os
 import re
 import shlex
 import subprocess
-from friday.tools.base import Tool, PermissionTier
+from merkaba.tools.base import Tool, PermissionTier
 
 # Allowlist of commands that can be executed
 ALLOWED_COMMANDS = {

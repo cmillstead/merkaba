@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from friday.integrations.base import IntegrationAdapter, register_adapter
+from merkaba.integrations.base import IntegrationAdapter, register_adapter
 
 logger = logging.getLogger(__name__)
 

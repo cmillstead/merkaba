@@ -1,4 +1,4 @@
-# src/friday/orchestration/code_worker.py
+# src/merkaba/orchestration/code_worker.py
 """CodeWorker: generates code from specs with verify/retry/rollback loop."""
 
 import logging
@@ -6,8 +6,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.orchestration.workers import Worker, WorkerResult, register_worker
-from friday.verification.deterministic import DeterministicVerifier
+from merkaba.orchestration.workers import Worker, WorkerResult, register_worker
+from merkaba.verification.deterministic import DeterministicVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ class CodeWorker(Worker):
 
     def _explore(self, task: dict, explore_paths: list[str]) -> str:
         """Run ExplorationOrchestrator and return context string."""
-        from friday.orchestration.explorer import ExplorationOrchestrator
+        from merkaba.orchestration.explorer import ExplorationOrchestrator
 
         orchestrator = ExplorationOrchestrator()
         result = orchestrator.explore(task, explore_paths)
@@ -178,7 +178,7 @@ class CodeWorker(Worker):
 
     def _review(self, spec: str, file_paths: list[str]) -> WorkerResult:
         """Run ReviewWorker on the generated files."""
-        from friday.orchestration.review_worker import ReviewWorker
+        from merkaba.orchestration.review_worker import ReviewWorker
 
         # Read all written files for review
         file_contents: list[str] = []

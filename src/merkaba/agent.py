@@ -1,12 +1,12 @@
-# src/friday/agent.py
+# src/merkaba/agent.py
 import logging
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
-from friday.llm import LLMClient, LLMUnavailableError, AllModelsUnavailableError, RequestPriority
-from friday.memory import ConversationLog, ConversationTree
-from friday.tools.registry import ToolRegistry
-from friday.tools.builtin import (
+from merkaba.llm import LLMClient, LLMUnavailableError, AllModelsUnavailableError, RequestPriority
+from merkaba.memory import ConversationLog, ConversationTree
+from merkaba.tools.registry import ToolRegistry
+from merkaba.tools.builtin import (
     file_read, file_write, file_list,
     etsy_search, analyze_results, save_research,
     grep, glob,
@@ -14,15 +14,15 @@ from friday.tools.builtin import (
     bash,
     memory_search, set_memory_retrieval, set_active_business,
 )
-from friday.memory.store import MemoryStore
-from friday.memory.retrieval import MemoryRetrieval
-from friday.security import PermissionManager, PermissionDenied, validate_tool_arguments, ValidationError
-from friday.security.scanner import SecurityScanner, SecurityReport
-from friday.security.classifier import InputClassifier
-from friday.plugins import PluginRegistry, Skill, PluginSandbox, PluginPermissionError
-from friday.verification.deterministic import DeterministicVerifier
-from friday.config.prompts import PromptLoader
-from friday.security.sanitizer import sanitize_memory_value
+from merkaba.memory.store import MemoryStore
+from merkaba.memory.retrieval import MemoryRetrieval
+from merkaba.security import PermissionManager, PermissionDenied, validate_tool_arguments, ValidationError
+from merkaba.security.scanner import SecurityScanner, SecurityReport
+from merkaba.security.classifier import InputClassifier
+from merkaba.plugins import PluginRegistry, Skill, PluginSandbox, PluginPermissionError
+from merkaba.verification.deterministic import DeterministicVerifier
+from merkaba.config.prompts import PromptLoader
+from merkaba.security.sanitizer import sanitize_memory_value
 
 
 SIMPLE_MODEL = "qwen3:8b"
@@ -89,7 +89,7 @@ class Agent:
             store = MemoryStore()
             vectors = None
             try:
-                from friday.memory.vectors import VectorMemory
+                from merkaba.memory.vectors import VectorMemory
                 vectors = VectorMemory()
             except Exception:
                 pass
@@ -232,7 +232,7 @@ class Agent:
         if not self.retrieval or len(self.conversation) < 4:
             return
         try:
-            from friday.memory.lifecycle import SessionExtractor
+            from merkaba.memory.lifecycle import SessionExtractor
             extractor = SessionExtractor(
                 llm=self.llm,
                 store=self.retrieval.store,
@@ -253,7 +253,7 @@ class Agent:
         """
         # Set trace ID for this run
         try:
-            from friday.observability.tracing import new_trace_id
+            from merkaba.observability.tracing import new_trace_id
             new_trace_id("agent")
         except Exception:
             pass
@@ -267,7 +267,7 @@ class Agent:
 
         # Record routing decision
         try:
-            from friday.observability.audit import record_decision
+            from merkaba.observability.audit import record_decision
             record_decision(
                 decision_type="classifier_routing",
                 decision=f"safe={is_safe}, complexity={complexity}",

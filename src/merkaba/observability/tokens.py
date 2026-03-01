@@ -1,4 +1,4 @@
-# src/friday/observability/tokens.py
+# src/merkaba/observability/tokens.py
 import os
 import sqlite3
 import uuid
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 class TokenUsageStore:
     """SQLite-backed token usage tracking."""
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.friday/memory.db"))
+    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):

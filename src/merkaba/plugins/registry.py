@@ -1,13 +1,13 @@
-# src/friday/plugins/registry.py
+# src/merkaba/plugins/registry.py
 """Central plugin registry."""
 
 import os
 from dataclasses import dataclass, field
 
-from friday.plugins.skills import SkillManager
-from friday.plugins.commands import CommandManager
-from friday.plugins.hooks import HookManager
-from friday.plugins.agents import AgentManager
+from merkaba.plugins.skills import SkillManager
+from merkaba.plugins.commands import CommandManager
+from merkaba.plugins.hooks import HookManager
+from merkaba.plugins.agents import AgentManager
 
 
 @dataclass
@@ -47,7 +47,7 @@ class PluginRegistry:
         registry = cls()
         registry.load_plugins([
             "~/.claude/plugins/cache",
-            "~/.friday/plugins",
+            "~/.merkaba/plugins",
         ])
-        registry.load_skill_context("~/.friday/skill-context.md")
+        registry.load_skill_context("~/.merkaba/skill-context.md")
         return registry

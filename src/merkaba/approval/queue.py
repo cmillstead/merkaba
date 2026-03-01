@@ -1,4 +1,4 @@
-# src/friday/approval/queue.py
+# src/merkaba/approval/queue.py
 import json
 import os
 import sqlite3
@@ -12,7 +12,7 @@ class ActionQueue:
     """SQLite-backed approval queue for pending actions."""
 
     db_path: str = field(
-        default_factory=lambda: os.path.expanduser("~/.friday/actions.db")
+        default_factory=lambda: os.path.expanduser("~/.merkaba/actions.db")
     )
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 

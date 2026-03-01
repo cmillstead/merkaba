@@ -1,11 +1,11 @@
-# src/friday/tools/builtin/web.py
+# src/merkaba/tools/builtin/web.py
 import ipaddress
 import socket
 from urllib.parse import urlparse
 
 import httpx
 
-from friday.tools.base import Tool, PermissionTier
+from merkaba.tools.base import Tool, PermissionTier
 
 # Blocked hostname patterns (case-insensitive)
 BLOCKED_HOSTNAMES = {

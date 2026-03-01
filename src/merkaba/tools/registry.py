@@ -1,5 +1,5 @@
-# src/friday/tools/registry.py
-from friday.tools.base import Tool
+# src/merkaba/tools/registry.py
+from merkaba.tools.base import Tool
 
 
 class ToolRegistry:

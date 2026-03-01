@@ -10,7 +10,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.expanduser("~/.friday/config.json")
+CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 
 # --- Rate Limiting & Resource Management ---
@@ -109,7 +109,7 @@ class LLMGate:
 
 
 def _load_gate_config() -> GateConfig:
-    """Load gate config from ~/.friday/config.json if available."""
+    """Load gate config from ~/.merkaba/config.json if available."""
     try:
         with open(CONFIG_PATH) as f:
             data = json.load(f)
@@ -246,7 +246,7 @@ class LLMClient:
         messages.append({"role": "user", "content": message})
 
         # Check if this is a cloud model
-        from friday.llm_providers.registry import is_cloud_model, resolve_provider
+        from merkaba.llm_providers.registry import is_cloud_model, resolve_provider
         if is_cloud_model(effective_model):
             provider, actual_model = resolve_provider(effective_model)
             if provider is None:
@@ -353,8 +353,8 @@ class LLMClient:
                     )
                     try:
                         if result.input_tokens or result.output_tokens:
-                            from friday.observability.tokens import get_token_store
-                            from friday.observability.tracing import get_trace_id
+                            from merkaba.observability.tokens import get_token_store
+                            from merkaba.observability.tracing import get_trace_id
                             store = get_token_store()
                             if store:
                                 store.record(
@@ -405,7 +405,7 @@ class LLMClient:
     def get_all_available_models(self) -> set[str]:
         """Query Ollama + configured cloud providers for available model names."""
         models = self.get_available_models()
-        from friday.llm_providers.registry import get_configured_providers
+        from merkaba.llm_providers.registry import get_configured_providers
         for provider_name, available in get_configured_providers().items():
             if available:
                 models.add(f"{provider_name}:*")
@@ -420,7 +420,7 @@ class LLMClient:
         Raises AllModelsUnavailableError if no model in the chain is available.
         Raises KeyError if tier is unknown.
         """
-        from friday.llm_providers.registry import is_cloud_model, resolve_provider
+        from merkaba.llm_providers.registry import is_cloud_model, resolve_provider
 
         chains = load_fallback_chains()
         if tier not in chains:
@@ -497,7 +497,7 @@ class LLMClient:
                         model, e, next_model,
                     )
                     try:
-                        from friday.observability.audit import record_decision
+                        from merkaba.observability.audit import record_decision
                         record_decision(
                             decision_type="model_fallback",
                             decision=f"{model} -> {next_model}",

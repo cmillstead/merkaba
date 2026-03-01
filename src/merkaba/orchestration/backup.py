@@ -1,4 +1,4 @@
-# src/friday/orchestration/backup.py
+# src/merkaba/orchestration/backup.py
 import logging
 import os
 import shutil
@@ -14,17 +14,17 @@ DBS_TO_BACKUP = ["memory.db", "tasks.db", "actions.db", "research.db"]
 
 @dataclass
 class BackupManager:
-    """Manages backup and restore of Friday's SQLite databases and config."""
+    """Manages backup and restore of Merkaba's SQLite databases and config."""
 
-    friday_dir: Path = field(
-        default_factory=lambda: Path(os.path.expanduser("~/.friday"))
+    merkaba_dir: Path = field(
+        default_factory=lambda: Path(os.path.expanduser("~/.merkaba"))
     )
     backup_dir: Path = field(default=None)
     max_backups: int = 7
 
     def __post_init__(self):
         if self.backup_dir is None:
-            self.backup_dir = self.friday_dir / "backups"
+            self.backup_dir = self.merkaba_dir / "backups"
 
     def run_backup(self) -> Path:
         """Create a timestamped backup of all databases and config."""
@@ -34,7 +34,7 @@ class BackupManager:
 
         # Backup SQLite databases using online backup API
         for db_name in DBS_TO_BACKUP:
-            src_path = self.friday_dir / db_name
+            src_path = self.merkaba_dir / db_name
             if not src_path.exists():
                 logger.debug("Skipping %s (not found)", db_name)
                 continue
@@ -53,12 +53,12 @@ class BackupManager:
             logger.info("Backed up %s", db_name)
 
         # Copy config.json if present
-        config_src = self.friday_dir / "config.json"
+        config_src = self.merkaba_dir / "config.json"
         if config_src.exists():
             shutil.copy2(str(config_src), str(dest / "config.json"))
 
         # Copy conversations directory if present
-        convos_src = self.friday_dir / "conversations"
+        convos_src = self.merkaba_dir / "conversations"
         if convos_src.is_dir():
             shutil.copytree(str(convos_src), str(dest / "conversations"))
 
@@ -112,10 +112,10 @@ class BackupManager:
                 f"Backup not found: {backup_path}"
             )
 
-        current_path = self.friday_dir / db_name
+        current_path = self.merkaba_dir / db_name
         # Create safety copy before restore
         if current_path.exists():
-            safety_path = self.friday_dir / f"{db_name}.pre-restore"
+            safety_path = self.merkaba_dir / f"{db_name}.pre-restore"
             shutil.copy2(str(current_path), str(safety_path))
             logger.info("Safety copy: %s", safety_path)
 

@@ -1,14 +1,14 @@
-# src/friday/memory/retrieval.py
+# src/merkaba/memory/retrieval.py
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from friday.memory.store import MemoryStore
+from merkaba.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
 try:
-    from friday.memory.vectors import VectorMemory
+    from merkaba.memory.vectors import VectorMemory
 
     HAS_VECTORS = True
 except ImportError:
@@ -282,7 +282,7 @@ class MemoryRetrieval:
     def what_do_i_know(
         self, topic: str, business_id: int | None = None
     ) -> str:
-        """Return a formatted summary of what Friday knows about a topic."""
+        """Return a formatted summary of what Merkaba knows about a topic."""
         results = self.recall(topic, business_id, limit=10)
         if not results:
             return f"I don't have any information about '{topic}' yet."

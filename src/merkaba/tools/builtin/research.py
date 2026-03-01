@@ -1,13 +1,13 @@
-# src/friday/tools/builtin/research.py
-"""Etsy research tools for Friday."""
+# src/merkaba/tools/builtin/research.py
+"""Etsy research tools for Merkaba."""
 
 import json
 import os
 from datetime import datetime
 from typing import Any
 
-from friday.research import ApifyClient, ResearchDatabase, analyze_listings
-from friday.tools.base import PermissionTier, Tool
+from merkaba.research import ApifyClient, ResearchDatabase, analyze_listings
+from merkaba.tools.base import PermissionTier, Tool
 
 
 def _etsy_search(query: str, max_results: int = 50) -> dict[str, Any]:
@@ -53,14 +53,14 @@ def _save_research(
 
     Args:
         research_data: Dict with query, listings, and metrics.
-        db_path: Custom database path (default: ~/.friday/research.db).
-        export_dir: Directory to export JSON (default: ~/.friday/research/).
+        db_path: Custom database path (default: ~/.merkaba/research.db).
+        export_dir: Directory to export JSON (default: ~/.merkaba/research/).
 
     Returns:
         Dict with run_id, db_path, and export_path.
     """
     if export_dir is None:
-        export_dir = os.path.expanduser("~/.friday/research/")
+        export_dir = os.path.expanduser("~/.merkaba/research/")
 
     # Ensure export directory exists
     os.makedirs(export_dir, exist_ok=True)
@@ -163,11 +163,11 @@ save_research = Tool(
             },
             "db_path": {
                 "type": "string",
-                "description": "Custom database path (default: ~/.friday/research.db)",
+                "description": "Custom database path (default: ~/.merkaba/research.db)",
             },
             "export_dir": {
                 "type": "string",
-                "description": "Directory to export JSON (default: ~/.friday/research/)",
+                "description": "Directory to export JSON (default: ~/.merkaba/research/)",
             },
         },
         "required": ["research_data"],

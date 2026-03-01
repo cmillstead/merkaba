@@ -1,4 +1,4 @@
-# src/friday/security/encryption.py
+# src/merkaba/security/encryption.py
 """Fernet-based conversation encryption at rest."""
 
 import base64
@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
-ENCRYPTED_PREFIX = b"FRIDAY_ENC:"
+ENCRYPTED_PREFIX = b"MERKABA_ENC:"
 
 
 class ConversationEncryptor:
@@ -20,7 +20,7 @@ class ConversationEncryptor:
     def from_passphrase(cls, passphrase: str, salt: bytes | None = None) -> "ConversationEncryptor":
         """Derive a Fernet key from a passphrase using PBKDF2."""
         if salt is None:
-            salt = b"friday-conversation-salt"
+            salt = b"merkaba-conversation-salt"
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -34,7 +34,7 @@ class ConversationEncryptor:
     def from_keychain(cls) -> "ConversationEncryptor | None":
         """Load encryption key from OS keychain. Returns None if not configured."""
         try:
-            from friday.security.secrets import get_secret
+            from merkaba.security.secrets import get_secret
             key_b64 = get_secret("conversation_encryption_key")
             if key_b64:
                 return cls(key_b64.encode())
@@ -56,5 +56,5 @@ class ConversationEncryptor:
 
     @staticmethod
     def is_encrypted(data: str) -> bool:
-        """Check if data has the FRIDAY_ENC: encryption prefix."""
+        """Check if data has the MERKABA_ENC: encryption prefix."""
         return data.startswith(ENCRYPTED_PREFIX.decode())

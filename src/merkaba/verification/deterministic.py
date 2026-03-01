@@ -1,4 +1,4 @@
-# src/friday/verification/deterministic.py
+# src/merkaba/verification/deterministic.py
 import logging
 import shutil
 import subprocess

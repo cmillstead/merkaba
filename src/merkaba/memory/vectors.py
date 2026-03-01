@@ -1,4 +1,4 @@
-# src/friday/memory/vectors.py
+# src/merkaba/memory/vectors.py
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,7 +17,7 @@ class VectorMemory:
     """ChromaDB-backed vector memory for semantic search."""
 
     persist_dir: str = field(
-        default_factory=lambda: os.path.expanduser("~/.friday/memory_vectors/")
+        default_factory=lambda: os.path.expanduser("~/.merkaba/memory_vectors/")
     )
     ollama_model: str = "nomic-embed-text"
     _client: Any = field(default=None, init=False, repr=False)
