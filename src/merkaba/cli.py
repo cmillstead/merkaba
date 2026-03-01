@@ -31,6 +31,18 @@ app = typer.Typer(
 console = Console()
 
 
+# Load CLI extensions from installed packages
+def _load_cli_extensions():
+    try:
+        from merkaba.extensions import discover_cli_apps
+        for name, ext_app in discover_cli_apps().items():
+            app.add_typer(ext_app, name=name)
+    except Exception:
+        pass
+
+_load_cli_extensions()
+
+
 def version_callback(value: bool):
     if value:
         console.print(f"merkaba version {__version__}")

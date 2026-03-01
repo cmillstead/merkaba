@@ -77,6 +77,11 @@ class Supervisor:
         self._learnings = LearningExtractor(memory_store=self.memory_store)
         self._model_map = load_model_config(self.config_path)
 
+        # Load extension workers and adapters from installed packages
+        from merkaba.extensions import discover_workers, discover_adapters
+        discover_workers()
+        discover_adapters()
+
     def select_dispatch_mode(self, task: dict) -> DispatchMode:
         """Determine dispatch mode for a task based on payload and task_type."""
         payload = task.get("payload") or {}
