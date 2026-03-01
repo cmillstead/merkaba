@@ -1,16 +1,23 @@
 """Mission Control endpoints — state aggregation and WebSocket control channel."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from starlette.requests import HTTPConnection
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["control"])
 
+# Separate router for WebSocket (included without prefix in app.py)
+ws_router = APIRouter(tags=["control-ws"])
 
-def _build_state(request: Request) -> dict:
+HEARTBEAT_INTERVAL = 2  # seconds
+
+
+def _build_state(conn: HTTPConnection) -> dict:
     """Aggregate system state from existing stores and registries."""
     from merkaba.orchestration.workers import WORKER_REGISTRY
     from merkaba.tools.builtin import (
@@ -22,9 +29,9 @@ def _build_state(request: Request) -> dict:
         document_search, document_get,
     )
 
-    memory_store = request.app.state.memory_store
-    task_queue = request.app.state.task_queue
-    action_queue = request.app.state.action_queue
+    memory_store = conn.app.state.memory_store
+    task_queue = conn.app.state.task_queue
+    action_queue = conn.app.state.action_queue
 
     # System stats — memory facts count (across all businesses)
     try:
@@ -114,3 +121,24 @@ def _build_state(request: Request) -> dict:
 async def get_control_state(request: Request):
     """Full state snapshot for initial Mission Control load."""
     return _build_state(request)
+
+
+@ws_router.websocket("/ws/control")
+async def websocket_control(websocket: WebSocket):
+    """WebSocket endpoint for live Mission Control state updates."""
+    await websocket.accept()
+
+    try:
+        # Send initial full state
+        state = _build_state(websocket)
+        await websocket.send_json(state)
+
+        # Heartbeat loop
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            state = _build_state(websocket)
+            await websocket.send_json(state)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception("Control WebSocket error")

@@ -108,3 +108,24 @@ class TestControlState:
                 c["from"] == "merkaba-prime" and c["to"] == worker["id"]
                 for c in connections
             ), f"Missing connection for worker {worker['id']}"
+
+
+@pytest.mark.e2e
+class TestControlWebSocket:
+    def test_ws_control_sends_initial_state(self, app_client):
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "state_update"
+            assert "system" in msg
+            assert "agents" in msg
+
+    def test_ws_control_sends_heartbeat(self, app_client):
+        """After initial state, should receive heartbeat updates."""
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            msg1 = ws.receive_json()
+            assert msg1["type"] == "state_update"
+            # Second message should also be a state update (heartbeat)
+            msg2 = ws.receive_json()
+            assert msg2["type"] == "state_update"
