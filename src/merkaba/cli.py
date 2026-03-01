@@ -694,6 +694,26 @@ def memory_consolidate():
         store.close()
 
 
+@memory_app.command("rebuild-vectors")
+def memory_rebuild_vectors():
+    """Rebuild vector store from non-archived SQLite data."""
+    from merkaba.memory.store import MemoryStore
+    from merkaba.memory.vectors import VectorMemory
+
+    store = MemoryStore()
+    try:
+        vectors = VectorMemory()
+        stats = vectors.rebuild_from_store(store)
+        console.print(f"[green]Vector rebuild complete:[/green] {stats}")
+        vectors.close()
+    except ImportError:
+        console.print("[red]ChromaDB not installed. Run: pip install chromadb[/red]")
+    except Exception as e:
+        console.print(f"[red]Rebuild failed: {e}[/red]")
+    finally:
+        store.close()
+
+
 # --- Scheduler Command Group ---
 
 scheduler_app = typer.Typer(help="Task scheduler commands")
