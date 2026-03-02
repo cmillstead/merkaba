@@ -16,6 +16,16 @@ def queue():
         q.close()
 
 
+# --- Connection pragmas ---
+
+
+def test_wal_journal_mode(queue):
+    """TaskQueue should enable WAL journal mode for better concurrent read performance."""
+    cursor = queue._conn.execute("PRAGMA journal_mode")
+    mode = cursor.fetchone()[0]
+    assert mode == "wal"
+
+
 # --- Task CRUD ---
 
 
