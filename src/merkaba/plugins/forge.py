@@ -1,12 +1,16 @@
 """Skill Forge — generate merkaba plugins from skill descriptions."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from html.parser import HTMLParser
+from pathlib import Path
 
 import httpx
 import frontmatter
+
+from merkaba.plugins.skills import scan_skill_content
 
 
 class UrlKind(Enum):
@@ -279,3 +283,50 @@ def check_security_gate(skill: ScrapedSkill) -> str:
     if verdict == "suspicious":
         return "warn"
     return "proceed"
+
+
+@dataclass
+class ForgeResult:
+    """Result of the forge operation."""
+    success: bool = False
+    name: str = ""
+    path: str = ""
+    warnings: list[str] = field(default_factory=list)
+    error: str = ""
+
+
+def scan_and_write(
+    name: str,
+    generated: dict[str, str],
+    dest_dir: str,
+    confirm: bool = False,
+    source_url: str = "",
+) -> ForgeResult:
+    """Scan generated content for dangerous patterns and write to disk."""
+    result = ForgeResult(name=name)
+
+    skill_md = generated["skill_md"]
+
+    # Add forge metadata
+    post = frontmatter.loads(skill_md)
+    if source_url:
+        post.metadata["forged_from"] = source_url
+    post.metadata["forged_at"] = datetime.now().isoformat()
+    skill_md = frontmatter.dumps(post)
+
+    # Scan
+    warnings = scan_skill_content(skill_md)
+    result.warnings = warnings
+
+    if warnings and not confirm:
+        result.error = "Generated content flagged by security scanner"
+        return result
+
+    # Write
+    plugin_dir = Path(dest_dir) / name / "skills" / name
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "SKILL.md").write_text(skill_md)
+
+    result.success = True
+    result.path = str(plugin_dir)
+    return result
