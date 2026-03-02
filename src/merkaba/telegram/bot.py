@@ -162,7 +162,8 @@ class MerkabaBot:
             return
 
         from merkaba.approval.queue import ActionQueue
-        queue = ActionQueue()
+        factory = getattr(self, "_action_queue_factory", None) or ActionQueue
+        queue = factory()
         try:
             actions = queue.list_actions(status="pending")
         finally:

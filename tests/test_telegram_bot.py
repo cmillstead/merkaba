@@ -165,9 +165,9 @@ class TestMerkabaBot:
 
         mock_queue = MagicMock()
         mock_queue.list_actions.return_value = []
+        bot._action_queue_factory = lambda: mock_queue
 
-        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue):
-            await bot.cmd_pending(update, MagicMock())
+        await bot.cmd_pending(update, MagicMock())
 
         msg = update.message.reply_text.call_args[0][0]
         assert "no pending" in msg.lower()
@@ -185,9 +185,9 @@ class TestMerkabaBot:
             {"id": 1, "action_type": "email_send", "description": "Send welcome email"},
             {"id": 2, "action_type": "stripe_charge", "description": "Charge customer $50"},
         ]
+        bot._action_queue_factory = lambda: mock_queue
 
-        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue):
-            await bot.cmd_pending(update, MagicMock())
+        await bot.cmd_pending(update, MagicMock())
 
         msg = update.message.reply_text.call_args[0][0]
         assert "2 pending" in msg
