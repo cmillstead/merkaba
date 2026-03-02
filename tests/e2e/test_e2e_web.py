@@ -277,3 +277,64 @@ def test_web_websocket_chat(app_client):
             msg2 = ws.receive_json()
             assert msg2["type"] == "response"
             assert msg2["content"] == "Hello from Merkaba"
+
+
+# ---------------------------------------------------------------------------
+# 9. File upload — valid extension succeeds
+# ---------------------------------------------------------------------------
+
+def test_web_upload_valid_file(app_client, tmp_path):
+    """POST /api/upload with an allowed extension returns 200 and file metadata."""
+    client, app = app_client
+    upload_dir = str(tmp_path / "uploads")
+
+    with patch("merkaba.web.routes.chat.UPLOAD_DIR", upload_dir):
+        resp = client.post(
+            "/api/upload",
+            files={"file": ("notes.txt", b"Hello world", "text/plain")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["filename"] == "notes.txt"
+    assert data["size"] == len(b"Hello world")
+    assert data["path"].endswith(".txt")
+    # Verify the file was actually written
+    assert os.path.isfile(data["path"])
+
+
+# ---------------------------------------------------------------------------
+# 10. File upload — disallowed extension returns 400
+# ---------------------------------------------------------------------------
+
+def test_web_upload_bad_extension(app_client):
+    """POST /api/upload with a disallowed extension (.exe) returns 400."""
+    client, app = app_client
+
+    resp = client.post(
+        "/api/upload",
+        files={"file": ("malware.exe", b"MZ\x90\x00", "application/octet-stream")},
+    )
+
+    assert resp.status_code == 400
+    assert "not allowed" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# 11. File upload — oversized file returns 413
+# ---------------------------------------------------------------------------
+
+def test_web_upload_oversized(app_client):
+    """POST /api/upload with content exceeding MAX_UPLOAD_SIZE returns 413."""
+    client, app = app_client
+
+    # Create content just over the 10 MB limit
+    oversized_content = b"x" * (10 * 1024 * 1024 + 1)
+
+    resp = client.post(
+        "/api/upload",
+        files={"file": ("big.txt", oversized_content, "text/plain")},
+    )
+
+    assert resp.status_code == 413
+    assert "exceeds maximum" in resp.json()["detail"]

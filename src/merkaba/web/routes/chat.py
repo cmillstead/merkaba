@@ -11,6 +11,15 @@ from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDi
 UPLOAD_DIR = os.path.expanduser("~/.merkaba/uploads")
 CONVERSATIONS_DIR = os.path.expanduser("~/.merkaba/conversations")
 
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+ALLOWED_EXTENSIONS = {
+    ".txt", ".md", ".pdf", ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".py", ".js", ".ts", ".html", ".css",
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".zip", ".tar", ".gz",
+}
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
@@ -66,13 +75,27 @@ async def get_session(session_id: str):
 @router.post("/api/upload")
 async def upload_file(file: UploadFile):
     """Save an uploaded file and return its path."""
+    safe_filename = os.path.basename(file.filename or "file")
+    ext = os.path.splitext(safe_filename)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{ext}' is not allowed",
+        )
+
+    content = await file.read()
+
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size {len(content)} exceeds maximum of {MAX_UPLOAD_SIZE} bytes",
+        )
+
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     # Prefix with timestamp + uuid to avoid collisions
     stem = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    safe_filename = os.path.basename(file.filename or "file")
-    ext = os.path.splitext(safe_filename)[1]
     dest = os.path.join(UPLOAD_DIR, f"{stem}{ext}")
-    content = await file.read()
     with open(dest, "wb") as f:
         f.write(content)
     return {"path": dest, "filename": file.filename, "size": len(content)}
