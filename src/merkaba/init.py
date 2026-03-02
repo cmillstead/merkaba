@@ -4,6 +4,7 @@
 import json
 import os
 import shutil
+import subprocess
 import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
@@ -70,6 +71,16 @@ def check_ollama() -> ModelStatus:
         installed_models=installed,
         missing_models=missing,
     )
+
+
+def pull_model(model: str) -> bool:
+    """Pull an Ollama model. Returns True on success."""
+    print(f"\n  Pulling {model}... (this may take a few minutes)\n")
+    result = subprocess.run(
+        ["ollama", "pull", model],
+        # Let stdout/stderr pass through so the user sees progress
+    )
+    return result.returncode == 0
 
 
 class FileAction(Enum):

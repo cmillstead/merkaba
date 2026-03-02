@@ -2,10 +2,11 @@
 """Tests for merkaba init onboarding wizard."""
 
 import json
+import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 
@@ -163,3 +164,22 @@ def test_preflight_returns_model_status(tmp_path, monkeypatch):
         result = run_preflight(force=False)
 
     assert result.available is True
+
+
+def test_pull_model_success(monkeypatch):
+    """pull_model calls ollama pull and returns True on success."""
+    mock_run = MagicMock(return_value=MagicMock(returncode=0))
+    monkeypatch.setattr("subprocess.run", mock_run)
+    result = pull_model("qwen3:8b")
+    assert result is True
+    mock_run.assert_called_once()
+    args = mock_run.call_args
+    assert args[0][0] == ["ollama", "pull", "qwen3:8b"]
+
+
+def test_pull_model_failure(monkeypatch):
+    """pull_model returns False when ollama pull fails."""
+    mock_run = MagicMock(return_value=MagicMock(returncode=1))
+    monkeypatch.setattr("subprocess.run", mock_run)
+    result = pull_model("qwen3:8b")
+    assert result is False
