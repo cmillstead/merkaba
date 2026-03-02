@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras, run_init
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 
@@ -241,3 +241,49 @@ def test_extras_scheduler_on_yes(monkeypatch):
     monkeypatch.setattr("merkaba.init._install_scheduler", mock_install)
     run_extras()
     mock_install.assert_called_once()
+
+
+def test_run_init_full_flow(tmp_path, monkeypatch):
+    """Full init: preflight + interview + extras."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+
+    # Mock Ollama as available with simple model
+    mock_status = ModelStatus(available=True, installed_models=["qwen3:8b"], missing_models=["qwen3.5:122b", "qwen3:4b"])
+    monkeypatch.setattr("merkaba.init.check_ollama", lambda: mock_status)
+
+    # Mock interview conversation
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        MagicMock(content="What's your name?"),
+        MagicMock(content="[DONE]"),
+        MagicMock(content="SOUL:\nCustom soul\n---\nUSER:\nCustom user"),
+    ]
+    monkeypatch.setattr("merkaba.llm.LLMClient", lambda **kw: mock_llm)
+
+    # Mock all user inputs: depth=1, interview answer, review=y, extras=n,n,n
+    all_inputs = iter(["1", "Test user", "y", "n", "n", "n"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(all_inputs))
+
+    run_init(no_interview=False, force=False)
+
+    assert (home / "config.json").exists()
+    assert (home / "SOUL.md").exists()
+    assert (home / "USER.md").exists()
+
+
+def test_run_init_no_interview(tmp_path, monkeypatch):
+    """Init with --no-interview skips interview phase."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    mock_status = ModelStatus(available=False, missing_models=[])
+    monkeypatch.setattr("merkaba.init.check_ollama", lambda: mock_status)
+
+    # Only extras inputs needed (all no)
+    monkeypatch.setattr("builtins.input", lambda _="": "n")
+
+    run_init(no_interview=True, force=False)
+
+    assert (home / "config.json").exists()
+    # SOUL.md should have the default (not interview-generated)
+    assert (home / "SOUL.md").read_text() == DEFAULT_SOUL

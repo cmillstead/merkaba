@@ -347,6 +347,86 @@ def run_extras() -> None:
         _launch_web()
 
 
+def run_init(*, no_interview: bool = False, force: bool = False) -> None:
+    """Run the full merkaba init wizard.
+
+    Phase 1: Preflight (always runs)
+    Phase 2: Interview (if LLM available and not --no-interview)
+    Phase 3: Extras (always offered)
+    """
+    print("\n  Welcome to Merkaba!\n")
+
+    # Phase 1: Preflight
+    status = run_preflight(force=force)
+
+    # Auto-pull simple model if missing
+    simple_model = REQUIRED_MODELS["simple"]
+    if status.available and simple_model in status.missing_models:
+        if _ask_yes_no(f"Pull {simple_model}? (~5GB, needed for basic operation)"):
+            if pull_model(simple_model):
+                status.installed_models.append(simple_model)
+                status.missing_models.remove(simple_model)
+
+    # Phase 2: Interview
+    can_interview = status.available and any(
+        m in status.installed_models for m in REQUIRED_MODELS.values()
+    )
+
+    if not no_interview and can_interview:
+        print("\n  How well would you like Merkaba to know you?\n")
+        print("    1. Quick intro (3-4 questions)")
+        print("    2. Getting to know you (5-8 questions)")
+        print("    3. Deep dive (8-12 questions)\n")
+
+        depth_choice = input("  Choose [1/2/3]: ").strip()
+        depth_map = {"1": InterviewDepth.QUICK, "2": InterviewDepth.MEDIUM, "3": InterviewDepth.DEEP}
+        depth = depth_map.get(depth_choice, InterviewDepth.QUICK)
+
+        # Use whichever model is available (prefer simple)
+        interview_model = simple_model if simple_model in status.installed_models else status.installed_models[0]
+
+        soul, user = run_interview(model=interview_model, depth=depth)
+
+        # Show results for review
+        print("\n  Generated SOUL.md:\n")
+        for line in soul.split("\n"):
+            print(f"    {line}")
+        print("\n  Generated USER.md:\n")
+        for line in user.split("\n"):
+            print(f"    {line}")
+
+        if _ask_yes_no("\n  Save these?"):
+            (MERKABA_DIR / "SOUL.md").write_text(soul, encoding="utf-8")
+            (MERKABA_DIR / "USER.md").write_text(user, encoding="utf-8")
+            print("  Saved!")
+        else:
+            print("  Keeping defaults.")
+
+    elif not no_interview and not can_interview:
+        print("\n  No LLM available — skipping interview.")
+        print("  Run 'merkaba init' again after starting Ollama to personalize.\n")
+
+    # Phase 3: Extras
+    run_extras()
+
+    # Summary
+    _print_summary()
+
+
+def _print_summary() -> None:
+    """Print final setup summary."""
+    print("\n  Setup complete!\n")
+    print(f"    Config:  {MERKABA_DIR / 'config.json'}")
+    print(f"    Soul:    {MERKABA_DIR / 'SOUL.md'}")
+    print(f"    User:    {MERKABA_DIR / 'USER.md'}")
+    print()
+    print("  Next steps:")
+    print("    merkaba chat \"hello\"     Start a conversation")
+    print("    merkaba web              Launch the web UI")
+    print("    merkaba help             See all commands")
+    print()
+
+
 def _print_model_inventory(status: ModelStatus) -> None:
     """Print model availability table."""
     print("\n  Merkaba uses three models:\n")
