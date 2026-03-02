@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,11 +8,38 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
+from starlette.types import Receive, Scope, Send
 
 from merkaba.memory.store import MemoryStore
 from merkaba.memory.retrieval import MemoryRetrieval
 from merkaba.orchestration.queue import TaskQueue
 from merkaba.approval.queue import ActionQueue
+
+logger = logging.getLogger(__name__)
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles subclass that rejects non-HTTP scopes instead of crashing.
+
+    Starlette's Mount("/") matches ALL scopes (HTTP and WebSocket) with
+    Match.FULL.  If a WebSocket connection reaches this mount — due to a
+    routing edge-case, race condition, or an unrecognised WS path — the
+    base StaticFiles raises ``assert scope["type"] == "http"``, killing
+    the ASGI handler.  This subclass returns a clean close instead.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            logger.warning(
+                "SPAStaticFiles received non-HTTP scope type=%s path=%s — rejecting",
+                scope["type"],
+                scope.get("path", "?"),
+            )
+            if scope["type"] == "websocket":
+                # Accept then immediately close so the client gets a clean signal
+                await send({"type": "websocket.close", "code": 4004})
+            return
+        await super().__call__(scope, receive, send)
 
 
 def _load_api_key() -> str | None:
@@ -109,6 +137,6 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     # Serve React static files if built
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        app.mount("/", SPAStaticFiles(directory=str(static_dir), html=True), name="static")
 
     return app

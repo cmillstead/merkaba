@@ -2,6 +2,7 @@ import os
 
 import httpx
 from fastapi import APIRouter, Request
+from starlette.routing import Mount
 
 router = APIRouter(tags=["system"])
 
@@ -43,6 +44,23 @@ async def system_status(request: Request):
             "actions": action_queue.stats(),
         },
     }
+
+
+@router.get("/routes")
+async def route_diagnostics(request: Request):
+    """Route table diagnostic — shows order, type, and path for every registered route."""
+    routes = []
+    for i, route in enumerate(request.app.routes):
+        entry = {
+            "index": i,
+            "type": type(route).__name__,
+            "path": getattr(route, "path", None),
+            "methods": sorted(route.methods) if getattr(route, "methods", None) else None,
+        }
+        if isinstance(route, Mount):
+            entry["mounted_app"] = type(route.app).__name__
+        routes.append(entry)
+    return {"route_count": len(routes), "routes": routes}
 
 
 @router.get("/token-usage")

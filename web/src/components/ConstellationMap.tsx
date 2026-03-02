@@ -120,6 +120,11 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
         <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
           <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1a1a3e" strokeWidth="0.5" />
         </pattern>
+        <radialGradient id="center-glow">
+          <stop offset="0%" stopColor="rgba(108, 99, 255, 0.35)" />
+          <stop offset="50%" stopColor="rgba(0, 240, 255, 0.12)" />
+          <stop offset="100%" stopColor="transparent" />
+        </radialGradient>
       </defs>
       <rect width="800" height="600" fill="url(#grid)" />
 
@@ -198,15 +203,25 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
 
       {/* Merkaba glyph rendered via foreignObject for the primary agent */}
       {positions.length > 0 && positions[0].type === 'agent' && (
-        <foreignObject
-          x={positions[0].x - 30}
-          y={positions[0].y - 30}
-          width={60}
-          height={60}
-          style={{ pointerEvents: 'none' }}
-        >
-          <MerkabaGlyph size={60} status={statusFor(positions[0].id)} speed={1} />
-        </foreignObject>
+        <>
+          {/* Center glow — SVG radial gradient so it isn't clipped by foreignObject */}
+          <circle
+            cx={positions[0].x}
+            cy={positions[0].y}
+            r="36"
+            fill="url(#center-glow)"
+            style={{ pointerEvents: 'none' }}
+          />
+          <foreignObject
+            x={positions[0].x - 30}
+            y={positions[0].y - 30}
+            width={60}
+            height={60}
+            style={{ pointerEvents: 'none', overflow: 'visible' }}
+          >
+            <MerkabaGlyph size={60} status={statusFor(positions[0].id)} speed={1} />
+          </foreignObject>
+        </>
       )}
     </svg>
   )
