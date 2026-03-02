@@ -1,9 +1,16 @@
 """In-memory diagnostics store with ring buffer for request tracing."""
 
 import enum
+import logging
 import threading
+import time
+import uuid
 from collections import deque
 from datetime import datetime, timezone
+
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+logger = logging.getLogger(__name__)
 
 
 class TraceDepth(enum.Enum):
@@ -123,3 +130,140 @@ class DiagnosticsStore:
             "recent_requests": self.get_recent(50),
             "recent_errors": self.get_errors(10),
         }
+
+
+_REDACTED_HEADERS = {"authorization", "x-api-key", "cookie", "set-cookie"}
+
+
+class DiagnosticsMiddleware:
+    """ASGI middleware that traces HTTP requests and WebSocket lifecycle events."""
+
+    def __init__(self, app: ASGIApp, store: DiagnosticsStore) -> None:
+        self.app = app
+        self.store = store
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            await self._trace_http(scope, receive, send)
+        elif scope["type"] == "websocket":
+            await self._trace_websocket(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+    async def _trace_http(self, scope: Scope, receive: Receive, send: Send) -> None:
+        start = time.monotonic()
+        status_code = 0
+        response_size = 0
+
+        async def send_wrapper(message):
+            nonlocal status_code, response_size
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 0)
+            elif message["type"] == "http.response.body":
+                response_size += len(message.get("body", b""))
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            status_code = 500
+            raise
+        finally:
+            duration = (time.monotonic() - start) * 1000
+            try:
+                entry = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "scope_type": "http",
+                    "method": scope.get("method", "?"),
+                    "path": scope.get("path", "?"),
+                    "status": status_code,
+                    "duration_ms": round(duration, 2),
+                    # Moderate fields
+                    "route": self._get_route_name(scope),
+                    "request_size": 0,
+                    "response_size": response_size,
+                    # Full fields
+                    "query_string": scope.get("query_string", b"").decode(
+                        "utf-8", errors="replace"
+                    ),
+                    "headers": self._sanitize_headers(scope.get("headers", [])),
+                }
+                if status_code >= 400:
+                    entry["error"] = f"HTTP {status_code}"
+                self.store.record_request(entry)
+            except Exception:
+                logger.warning("Failed to record HTTP trace", exc_info=True)
+
+    async def _trace_websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
+        conn_id = uuid.uuid4().hex[:12]
+        path = scope.get("path", "?")
+        start = time.monotonic()
+
+        async def receive_wrapper():
+            message = await receive()
+            if message["type"] == "websocket.receive":
+                try:
+                    self.store.ws_frame_received(conn_id)
+                except Exception:
+                    pass
+            return message
+
+        async def send_wrapper(message):
+            if message["type"] == "websocket.send":
+                try:
+                    self.store.ws_frame_sent(conn_id)
+                except Exception:
+                    pass
+            await send(message)
+
+        try:
+            self.store.ws_connect(conn_id, path)
+            await self.app(scope, receive_wrapper, send_wrapper)
+        except Exception:
+            raise
+        finally:
+            duration = (time.monotonic() - start) * 1000
+            try:
+                conn_info = None
+                for c in self.store.get_connections():
+                    if c["path"] == path:
+                        conn_info = c
+                        break
+                self.store.record_request({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "scope_type": "websocket",
+                    "method": "WS",
+                    "path": path,
+                    "status": 0,
+                    "duration_ms": round(duration, 2),
+                    "event_type": "disconnect",
+                    "frames_sent": conn_info["frames_sent"] if conn_info else 0,
+                    "frames_received": conn_info["frames_received"] if conn_info else 0,
+                })
+            except Exception:
+                logger.warning("Failed to record WebSocket trace", exc_info=True)
+            self.store.ws_disconnect(conn_id)
+
+    @staticmethod
+    def _get_route_name(scope: Scope) -> str:
+        route = scope.get("route")
+        if route:
+            return f"{type(route).__name__} {getattr(route, 'path', '')}"
+        endpoint = scope.get("endpoint")
+        if endpoint:
+            name = getattr(endpoint, "__name__", None)
+            if name:
+                return name
+            return type(endpoint).__name__
+        return "unknown"
+
+    @staticmethod
+    def _sanitize_headers(raw_headers: list) -> list[list[str]]:
+        result = []
+        for key_bytes, val_bytes in raw_headers:
+            key = key_bytes.decode("latin-1") if isinstance(key_bytes, bytes) else key_bytes
+            val = val_bytes.decode("latin-1") if isinstance(val_bytes, bytes) else val_bytes
+            if key.lower() in _REDACTED_HEADERS:
+                val = "[REDACTED]"
+            result.append([key, val])
+        return result

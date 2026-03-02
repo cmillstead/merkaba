@@ -134,6 +134,12 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     app.include_router(control_router, prefix="/api/control", dependencies=[Depends(verify_api_key)])
     app.include_router(control_ws_router, dependencies=[Depends(verify_api_key)])
 
+    # Diagnostics middleware — wraps all requests for tracing
+    from merkaba.web.diagnostics import DiagnosticsStore, DiagnosticsMiddleware
+    if not hasattr(app.state, "diagnostics_store"):
+        app.state.diagnostics_store = DiagnosticsStore()
+    app.add_middleware(DiagnosticsMiddleware, store=app.state.diagnostics_store)
+
     # Serve React static files if built
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():

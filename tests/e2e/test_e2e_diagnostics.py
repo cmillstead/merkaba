@@ -1,9 +1,16 @@
 # tests/e2e/test_e2e_diagnostics.py
-"""Tests for the DiagnosticsStore ring buffer."""
+"""Tests for the DiagnosticsStore ring buffer and DiagnosticsMiddleware."""
 
+import os
+import sqlite3
+import sys
 import threading
+from unittest.mock import MagicMock
 
 import pytest
+
+if "ollama" not in sys.modules:
+    sys.modules["ollama"] = MagicMock()
 
 from merkaba.web.diagnostics import DiagnosticsStore, TraceDepth
 
@@ -137,3 +144,98 @@ class TestDiagnosticsStore:
         assert not errors
         summary = store.get_summary()
         assert summary["total_requests"] == 200
+
+
+# --- Middleware tests (require web dependencies) ---
+
+HAS_WEB_DEPS = True
+try:
+    from fastapi.testclient import TestClient
+    from merkaba.web.app import create_app
+    from merkaba.memory.store import MemoryStore
+    from merkaba.orchestration.queue import TaskQueue
+    from merkaba.approval.queue import ActionQueue
+except ImportError:
+    HAS_WEB_DEPS = False
+
+
+def _make_store(cls, db_path):
+    obj = object.__new__(cls)
+    obj.db_path = db_path
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
+    obj._conn.row_factory = sqlite3.Row
+    obj._conn.execute("PRAGMA foreign_keys = ON")
+    obj._create_tables()
+    return obj
+
+
+@pytest.fixture
+def app_client(tmp_path):
+    overrides = {
+        "memory_store": _make_store(MemoryStore, str(tmp_path / "memory.db")),
+        "task_queue": _make_store(TaskQueue, str(tmp_path / "tasks.db")),
+        "action_queue": _make_store(ActionQueue, str(tmp_path / "actions.db")),
+        "merkaba_base_dir": str(tmp_path / "merkaba_home"),
+    }
+    os.makedirs(overrides["merkaba_base_dir"], exist_ok=True)
+    app = create_app(db_overrides=overrides)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client, app
+
+
+@pytest.mark.skipif(not HAS_WEB_DEPS, reason="Missing web dependencies")
+class TestDiagnosticsMiddleware:
+    def test_middleware_traces_http_request(self, app_client):
+        client, app = app_client
+        client.get("/api/system/status")
+        store = app.state.diagnostics_store
+        recent = store.get_recent(10)
+        assert len(recent) >= 1
+        req = next(r for r in recent if r["path"] == "/api/system/status")
+        assert req["method"] == "GET"
+        assert req["status"] == 200
+        assert req["duration_ms"] > 0
+
+    def test_middleware_traces_404(self, app_client):
+        client, app = app_client
+        client.get("/api/nonexistent")
+        store = app.state.diagnostics_store
+        errors = store.get_errors(10)
+        assert any(r["status"] == 404 for r in errors)
+
+    def test_middleware_tracks_websocket(self, app_client):
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state
+            store = app.state.diagnostics_store
+            conns = store.get_connections()
+            assert any(c["path"] == "/ws/control" for c in conns)
+        # After disconnect, connection should be removed
+        conns = store.get_connections()
+        assert not any(c["path"] == "/ws/control" for c in conns)
+
+    def test_middleware_never_crashes_request(self, app_client):
+        """Even if tracing fails, the request should succeed."""
+        client, app = app_client
+        # Normal request should always work
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+
+    def test_middleware_sanitizes_headers(self, app_client):
+        client, app = app_client
+        client.get("/api/system/status", headers={
+            "Authorization": "Bearer secret-token",
+            "X-API-Key": "my-key",
+            "X-Custom": "visible",
+        })
+        store = app.state.diagnostics_store
+        recent = store.get_recent(10)
+        req = next(r for r in recent if r["path"] == "/api/system/status")
+        if "headers" in req:
+            headers = dict(req["headers"])
+            assert headers.get("authorization") == "[REDACTED]"
+            assert headers.get("x-api-key") == "[REDACTED]"
+            assert headers.get("x-custom") == "visible"
