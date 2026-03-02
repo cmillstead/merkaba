@@ -11,6 +11,23 @@ except ImportError:
     document_search = None
     document_get = None
 
+try:
+    from merkaba.tools.builtin.browser import (
+        browser_open,
+        browser_snapshot,
+        browser_click,
+        browser_fill,
+        browser_navigate,
+        browser_close,
+    )
+except ImportError:
+    browser_open = None
+    browser_snapshot = None
+    browser_click = None
+    browser_fill = None
+    browser_navigate = None
+    browser_close = None
+
 __all__ = [
     "file_read",
     "file_write",
@@ -24,4 +41,10 @@ __all__ = [
     "set_active_business",
     "document_search",
     "document_get",
+    "browser_open",
+    "browser_snapshot",
+    "browser_click",
+    "browser_fill",
+    "browser_navigate",
+    "browser_close",
 ]
