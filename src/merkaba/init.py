@@ -1,9 +1,60 @@
 # src/merkaba/init.py
 """Merkaba onboarding wizard — ``merkaba init``."""
 
+import json
 import shutil
+import urllib.request
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+
+REQUIRED_MODELS = {
+    "simple": "qwen3:8b",
+    "complex": "qwen3.5:122b",
+    "classifier": "qwen3:4b",
+}
+
+MODEL_DESCRIPTIONS = {
+    "simple": "Fast responses, routing, classification",
+    "complex": "Deep reasoning, tool use, long tasks",
+    "classifier": "Safety checks, complexity routing",
+}
+
+
+@dataclass
+class ModelStatus:
+    """Result of Ollama availability and model check."""
+
+    available: bool
+    installed_models: list[str] = field(default_factory=list)
+    missing_models: list[str] = field(default_factory=list)
+
+
+def check_ollama() -> ModelStatus:
+    """Check Ollama availability and installed models."""
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:11434/api/tags",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return ModelStatus(
+            available=False,
+            missing_models=list(REQUIRED_MODELS.values()),
+        )
+
+    installed = [m["name"] for m in data.get("models", [])]
+    installed_set = set(installed)
+    missing = [m for m in REQUIRED_MODELS.values() if m not in installed_set]
+
+    return ModelStatus(
+        available=True,
+        installed_models=installed,
+        missing_models=missing,
+    )
 
 
 class FileAction(Enum):
