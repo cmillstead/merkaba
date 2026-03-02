@@ -27,6 +27,11 @@ try:
 except ImportError:
     scrape_url = None
 
+try:
+    from merkaba.plugins.forge import check_security_gate
+except ImportError:
+    check_security_gate = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -218,3 +223,21 @@ class TestScrapeUrl:
     def test_non_https_raises(self):
         with pytest.raises(ValueError, match="HTTPS"):
             scrape_url("http://clawhub.ai/skills/test")
+
+
+class TestSecurityGate:
+    def test_benign_passes(self):
+        skill = ScrapedSkill(name="s", description="d", content="c", security_verdict="Benign")
+        assert check_security_gate(skill) == "proceed"
+
+    def test_suspicious_warns(self):
+        skill = ScrapedSkill(name="s", description="d", content="c", security_verdict="Suspicious")
+        assert check_security_gate(skill) == "warn"
+
+    def test_malicious_blocks(self):
+        skill = ScrapedSkill(name="s", description="d", content="c", security_verdict="Malicious")
+        assert check_security_gate(skill) == "double_warn"
+
+    def test_no_verdict_passes(self):
+        skill = ScrapedSkill(name="s", description="d", content="c")
+        assert check_security_gate(skill) == "proceed"
