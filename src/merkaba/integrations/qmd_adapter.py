@@ -1,6 +1,7 @@
 # src/merkaba/integrations/qmd_adapter.py
 """QMD document search adapter — on-device hybrid search for markdown files."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -125,6 +126,28 @@ class QMDAdapter(IntegrationAdapter):
         except Exception as e:
             logger.error("QMD status failed: %s", e)
             return {"ok": False, "error": str(e)}
+
+    # --- Async wrappers (delegate to sync via asyncio.to_thread) ---
+
+    async def _request_async(self, method: str, path: str, body: dict | None = None) -> dict:
+        """Async wrapper around _request — runs the blocking HTTP call in a thread."""
+        return await asyncio.to_thread(self._request, method, path, body)
+
+    async def _search_async(self, params: dict) -> dict:
+        """Async wrapper around _search."""
+        return await asyncio.to_thread(self._search, params)
+
+    async def _get_async(self, params: dict) -> dict:
+        """Async wrapper around _get."""
+        return await asyncio.to_thread(self._get, params)
+
+    async def _status_async(self, params: dict) -> dict:
+        """Async wrapper around _status."""
+        return await asyncio.to_thread(self._status, params)
+
+    async def execute_async(self, action: str, params: dict | None = None) -> dict:
+        """Async wrapper around execute — for use in async contexts (e.g. FastAPI)."""
+        return await asyncio.to_thread(self.execute, action, params)
 
 
 register_adapter("qmd", QMDAdapter)

@@ -1,6 +1,7 @@
 # tests/test_qmd_adapter.py
 """Tests for QMD document search adapter."""
 
+import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
@@ -158,4 +159,97 @@ class TestErrorHandling:
         resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = resp
         result = adapter.execute("status", {})
+        assert result["ok"] is False
+
+
+# --- Async wrappers ---
+
+
+class TestAsyncWrappers:
+    """Tests for async variants of QMD adapter methods."""
+
+    def test_request_async(self, adapter, mock_urlopen):
+        mock_urlopen.return_value = _make_response({"status": "ok"})
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._request_async("GET", "/health")
+        )
+        assert result == {"status": "ok"}
+
+    def test_search_async(self, adapter, mock_urlopen):
+        adapter._connected = True
+        search_response = {
+            "result": [
+                {"id": "abc", "score": 0.9, "fields": {"path": "a.md", "text": "hi"}},
+            ]
+        }
+        mock_urlopen.return_value = _make_response(search_response)
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._search_async({"query": "hello", "limit": 3})
+        )
+        assert result["ok"] is True
+        assert result["count"] == 1
+
+    def test_search_async_missing_query(self, adapter, mock_urlopen):
+        adapter._connected = True
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._search_async({})
+        )
+        assert result["ok"] is False
+        assert "query" in result["error"].lower()
+
+    def test_get_async(self, adapter, mock_urlopen):
+        adapter._connected = True
+        get_response = {
+            "result": {"id": "x", "fields": {"path": "b.md", "text": "content"}}
+        }
+        mock_urlopen.return_value = _make_response(get_response)
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._get_async({"path": "b.md"})
+        )
+        assert result["ok"] is True
+        assert result["content"] == "content"
+
+    def test_get_async_missing_path(self, adapter, mock_urlopen):
+        adapter._connected = True
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._get_async({})
+        )
+        assert result["ok"] is False
+        assert "path" in result["error"].lower()
+
+    def test_status_async(self, adapter, mock_urlopen):
+        adapter._connected = True
+        mock_urlopen.return_value = _make_response({"collections": 2})
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._status_async({})
+        )
+        assert result["ok"] is True
+
+    def test_execute_async(self, adapter, mock_urlopen):
+        adapter._connected = True
+        search_response = {
+            "result": [
+                {"id": "z", "score": 0.8, "fields": {"path": "c.md", "text": "yo"}},
+            ]
+        }
+        mock_urlopen.return_value = _make_response(search_response)
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.execute_async("search", {"query": "yo"})
+        )
+        assert result["ok"] is True
+        assert result["count"] == 1
+
+    def test_execute_async_not_connected(self, adapter, mock_urlopen):
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.execute_async("search", {"query": "test"})
+        )
+        assert result["ok"] is False
+        assert "not connected" in result["error"].lower()
+
+    def test_request_async_error(self, adapter, mock_urlopen):
+        adapter._connected = True
+        mock_urlopen.side_effect = Exception("Connection refused")
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter._status_async({})
+        )
         assert result["ok"] is False
