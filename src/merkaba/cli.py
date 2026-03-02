@@ -121,6 +121,44 @@ def chat(
                 break
 
 
+@app.command("init")
+def init_cmd(
+    force: bool = typer.Option(False, "--force", "-f", help="Re-create config even if already initialized"),
+):
+    """Initialize Merkaba: create directories, config, templates, and databases."""
+    from pathlib import Path as _Path
+    from merkaba.init import run_init
+
+    merkaba_home = _Path(os.path.expanduser("~/.merkaba"))
+    result = run_init(merkaba_home, force=force)
+
+    if result.already_initialized and not force:
+        console.print("[yellow]Merkaba is already initialized.[/yellow]")
+        console.print(f"  Home: {result.home_dir}")
+        console.print("  Use [bold]--force[/bold] to re-create config and templates.")
+        return
+
+    console.print("[bold green]Merkaba initialized![/bold green]\n")
+
+    if result.created_dirs:
+        console.print(f"  Directories created: {', '.join(result.created_dirs)}")
+    if result.config_written:
+        console.print(f"  Config written: {result.home_dir / 'config.json'}")
+    if result.soul_copied:
+        console.print(f"  SOUL.md created from template")
+    if result.user_copied:
+        console.print(f"  USER.md created from template")
+    if result.databases_initialized:
+        console.print(f"  Databases initialized: {', '.join(result.databases_initialized)}")
+
+    if result.ollama_available:
+        console.print("\n  [green]Ollama is running[/green] -- ready to chat!")
+    else:
+        console.print("\n  [yellow]Ollama not detected[/yellow] -- start it with: ollama serve")
+
+    console.print(f"\n  Run [bold]merkaba chat[/bold] to get started.")
+
+
 # --- Telegram Command Group ---
 
 telegram_app = typer.Typer(help="Telegram bot commands")
