@@ -17,6 +17,11 @@ except ImportError:
     scrape_github = None
     ScrapedSkill = None
 
+try:
+    from merkaba.plugins.forge import scrape_clawhub
+except ImportError:
+    scrape_clawhub = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -89,3 +94,100 @@ Use this to test things.
         with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
             with pytest.raises(Exception, match="404"):
                 scrape_github("https://github.com/user/repo/blob/main/SKILL.md")
+
+
+SAMPLE_CLAWHUB_HTML = """
+<html>
+<head><title>My Skill - ClawHub</title></head>
+<body>
+<h1>My Awesome Skill</h1>
+<div class="skill-description">
+<p>This skill helps automate code reviews by analyzing diffs.</p>
+</div>
+<div class="security-verdict">
+<span class="verdict-label">Overall Assessment:</span>
+<span class="verdict-value">Benign</span>
+</div>
+<div class="security-analysis">
+<p>No dangerous patterns found. Standard file operations only.</p>
+</div>
+</body>
+</html>
+"""
+
+SAMPLE_CLAWHUB_JS_PLACEHOLDER = """
+<html>
+<head><title>ClawHub</title></head>
+<body>
+<div id="app">Loading skill...</div>
+<script src="/app.js"></script>
+</body>
+</html>
+"""
+
+
+class TestScrapeClawhub:
+    def test_extracts_from_html(self):
+        mock_resp = MagicMock()
+        mock_resp.text = SAMPLE_CLAWHUB_HTML
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
+
+        assert result.name == "my-awesome-skill"
+        assert "code reviews" in result.description.lower()
+        assert result.security_verdict == "Benign"
+
+    def test_extracts_security_analysis(self):
+        mock_resp = MagicMock()
+        mock_resp.text = SAMPLE_CLAWHUB_HTML
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
+
+        assert result.security_analysis is not None
+        assert "No dangerous patterns" in result.security_analysis
+
+    def test_js_placeholder_triggers_playwright_fallback(self):
+        mock_resp = MagicMock()
+        mock_resp.text = SAMPLE_CLAWHUB_JS_PLACEHOLDER
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
+                mock_pw.return_value = ScrapedSkill(
+                    name="my-skill", description="A skill", content="...",
+                    security_verdict="Benign", security_analysis="Clean"
+                )
+                result = scrape_clawhub("https://clawhub.ai/skills/my-skill")
+
+        mock_pw.assert_called_once()
+        assert result.name == "my-skill"
+
+    def test_no_heading_triggers_playwright_fallback(self):
+        mock_resp = MagicMock()
+        mock_resp.text = "<html><body><p>no heading here</p></body></html>"
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
+                mock_pw.return_value = ScrapedSkill(
+                    name="test", description="d", content="c"
+                )
+                scrape_clawhub("https://clawhub.ai/skills/test")
+
+        mock_pw.assert_called_once()
+
+    def test_playwright_not_installed_raises(self):
+        """When Playwright fallback is needed but not installed."""
+        mock_resp = MagicMock()
+        mock_resp.text = SAMPLE_CLAWHUB_JS_PLACEHOLDER
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            with patch("merkaba.plugins.forge._scrape_clawhub_playwright",
+                       side_effect=ImportError("pip install merkaba[browser]")):
+                with pytest.raises(ImportError, match="browser"):
+                    scrape_clawhub("https://clawhub.ai/skills/test")
