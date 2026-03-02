@@ -188,3 +188,14 @@ def scrape_clawhub(url: str) -> ScrapedSkill:
         return _scrape_clawhub_playwright(url)
 
     return _parse_clawhub_html(html, url)
+
+
+def scrape_url(url: str) -> ScrapedSkill:
+    """Scrape a skill from a URL, dispatching to the appropriate scraper."""
+    kind = classify_url(url)
+    if kind == UrlKind.GITHUB:
+        return scrape_github(url)
+    elif kind == UrlKind.CLAWHUB:
+        return scrape_clawhub(url)
+    else:
+        raise ValueError(f"Unsupported URL: {url}. Provide a ClawHub or GitHub URL.")
