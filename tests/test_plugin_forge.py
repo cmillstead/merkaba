@@ -456,3 +456,24 @@ class TestForgePipeline:
 
         assert result.success is False
         assert "Connection failed" in result.error
+
+
+class TestForgeCLI:
+    """Test the CLI command integration."""
+
+    def test_forge_command_exists(self):
+        from typer.testing import CliRunner
+        from merkaba.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["skills", "forge", "--help"])
+        assert result.exit_code == 0
+        assert "--from" in result.output or "from-url" in result.output
+
+    def test_forge_command_requires_url(self):
+        from typer.testing import CliRunner
+        from merkaba.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["skills", "forge"])
+        assert result.exit_code != 0
