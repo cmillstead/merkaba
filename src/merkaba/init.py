@@ -172,6 +172,136 @@ def run_preflight(*, force: bool = False) -> ModelStatus:
     return status
 
 
+class InterviewDepth(Enum):
+    """Interview depth level."""
+
+    QUICK = "quick"        # 3-4 questions
+    MEDIUM = "medium"      # 5-8 questions
+    DEEP = "deep"          # 8-12 questions
+
+
+INTERVIEW_TOPICS = {
+    InterviewDepth.QUICK: [
+        "name and who they are",
+        "what they're building or working on",
+        "what they want Merkaba to help with",
+    ],
+    InterviewDepth.MEDIUM: [
+        "name and who they are",
+        "what they're building or working on",
+        "what they want Merkaba to help with",
+        "communication style preferences",
+        "work schedule and timezone",
+        "how they want to be challenged or pushed back on",
+    ],
+    InterviewDepth.DEEP: [
+        "name and who they are",
+        "what they're building or working on",
+        "what they want Merkaba to help with",
+        "communication style preferences",
+        "work schedule and timezone",
+        "how they want to be challenged or pushed back on",
+        "core values and principles",
+        "decision-making style",
+        "pet peeves and things to avoid",
+        "long-term vision",
+    ],
+}
+
+INTERVIEW_SYSTEM_PROMPT = """You are Merkaba, meeting your owner for the first time. You are conducting \
+an onboarding interview to learn about them so you can be a better AI partner.
+
+Rules:
+- Ask ONE question at a time
+- Be warm but concise — this is a conversation, not a form
+- Adapt your follow-up questions based on their answers
+- Cover these topics: {topics}
+- When you've covered all topics, respond with exactly [DONE] and nothing else
+- Do NOT generate the user's answers — wait for their real input"""
+
+SYNTHESIS_PROMPT = """Based on this onboarding interview, generate two markdown documents.
+
+Interview transcript:
+{transcript}
+
+Generate output in EXACTLY this format (including the SOUL: and USER: headers and the --- separator):
+
+SOUL:
+[A SOUL.md that defines Merkaba's personality tailored to this specific user. \
+Include who Merkaba is, how to behave with this user, and any relevant style notes. \
+Keep the core identity (autonomous AI agent, local-first, partner not servant) but \
+personalize tone and priorities based on what you learned.]
+---
+USER:
+[A USER.md that captures key facts about the owner: who they are, what they're building, \
+their preferences, communication style, and goals. Be specific — use details from the interview.]"""
+
+
+def run_interview(
+    *,
+    model: str,
+    depth: InterviewDepth,
+) -> tuple[str, str]:
+    """Phase 2: Run LLM-driven onboarding interview.
+
+    Returns (soul_content, user_content) for writing to SOUL.md and USER.md.
+    """
+    from merkaba.llm import LLMClient
+
+    llm = LLMClient(model=model)
+    topics = ", ".join(INTERVIEW_TOPICS[depth])
+    system = INTERVIEW_SYSTEM_PROMPT.format(topics=topics)
+
+    print("\n  Let's get to know each other.\n")
+
+    transcript: list[str] = []
+    conversation: list[dict] = []
+
+    # Kick off: ask the LLM for its first question
+    response = llm.chat("Begin the interview.", system_prompt=system)
+    print(f"  Merkaba: {response.content}\n")
+    conversation.append({"role": "assistant", "content": response.content})
+
+    while True:
+        answer = input("  You: ")
+        if not answer.strip():
+            continue
+
+        transcript.append(f"Merkaba: {conversation[-1]['content']}")
+        transcript.append(f"User: {answer}")
+
+        # Send the full conversation context
+        conversation.append({"role": "user", "content": answer})
+        msg = "\n".join(f"{m['role']}: {m['content']}" for m in conversation)
+        response = llm.chat(msg, system_prompt=system)
+
+        if "[DONE]" in response.content:
+            break
+
+        print(f"\n  Merkaba: {response.content}\n")
+        conversation.append({"role": "assistant", "content": response.content})
+
+    # Synthesis
+    print("\n  Generating your personalized configuration...\n")
+    full_transcript = "\n".join(transcript)
+    synthesis = llm.chat(
+        SYNTHESIS_PROMPT.format(transcript=full_transcript),
+    )
+
+    # Parse SOUL: ... --- USER: ...
+    content = synthesis.content
+    if "SOUL:" in content and "USER:" in content:
+        parts = content.split("---", 1)
+        soul = parts[0].replace("SOUL:", "", 1).strip()
+        user = parts[1].replace("USER:", "", 1).strip() if len(parts) > 1 else ""
+    else:
+        # Fallback: use entire response as soul, keep default user
+        soul = content.strip()
+        user = DEFAULT_USER.strip()
+
+    return soul, user
+
+
 def _print_model_inventory(status: ModelStatus) -> None:
     """Print model availability table."""
     print("\n  Merkaba uses three models:\n")

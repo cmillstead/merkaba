@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 
@@ -183,3 +183,44 @@ def test_pull_model_failure(monkeypatch):
     monkeypatch.setattr("subprocess.run", mock_run)
     result = pull_model("qwen3:8b")
     assert result is False
+
+
+def test_interview_returns_soul_and_user(monkeypatch):
+    """Interview runs LLM conversation and returns generated SOUL.md and USER.md."""
+    # Mock LLMClient
+    mock_llm = MagicMock()
+    # First call: interview questions (3 turns)
+    # The LLM asks a question, user answers, repeat until [DONE]
+    mock_llm.chat.side_effect = [
+        MagicMock(content="What's your name?"),
+        MagicMock(content="What are you building?"),
+        MagicMock(content="What do you want Merkaba to help with?"),
+        MagicMock(content="[DONE]"),
+        # Synthesis call
+        MagicMock(content="SOUL:\nYou are Merkaba, Cevin's AI partner.\n---\nUSER:\nCevin is building digital products."),
+    ]
+    monkeypatch.setattr("merkaba.llm.LLMClient", lambda **kw: mock_llm)
+
+    # Mock user input
+    inputs = iter(["Cevin", "Digital products", "Business automation"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+
+    soul, user = run_interview(
+        model="qwen3:8b",
+        depth=InterviewDepth.QUICK,
+    )
+    assert "Cevin" in soul or "Cevin" in user
+    assert soul != ""
+    assert user != ""
+
+
+def test_interview_depth_quick_has_fewer_topics():
+    """Quick depth should have 3-4 topic areas."""
+    from merkaba.init import INTERVIEW_TOPICS
+    assert len(INTERVIEW_TOPICS[InterviewDepth.QUICK]) <= 4
+
+
+def test_interview_depth_deep_has_more_topics():
+    """Deep depth should have 8-12 topic areas."""
+    from merkaba.init import INTERVIEW_TOPICS
+    assert len(INTERVIEW_TOPICS[InterviewDepth.DEEP]) >= 8
