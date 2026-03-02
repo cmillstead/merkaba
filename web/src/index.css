@@ -244,7 +244,14 @@ input:focus, textarea:focus {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-.chat-input-bar input { flex: 1; }
+.chat-input-bar textarea {
+  flex: 1;
+  resize: none;
+  min-height: 1.6em;
+  max-height: 8em;
+  overflow-y: auto;
+  field-sizing: content;
+}
 
 /* Search bar */
 .search-bar {
