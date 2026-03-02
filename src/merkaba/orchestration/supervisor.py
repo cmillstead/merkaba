@@ -4,6 +4,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -29,6 +30,7 @@ DEFAULT_MODEL = "qwen3.5:122b"
 CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 INTEGRATION_CHECK_MODEL = "qwen3:4b"
+INTEGRATION_CACHE_TTL = timedelta(minutes=30)
 SIMPLE_TASK_TYPES = {"health_check"}
 CREATIVE_TASK_TYPES: set[str] = set()  # Extenders can add task types that use competitive dispatch
 
@@ -65,6 +67,9 @@ class Supervisor:
     _retrieval: MemoryRetrieval | None = field(default=None, init=False, repr=False)
     _learnings: LearningExtractor | None = field(default=None, init=False, repr=False)
     _model_map: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _integration_cache: dict[str, tuple[str, datetime]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def __post_init__(self):
         vectors = None
@@ -221,6 +226,7 @@ class Supervisor:
     def verify_integration(self, task: dict, result: WorkerResult) -> str:
         """Check whether a worker's output integrates with specified targets.
 
+        Results are cached for 30 minutes keyed on task_type + sorted targets.
         Returns: "CONNECTED", "PARTIAL", or "DISCONNECTED".
         """
         if not result.success:
@@ -228,6 +234,19 @@ class Supervisor:
 
         payload = task.get("payload") or {}
         targets = payload.get("integration_targets", [])
+
+        # Build cache key from task_type and sorted integration targets
+        cache_key = task["task_type"] + ":" + ",".join(sorted(targets))
+
+        # Check cache with TTL
+        if cache_key in self._integration_cache:
+            cached_status, cached_at = self._integration_cache[cache_key]
+            if datetime.now() - cached_at < INTEGRATION_CACHE_TTL:
+                logger.debug("Integration check cache hit for %s", cache_key)
+                return cached_status
+            else:
+                # Expired entry — remove it
+                del self._integration_cache[cache_key]
 
         prompt = (
             f"Task: {task['name']}\n"
@@ -249,9 +268,11 @@ class Supervisor:
             )
             answer = (response.content or "").strip().upper()
             if answer in ("CONNECTED", "PARTIAL", "DISCONNECTED"):
+                self._integration_cache[cache_key] = (answer, datetime.now())
                 return answer
             # If LLM gives unexpected output, assume connected
             logger.warning("Unexpected integration check response: %s", answer)
+            self._integration_cache[cache_key] = ("CONNECTED", datetime.now())
             return "CONNECTED"
         except Exception as e:
             logger.warning("Integration check failed, assuming CONNECTED: %s", e)

@@ -326,3 +326,142 @@ def test_supervisor_accepts_memory_backend_protocol():
     mock_store.add_fact.assert_called_once()
     mock_store.add_decision.assert_called_once()
     sup.close()
+
+
+# --- Integration check caching tests ---
+
+
+def test_verify_integration_cache_avoids_second_llm_call(supervisor, memory):
+    """Two identical verify_integration calls should only invoke LLM once."""
+    bid = memory.add_business(name="TestBiz", type="test")
+    task = {
+        "id": 800,
+        "name": "Cache Test",
+        "task_type": "_stub",
+        "business_id": bid,
+        "payload": {"integration_targets": ["target_a", "target_b"]},
+    }
+    ok_result = WorkerResult(success=True, output={"data": "ok"})
+
+    mock_response = MagicMock()
+    mock_response.content = "CONNECTED"
+
+    with patch("merkaba.llm.LLMClient", autospec=True) as MockLLM:
+        mock_instance = MagicMock()
+        mock_instance.chat_with_fallback.return_value = mock_response
+        MockLLM.return_value = mock_instance
+
+        status1 = supervisor.verify_integration(task, ok_result)
+        status2 = supervisor.verify_integration(task, ok_result)
+
+    assert status1 == "CONNECTED"
+    assert status2 == "CONNECTED"
+    # LLM should have been called exactly once — second call served from cache
+    mock_instance.chat_with_fallback.assert_called_once()
+
+
+def test_verify_integration_cache_key_includes_sorted_targets(supervisor, memory):
+    """Cache key uses sorted targets, so different orderings hit the same cache entry."""
+    bid = memory.add_business(name="TestBiz", type="test")
+    task_ab = {
+        "id": 801,
+        "name": "Order Test",
+        "task_type": "_stub",
+        "business_id": bid,
+        "payload": {"integration_targets": ["alpha", "beta"]},
+    }
+    task_ba = {
+        "id": 802,
+        "name": "Order Test",
+        "task_type": "_stub",
+        "business_id": bid,
+        "payload": {"integration_targets": ["beta", "alpha"]},
+    }
+    ok_result = WorkerResult(success=True, output={"data": "ok"})
+
+    mock_response = MagicMock()
+    mock_response.content = "PARTIAL"
+
+    with patch("merkaba.llm.LLMClient", autospec=True) as MockLLM:
+        mock_instance = MagicMock()
+        mock_instance.chat_with_fallback.return_value = mock_response
+        MockLLM.return_value = mock_instance
+
+        status1 = supervisor.verify_integration(task_ab, ok_result)
+        status2 = supervisor.verify_integration(task_ba, ok_result)
+
+    assert status1 == "PARTIAL"
+    assert status2 == "PARTIAL"
+    mock_instance.chat_with_fallback.assert_called_once()
+
+
+def test_verify_integration_cache_expires_after_ttl(supervisor, memory):
+    """Cache entries older than 30 minutes should be evicted, triggering a new LLM call."""
+    from datetime import datetime, timedelta
+
+    bid = memory.add_business(name="TestBiz", type="test")
+    task = {
+        "id": 803,
+        "name": "TTL Test",
+        "task_type": "_stub",
+        "business_id": bid,
+        "payload": {"integration_targets": ["target_x"]},
+    }
+    ok_result = WorkerResult(success=True, output={"data": "ok"})
+
+    mock_response = MagicMock()
+    mock_response.content = "CONNECTED"
+
+    with patch("merkaba.llm.LLMClient", autospec=True) as MockLLM:
+        mock_instance = MagicMock()
+        mock_instance.chat_with_fallback.return_value = mock_response
+        MockLLM.return_value = mock_instance
+
+        # First call — populates cache
+        status1 = supervisor.verify_integration(task, ok_result)
+
+        # Manually expire the cache entry
+        cache_key = "_stub:target_x"
+        old_time = datetime.now() - timedelta(minutes=31)
+        supervisor._integration_cache[cache_key] = ("CONNECTED", old_time)
+
+        # Second call — cache expired, should call LLM again
+        status2 = supervisor.verify_integration(task, ok_result)
+
+    assert status1 == "CONNECTED"
+    assert status2 == "CONNECTED"
+    assert mock_instance.chat_with_fallback.call_count == 2
+
+
+def test_verify_integration_different_task_types_use_separate_cache(supervisor, memory):
+    """Different task_types should produce different cache keys."""
+    bid = memory.add_business(name="TestBiz", type="test")
+    task_a = {
+        "id": 804,
+        "name": "Type A",
+        "task_type": "_stub",
+        "business_id": bid,
+        "payload": {"integration_targets": ["target_z"]},
+    }
+    task_b = {
+        "id": 805,
+        "name": "Type B",
+        "task_type": "_approval",
+        "business_id": bid,
+        "payload": {"integration_targets": ["target_z"]},
+    }
+    ok_result = WorkerResult(success=True, output={"data": "ok"})
+
+    mock_response = MagicMock()
+    mock_response.content = "CONNECTED"
+
+    with patch("merkaba.llm.LLMClient", autospec=True) as MockLLM:
+        mock_instance = MagicMock()
+        mock_instance.chat_with_fallback.return_value = mock_response
+        MockLLM.return_value = mock_instance
+
+        supervisor.verify_integration(task_a, ok_result)
+        supervisor.verify_integration(task_b, ok_result)
+
+    # Different task_types = different cache keys = 2 LLM calls
+    assert mock_instance.chat_with_fallback.call_count == 2
