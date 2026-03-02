@@ -38,6 +38,7 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Exploration Agent](#exploration-agent)
    - [Learning Extractor](#learning-extractor)
    - [Health Checks](#health-checks)
+   - See also: [Session Management](#session-management), [Message Interruption](#message-interruption), [Heartbeat Checklist](#heartbeat-checklist)
 5. [LLM Client](#llm-client)
    - [Request Priority](#request-priority)
    - [Concurrency Gate](#concurrency-gate)
@@ -65,6 +66,29 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Tracing](#tracing)
 10. [Web Dashboard](#web-dashboard)
     - [API Authentication](#api-authentication)
+11. [Session Management](#session-management)
+    - [Session IDs](#session-ids)
+    - [SessionPool](#sessionpool)
+    - [LaneQueue](#lanequeue)
+12. [Context Window Management](#context-window-management)
+    - [Token Estimation](#token-estimation)
+    - [Tool Result Trimming](#tool-result-trimming)
+    - [Automatic Compression](#automatic-compression)
+13. [Hot-Reloadable Configuration](#hot-reloadable-configuration)
+14. [Message Interruption](#message-interruption)
+15. [Startup Configuration Warnings](#startup-configuration-warnings)
+16. [Browser Automation](#browser-automation)
+17. [Channel Adapters](#channel-adapters)
+    - [Discord](#discord)
+    - [Slack Real-Time](#slack-real-time)
+    - [Signal](#signal)
+18. [Gateway Pairing](#gateway-pairing)
+19. [Heartbeat Checklist](#heartbeat-checklist)
+20. [Message Chunking](#message-chunking)
+21. [Migration & Identity Portability](#migration--identity-portability)
+    - [OpenClaw Migration](#openclaw-migration)
+    - [AIEOS Import/Export](#aieos-importexport)
+22. [Protocol Definitions](#protocol-definitions)
 
 ---
 
@@ -1295,3 +1319,480 @@ merkaba config show-prompt               # Show resolved prompt chain
 ```
 
 Uses `$EDITOR` environment variable (falls back to `nano`).
+
+---
+
+## Session Management
+
+Multi-channel sessions are managed through `SessionPool` and `LaneQueue`, providing per-session Agent lifecycle management with async boundaries.
+
+**Key files:** `orchestration/session.py`, `orchestration/session_pool.py`, `orchestration/lane_queue.py`
+
+### Session IDs
+
+Session IDs follow a scoped format that prevents context bleeding across topics:
+
+```
+channel:sender_id[:topic:topic_id][:biz:business_id]
+```
+
+Examples:
+- `telegram:12345` -- Telegram user 12345, no topic scoping
+- `discord:67890:topic:channel_42` -- Discord user in a specific channel
+- `cli:local` -- CLI sessions (always trusted, bypass pairing)
+
+```python
+from merkaba.orchestration.session import build_session_id
+
+sid = build_session_id("discord", "67890", topic_id="channel_42", business_id="1")
+# -> "discord:67890:topic:channel_42:biz:1"
+```
+
+### SessionPool
+
+`SessionPool` manages Agent instances per session with configurable limits:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_sessions` | 100 | Maximum concurrent sessions (LRU eviction at capacity) |
+| `idle_timeout` | 3600.0 | Seconds before idle session is evicted |
+| `agent_kwargs` | `{}` | Keyword arguments passed to `Agent()` constructor |
+| `pairing` | `None` | Optional `GatewayPairing` instance for channel auth |
+
+```python
+from merkaba.orchestration.session_pool import SessionPool
+
+pool = SessionPool(max_sessions=50, idle_timeout=1800)
+
+# Sync usage (from a thread)
+response = pool.submit_sync("telegram:12345", "Hello")
+
+# Async usage (from web/telegram handler)
+response = await pool.submit("telegram:12345", "Hello")
+
+# Periodic cleanup
+pool.evict_idle()
+```
+
+When a new session arrives and the pool is at capacity, the least-recently-used session is evicted. Non-CLI sessions are gated behind gateway pairing if a `GatewayPairing` instance is configured.
+
+### LaneQueue
+
+`LaneQueue` provides per-session serial execution with cross-session concurrency:
+
+- Each `session_id` gets its own `threading.Lock`
+- Messages within a session execute one at a time (serial)
+- Messages across different sessions execute concurrently
+- `submit()` wraps sync execution via `asyncio.to_thread()` for the async boundary
+
+This fixes Telegram event loop blocking -- the sync `Agent.run()` runs in a worker thread while the event loop remains responsive.
+
+---
+
+## Context Window Management
+
+Automatic context window management prevents token limit errors by compressing conversation history when utilization reaches a configurable threshold.
+
+**Key files:** `memory/context_budget.py`, `memory/compression.py`
+
+### Token Estimation
+
+Token counting uses a ~4 chars/token heuristic (sufficient for threshold detection, not billing):
+
+```python
+from merkaba.memory.context_budget import estimate_tokens, ContextBudget
+
+tokens = estimate_tokens("Hello, world!")  # -> 3
+
+budget = ContextBudget(
+    max_total_tokens=128000,
+    system_prompt_tokens=2000,
+    tool_definitions_tokens=3000,
+    conversation_history_tokens=50000,
+)
+print(budget.utilization)         # -> ~0.43
+print(budget.available_for_history)  # -> remaining tokens for history
+```
+
+### Tool Result Trimming
+
+In `Agent._format_conversation()`, tool results exceeding 4000 characters are trimmed to head + tail with a `[trimmed]` marker:
+
+```
+[First 1500 chars]
+[... trimmed 12000 chars ...]
+[Last 1500 chars]
+```
+
+This prevents a single large tool result from consuming the entire context window.
+
+### Automatic Compression
+
+When conversation utilization exceeds 80% of `max_context_tokens`, the agent automatically compresses older conversation turns:
+
+1. Pre-compression: extract facts and relationships to `MemoryStore` (preserving information)
+2. Group conversation into turns (user message + all responses until next user message)
+3. Prune older turns, keeping the most recent 10
+4. Inject a `[context optimized]` summary node before the kept turns
+
+**Configuration** (`ContextWindowConfig`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_context_tokens` | 128000 | Context window size for the model |
+| `head_chars` | 1500 | Characters to keep from start of trimmed tool results |
+| `tail_chars` | 1500 | Characters to keep from end of trimmed tool results |
+| `compaction_threshold` | 0.80 | Utilization fraction that triggers compression |
+
+---
+
+## Hot-Reloadable Configuration
+
+`HotConfig` checks `config.json` file mtime on every `get()` call. If the file has been modified, it re-reads and applies changes immediately.
+
+**Key file:** `config/hot_reload.py`
+
+```python
+from merkaba.config.hot_reload import HotConfig
+
+config = HotConfig("~/.merkaba/config.json")
+
+# Auto-reloads if file changed since last read
+model = config.get("models", {})
+
+# Register change callbacks
+def on_change(changed_keys, old_data, new_data):
+    print(f"Config keys changed: {changed_keys}")
+
+config.on_change(on_change)
+```
+
+**Thread safety:** Double-checked locking pattern -- the fast path (mtime unchanged) is lock-free. Only actual reloads acquire the lock.
+
+**Security keys** (`api_key`, `encryption_key`, `permissions`, `auto_approve_level`, etc.) log a warning when changed at runtime:
+
+```
+WARNING merkaba.config: Security-relevant config changed: api_key, auto_approve_level.
+Restart recommended to confirm these changes.
+```
+
+The new values are still loaded immediately -- the warning is advisory.
+
+---
+
+## Message Interruption
+
+The interruption system allows users to redirect or cancel the agent while it is processing a response.
+
+**Key file:** `orchestration/interruption.py`
+
+**Three modes:**
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| `APPEND` | Queue behind current response (default) | Follow-up message |
+| `STEER` | Inject at next tool boundary | "Actually, do X instead" |
+| `CANCEL` | Abort current response | "Stop, never mind" |
+
+```python
+from merkaba.orchestration.interruption import InterruptionManager, InterruptionMode
+
+mgr = InterruptionManager(default_mode=InterruptionMode.APPEND)
+
+# From async boundary (web/telegram handler)
+mgr.interrupt("session:123", "Do this instead", InterruptionMode.STEER)
+
+# From sync agent loop (at tool boundaries)
+event = mgr.check_urgent("session:123")  # Returns STEER/CANCEL only
+if event and event.mode == InterruptionMode.CANCEL:
+    return partial_response
+
+# Peek without consuming
+if mgr.has_cancel("session:123"):
+    # Abort early
+    pass
+```
+
+The agent checks for interruptions in `_execute_tools()` between tool calls. APPEND events are not consumed at tool boundaries -- they wait until the current response completes.
+
+---
+
+## Startup Configuration Warnings
+
+`validate_config()` runs at CLI and web startup, surfacing issues with severity levels:
+
+**Key file:** `config/validation.py`
+
+| Severity | Meaning | Example |
+|----------|---------|---------|
+| `ERROR` | Blocks functionality | Ollama not reachable |
+| `WARNING` | Degraded mode | ChromaDB not installed, incomplete model routing |
+| `INFO` | Advisory | Configuration notes |
+
+**Checks performed:**
+- Model routing completeness (simple + complex models set)
+- Auto-approve level safety (warns if DESTRUCTIVE)
+- Business prompt completeness (SOUL.md per business)
+- Ollama connectivity
+- ChromaDB availability
+
+Clean configurations produce no output. Issues are printed grouped by severity at startup.
+
+---
+
+## Browser Automation
+
+Headless browser control via Playwright with semantic snapshots instead of screenshots.
+
+**Key file:** `tools/builtin/browser.py`
+
+**Setup:**
+
+```bash
+pip install merkaba[browser]              # Installs playwright
+python -m playwright install chromium     # Download browser
+```
+
+**Tools:**
+
+| Tool | Permission | Description |
+|------|-----------|-------------|
+| `browser_open` | SENSITIVE | Open URL, return accessibility tree snapshot |
+| `browser_snapshot` | MODERATE | Snapshot current page (re-read after actions) |
+| `browser_click` | SENSITIVE | Click by `role:name` (e.g., `button:Submit`) or CSS selector |
+| `browser_fill` | SENSITIVE | Fill form field by label, placeholder, or CSS selector |
+| `browser_navigate` | SENSITIVE | Navigate to new URL in same session |
+| `browser_close` | SAFE | Close browser, free resources |
+
+**Semantic snapshots** convert the page's accessibility tree into structured text:
+
+```
+[heading (level 1)] "Welcome"
+  [navigation] "Main"
+    [link] "Home"
+    [link] "About"
+  [textbox] "Search" value=
+  [button] "Submit"
+```
+
+This is ~50KB vs ~5MB for a screenshot, and gives the LLM structured, actionable element information. SSRF protection reuses the same URL validation as `web_fetch`.
+
+---
+
+## Channel Adapters
+
+### Discord
+
+Uses `discord.py` with bot token authentication. Routes messages through `SessionPool` for per-user session management.
+
+**Key file:** `integrations/discord_adapter.py`
+
+**Setup:** `pip install discord.py`, store bot token via `CredentialManager`.
+
+**Actions:** `send_message`, `read_messages`, `list_channels`
+
+```python
+adapter = DiscordAdapter()
+adapter.connect()
+adapter.setup_message_handler(pool=session_pool)
+adapter.run()  # Blocking — starts the event loop
+```
+
+### Slack Real-Time
+
+Extended with Bolt socket mode for real-time event handling and Block Kit approval UI.
+
+**Key file:** `integrations/slack_adapter.py`
+
+**Setup:** `pip install slack-bolt`, store `bot_token` + `app_token` (for Socket Mode).
+
+**New features over base Slack adapter:**
+- Real-time message handling via Bolt socket mode
+- Block Kit approval buttons (Approve/Deny with action IDs)
+- Message routing through SessionPool
+
+**Actions:** `send_message`, `read_messages`, `list_channels`, `send_approval_request`
+
+### Signal
+
+Signal messaging via `signal-cli` JSON-RPC subprocess.
+
+**Key file:** `integrations/signal_adapter.py`
+
+**Setup:** Install [signal-cli](https://github.com/AsamK/signal-cli), register an account. Store `account` (phone number) via `CredentialManager`.
+
+**Actions:** `send_message`, `read_messages`, `list_groups`, `get_contacts`
+
+The adapter communicates with signal-cli by piping JSON-RPC requests through subprocess stdin/stdout. Supports both individual and group messaging.
+
+---
+
+## Gateway Pairing
+
+New channel connections are authenticated via a one-time 6-character code. CLI sessions are always trusted and bypass pairing.
+
+**Key file:** `security/pairing.py`
+
+**Flow:**
+
+```
+1. User runs: merkaba pair initiate discord user:67890
+   -> Returns code: "A3F7B2"
+
+2. User enters code on Discord: /pair A3F7B2
+   -> GatewayPairing.confirm() with constant-time comparison
+   -> Identity "discord:67890" is now paired
+
+3. Future messages from discord:67890 are processed normally
+```
+
+**Configuration:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `expiry_seconds` | 300.0 | Code expiration time (5 minutes) |
+
+**CLI:**
+
+```bash
+merkaba pair list                         # List paired identities
+merkaba pair initiate <channel> <identity> # Generate pairing code
+merkaba pair confirm <identity> <code>    # Confirm code
+merkaba pair revoke <identity>            # Revoke pairing
+```
+
+Unpaired non-CLI sessions receive a prompt directing the user to pair via CLI.
+
+---
+
+## Heartbeat Checklist
+
+User-editable `HEARTBEAT.md` files define recurring tasks in checkbox format. The scheduler parses and executes unchecked items on each tick.
+
+**Key file:** `orchestration/heartbeat_checklist.py`
+
+**Format:**
+
+```markdown
+- [ ] Check email inbox (every 30m)
+- [ ] Review pending approvals (hourly)
+- [x] Daily backup (daily)
+- [ ] Weekly analytics report (weekly)
+```
+
+**Supported schedules:** `every 30m`, `every 1h`, `hourly`, `daily`, `weekly`
+
+Items marked `[x]` are skipped. The scheduler tracks the file's mtime and re-parses on change (hot-reloadable).
+
+**Location:** `~/.merkaba/HEARTBEAT.md` (global) or `~/.merkaba/businesses/{id}/HEARTBEAT.md` (per-business).
+
+---
+
+## Message Chunking
+
+Long agent responses are split at natural boundaries before delivery to channels with character limits.
+
+**Key file:** `integrations/delivery.py`
+
+**Channel limits:**
+
+| Channel | Max Characters |
+|---------|---------------|
+| Discord | 2,000 |
+| Slack | 4,000 |
+| Telegram | 4,096 |
+| Signal | 4,096 |
+| Web/CLI | 100,000 (effectively unlimited) |
+
+**Split priority:**
+1. Paragraph boundaries (double newline)
+2. Line boundaries (single newline)
+3. Sentence boundaries (period + space)
+4. Word boundaries (space)
+5. Hard split at limit (last resort)
+
+Code blocks (`` ``` ``) are kept together if they fit within a single chunk.
+
+```python
+from merkaba.integrations.delivery import chunk_message, CHANNEL_LIMITS
+
+chunks = chunk_message(long_response, max_chars=CHANNEL_LIMITS["discord"])
+for chunk in chunks:
+    await send(chunk)
+```
+
+---
+
+## Migration & Identity Portability
+
+### OpenClaw Migration
+
+Imports OpenClaw workspaces into Merkaba business directories.
+
+**Key file:** `plugins/importer_openclaw.py`
+
+**File mapping:**
+
+| OpenClaw File | Merkaba Destination | Action |
+|---------------|---------------------|--------|
+| `SOUL.md` | `businesses/{name}/SOUL.md` | Direct copy |
+| `USER.md` | `businesses/{name}/USER.md` | Direct copy |
+| `HEARTBEAT.md` | `businesses/{name}/HEARTBEAT.md` | Direct copy |
+| `AGENTS.md` | `businesses/{name}/.imported/` | Stash only |
+| `TOOLS.md` | `businesses/{name}/.imported/` | Stash only |
+| `IDENTITY.md` | `businesses/{name}/.imported/` | Stash only |
+
+All originals are also stashed in `.imported/` for lossless round-trip reference.
+
+**CLI:**
+
+```bash
+merkaba migrate openclaw /path/to/workspace --name "My Business"
+```
+
+### AIEOS Import/Export
+
+AIEOS v1.1 is an identity format used by other agent frameworks. Merkaba can import AIEOS JSON into `SOUL.md` format and export back.
+
+**Key file:** `identity/aieos.py`
+
+**Import:** Parses AIEOS JSON (identity, psychology, linguistics, motivations, capabilities) and generates a structured `SOUL.md`. The original JSON is stored alongside for lossless round-trip on export.
+
+**Export:** If a stored `identity.aieos.json` exists (from prior import), merges SOUL.md edits back into the original. Otherwise, reconstructs AIEOS from SOUL.md. Always includes `extensions.merkaba.raw_soul_md` as a fallback field.
+
+**CLI:**
+
+```bash
+merkaba identity import identity.aieos.json --name "My Agent"
+merkaba identity export my-business --output agent.aieos.json
+```
+
+---
+
+## Protocol Definitions
+
+Four `@runtime_checkable` Protocol classes define the expected interfaces for key Merkaba subsystems, enabling type-safe dependency injection and alternative implementations.
+
+**Key file:** `protocols.py`
+
+| Protocol | Implemented By | Methods |
+|----------|---------------|---------|
+| `MemoryBackend` | `MemoryStore` | `add_fact`, `get_facts`, `add_decision`, `get_decisions` |
+| `VectorBackend` | `VectorMemory` | `search_facts`, `search_decisions`, `search_learnings`, `delete_vectors` |
+| `Observer` | (custom) | `on_llm_call`, `on_tool_call`, `on_error` |
+| `ConversationBackend` | `ConversationLog` | `append`, `get_history`, `save` |
+
+**Usage:**
+
+```python
+from merkaba.protocols import MemoryBackend, Observer
+
+def process(store: MemoryBackend) -> None:
+    facts = store.get_facts(business_id=1)
+    # Works with MemoryStore or any compatible implementation
+
+# Runtime checking
+assert isinstance(my_store, MemoryBackend)
+```
+
+These protocols document the minimum interface contract. Implementations may support additional methods beyond what the protocol requires.
