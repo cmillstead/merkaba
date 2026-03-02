@@ -1,5 +1,6 @@
 # src/merkaba/agent.py
 import logging
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,14 @@ from merkaba.security.classifier import InputClassifier
 from merkaba.plugins import PluginRegistry, Skill, PluginSandbox, PluginPermissionError
 from merkaba.verification.deterministic import DeterministicVerifier
 from merkaba.config.prompts import PromptLoader
+from merkaba.config.hot_reload import HotConfig
 from merkaba.security.sanitizer import sanitize_memory_value
 from merkaba.memory.context_budget import ContextWindowConfig
 from merkaba.orchestration.interruption import InterruptionManager, InterruptionMode
 
 
 SIMPLE_MODEL = "qwen3:8b"
+MERKABA_CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 
 @dataclass
@@ -56,6 +59,7 @@ class Agent:
     context_config: ContextWindowConfig = field(init=False)
     session_id: str | None = field(init=False, default=None)
     interruption_mgr: InterruptionManager | None = field(init=False, default=None)
+    _hot_config: HotConfig | None = field(init=False, default=None)
 
     def __post_init__(self):
         self.llm = LLMClient(model=self.model)
@@ -74,6 +78,13 @@ class Agent:
         self._register_builtin_tools()
         if self.plugins_enabled:
             self.plugin_registry = PluginRegistry.default()
+
+        # Initialize hot-reloadable config (model changes take effect without restart)
+        if os.path.isfile(MERKABA_CONFIG_PATH):
+            try:
+                self._hot_config = HotConfig(MERKABA_CONFIG_PATH)
+            except Exception as e:
+                logger.warning("Failed to init HotConfig: %s", e)
 
         # Run security quick scan
         self._run_security_check()
@@ -178,6 +189,22 @@ class Agent:
         """Deactivate the current skill."""
         self.active_skill = None
 
+    def _resolve_model(self, tier: str) -> str:
+        """Resolve model name from HotConfig if available, else static fields.
+
+        Checks the hot-reloadable config for ``models.complex`` / ``models.simple``.
+        Falls back to the static ``self.model`` / ``self.simple_model`` fields
+        when HotConfig is unavailable, the key is missing, or the value is not a dict.
+        """
+        if self._hot_config:
+            models = self._hot_config.get("models")
+            if isinstance(models, dict):
+                if tier == "simple" and "simple" in models:
+                    return models["simple"]
+                elif tier != "simple" and "complex" in models:
+                    return models["complex"]
+        return self.simple_model if tier == "simple" else self.model
+
     def _build_system_prompt(self, user_message: str | None = None) -> str:
         """Build system prompt with memory context and active skill if any."""
         soul, user = self._prompt_loader.load(business_id=self.active_business_id)
@@ -243,7 +270,7 @@ class Agent:
             extractor = SessionExtractor(
                 llm=self.llm,
                 store=self.retrieval.store,
-                model=self.simple_model,
+                model=self._resolve_model("simple"),
             )
             bid = self.active_business_id or 0
             extractor.extract(self.conversation, business_id=bid)
@@ -314,6 +341,10 @@ class Agent:
             pre_iteration_leaf = self._tree.current_leaf_id
 
             tier = "simple" if complexity == "simple" else "complex"  # no_tools uses complex model
+
+            # Model hot-reload is handled by load_fallback_chains() in llm.py,
+            # which reads config on each chat_with_fallback() call.
+
             try:
                 response = self.llm.chat_with_fallback(
                     message=self._format_conversation(),
