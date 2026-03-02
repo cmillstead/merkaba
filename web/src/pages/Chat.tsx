@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Send, Paperclip, History, Plus } from 'lucide-react'
 import { connectChat } from '../api/client'
-import type { ChatMessage } from '../api/client'
+import type { ChatMessage, ChatConnection } from '../api/client'
 
 interface DisplayMsg {
   role: 'user' | 'assistant' | 'thinking'
@@ -24,31 +24,36 @@ export default function Chat() {
   const [uploading, setUploading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
-  const wsRef = useRef<{ send: (t: string) => void; close: () => void } | null>(null)
+  const wsRef = useRef<ChatConnection | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  function handleChatMessage(msg: ChatMessage) {
+    if (msg.type === 'thinking') {
+      const label = msg.tool ? `Using ${msg.tool}...` : 'Thinking...'
+      setMessages(prev => {
+        if (prev.length && prev[prev.length - 1].role === 'thinking') {
+          return [...prev.slice(0, -1), { role: 'thinking', content: label }]
+        }
+        return [...prev, { role: 'thinking', content: label }]
+      })
+    } else if (msg.type === 'response' && msg.content) {
+      setMessages(prev => {
+        const cleaned = prev.filter((m, i) => !(m.role === 'thinking' && i === prev.length - 1))
+        return [...cleaned, { role: 'assistant', content: msg.content! }]
+      })
+    }
+  }
+
   useEffect(() => {
-    const ws = connectChat((msg: ChatMessage) => {
-      if (msg.type === 'thinking') {
-        const label = msg.tool ? `Using ${msg.tool}...` : 'Thinking...'
-        setMessages(prev => {
-          if (prev.length && prev[prev.length - 1].role === 'thinking') {
-            return [...prev.slice(0, -1), { role: 'thinking', content: label }]
-          }
-          return [...prev, { role: 'thinking', content: label }]
-        })
-      } else if (msg.type === 'response' && msg.content) {
-        setMessages(prev => {
-          const cleaned = prev.filter((m, i) => !(m.role === 'thinking' && i === prev.length - 1))
-          return [...cleaned, { role: 'assistant', content: msg.content! }]
-        })
-      }
+    const ws = connectChat({
+      onMessage: handleChatMessage,
+      onConnect: () => setConnected(true),
+      onDisconnect: () => setConnected(false),
     })
     wsRef.current = ws
-    setConnected(true)
-    return () => { ws.close(); setConnected(false) }
+    return () => { ws.close() }
   }, [])
 
   useEffect(() => {
@@ -89,21 +94,10 @@ export default function Chat() {
     setTimeout(() => inputRef.current?.focus(), 100)
     // Reconnect to get fresh agent
     if (wsRef.current) wsRef.current.close()
-    const ws = connectChat((msg: ChatMessage) => {
-      if (msg.type === 'thinking') {
-        const label = msg.tool ? `Using ${msg.tool}...` : 'Thinking...'
-        setMessages(prev => {
-          if (prev.length && prev[prev.length - 1].role === 'thinking') {
-            return [...prev.slice(0, -1), { role: 'thinking', content: label }]
-          }
-          return [...prev, { role: 'thinking', content: label }]
-        })
-      } else if (msg.type === 'response' && msg.content) {
-        setMessages(prev => {
-          const cleaned = prev.filter((m, i) => !(m.role === 'thinking' && i === prev.length - 1))
-          return [...cleaned, { role: 'assistant', content: msg.content! }]
-        })
-      }
+    const ws = connectChat({
+      onMessage: handleChatMessage,
+      onConnect: () => setConnected(true),
+      onDisconnect: () => setConnected(false),
     })
     wsRef.current = ws
   }

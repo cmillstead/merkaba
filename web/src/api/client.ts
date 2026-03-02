@@ -54,15 +54,78 @@ export const approveAction = (id: number) => request<{ id: number; status: strin
 export const denyAction = (id: number, reason?: string) => request<{ id: number; status: string }>(`/api/approvals/${id}/deny`, { method: 'POST', body: JSON.stringify({ reason }) });
 export const getApprovalStats = () => request<{ stats: Record<string, number> }>('/api/approvals/stats');
 
-// WebSocket chat
-export function connectChat(onMessage: (msg: ChatMessage) => void): { send: (text: string) => void; close: () => void } {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws/chat`);
-  ws.onmessage = (e) => onMessage(JSON.parse(e.data));
+// WebSocket chat with message buffering and auto-reconnect
+export interface ChatConnection {
+  send: (text: string) => void
+  close: () => void
+}
+
+export interface ConnectChatOptions {
+  onMessage: (msg: ChatMessage) => void
+  onConnect?: () => void
+  onDisconnect?: () => void
+}
+
+export function connectChat(options: ConnectChatOptions): ChatConnection {
+  const { onMessage, onConnect, onDisconnect } = options
+  const pendingMessages: string[] = []
+  let ws: WebSocket | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let intentionallyClosed = false
+
+  function drainPending() {
+    while (pendingMessages.length > 0 && ws?.readyState === WebSocket.OPEN) {
+      ws.send(pendingMessages.shift()!)
+    }
+  }
+
+  function createSocket() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    ws = new WebSocket(`${proto}://${location.host}/ws/chat`)
+
+    ws.onopen = () => {
+      onConnect?.()
+      drainPending()
+    }
+
+    ws.onmessage = (e) => {
+      try {
+        onMessage(JSON.parse(e.data))
+      } catch {
+        // Ignore malformed messages
+      }
+    }
+
+    ws.onclose = () => {
+      ws = null
+      onDisconnect?.()
+      if (!intentionallyClosed) {
+        reconnectTimer = setTimeout(createSocket, 2000)
+      }
+    }
+
+    ws.onerror = () => {
+      ws?.close()
+    }
+  }
+
+  createSocket()
+
   return {
-    send: (text: string) => ws.send(JSON.stringify({ message: text })),
-    close: () => ws.close(),
-  };
+    send(text: string) {
+      const payload = JSON.stringify({ message: text })
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(payload)
+      } else {
+        pendingMessages.push(payload)
+      }
+    },
+    close() {
+      intentionallyClosed = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      ws?.close()
+    },
+  }
 }
 
 // Types
