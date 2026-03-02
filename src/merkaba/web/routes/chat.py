@@ -84,13 +84,20 @@ async def upload_file(file: UploadFile):
             detail=f"File extension '{ext}' is not allowed",
         )
 
-    content = await file.read()
-
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File size {len(content)} exceeds maximum of {MAX_UPLOAD_SIZE} bytes",
-        )
+    chunks = []
+    total = 0
+    while True:
+        chunk = await file.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size exceeds maximum of {MAX_UPLOAD_SIZE} bytes",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     # Prefix with timestamp + uuid to avoid collisions
