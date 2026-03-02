@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight
+from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 
 def test_check_file_safety_missing_file(tmp_path):
@@ -96,3 +97,69 @@ def test_check_ollama_not_running():
 
     assert result.available is False
     assert result.installed_models == []
+
+
+def test_preflight_creates_directories(tmp_path, monkeypatch):
+    """Preflight creates ~/.merkaba/ and subdirs."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    with patch("merkaba.init.check_ollama") as mock_ollama:
+        mock_ollama.return_value = ModelStatus(available=False, missing_models=[])
+        run_preflight(force=False)
+
+    assert (home / "logs").is_dir()
+    assert (home / "conversations").is_dir()
+    assert (home / "plugins").is_dir()
+
+
+def test_preflight_writes_default_config(tmp_path, monkeypatch):
+    """Preflight creates config.json with sensible defaults."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    with patch("merkaba.init.check_ollama") as mock_ollama:
+        mock_ollama.return_value = ModelStatus(available=False, missing_models=[])
+        run_preflight(force=False)
+
+    config = json.loads((home / "config.json").read_text())
+    assert config["models"]["simple"] == "qwen3:8b"
+    assert config["models"]["complex"] == "qwen3.5:122b"
+
+
+def test_preflight_seeds_soul_and_user(tmp_path, monkeypatch):
+    """Preflight creates SOUL.md and USER.md from defaults."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    with patch("merkaba.init.check_ollama") as mock_ollama:
+        mock_ollama.return_value = ModelStatus(available=False, missing_models=[])
+        run_preflight(force=False)
+
+    assert (home / "SOUL.md").read_text() == DEFAULT_SOUL
+    assert (home / "USER.md").read_text() == DEFAULT_USER
+
+
+def test_preflight_skips_user_edited_files(tmp_path, monkeypatch):
+    """Preflight doesn't overwrite user-customized files."""
+    home = tmp_path / "merkaba"
+    home.mkdir()
+    (home / "SOUL.md").write_text("my custom soul")
+    (home / "config.json").write_text("{}")
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    # Mock input to return 's' (skip) for the prompt
+    monkeypatch.setattr("builtins.input", lambda _: "s")
+    with patch("merkaba.init.check_ollama") as mock_ollama:
+        mock_ollama.return_value = ModelStatus(available=False, missing_models=[])
+        run_preflight(force=False)
+
+    # SOUL.md should not have been overwritten
+    assert (home / "SOUL.md").read_text() == "my custom soul"
+
+
+def test_preflight_returns_model_status(tmp_path, monkeypatch):
+    """Preflight returns the ModelStatus from check_ollama."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    expected = ModelStatus(available=True, installed_models=["qwen3:8b"], missing_models=[])
+    with patch("merkaba.init.check_ollama", return_value=expected):
+        result = run_preflight(force=False)
+
+    assert result.available is True

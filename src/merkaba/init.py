@@ -2,12 +2,27 @@
 """Merkaba onboarding wizard — ``merkaba init``."""
 
 import json
+import os
 import shutil
 import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
+
+MERKABA_DIR = Path(os.path.expanduser("~/.merkaba"))
+
+DEFAULT_CONFIG = {
+    "models": {
+        "simple": "qwen3:8b",
+        "complex": "qwen3.5:122b",
+    },
+    "rate_limiting": {
+        "max_concurrent": 2,
+        "queue_depth_warning": 5,
+    },
+}
 
 REQUIRED_MODELS = {
     "simple": "qwen3:8b",
@@ -100,3 +115,63 @@ def check_file_safety(
         return FileAction.WRITE
     else:
         return FileAction.SKIP
+
+
+def run_preflight(*, force: bool = False) -> ModelStatus:
+    """Phase 1: Check prerequisites, create dirs, seed defaults.
+
+    Returns ModelStatus so the caller knows if the interview can run.
+    """
+    print("\n  Setting up Merkaba...\n")
+
+    # 1. Create directories
+    for subdir in ("logs", "conversations", "plugins"):
+        (MERKABA_DIR / subdir).mkdir(parents=True, exist_ok=True)
+
+    # 2. Seed config.json
+    config_path = MERKABA_DIR / "config.json"
+    action = check_file_safety(config_path, json.dumps(DEFAULT_CONFIG, indent=2), force=force)
+    if action != FileAction.SKIP:
+        config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
+        print(f"  Created {config_path}")
+
+    # 3. Seed SOUL.md
+    soul_path = MERKABA_DIR / "SOUL.md"
+    action = check_file_safety(soul_path, DEFAULT_SOUL, force=force)
+    if action != FileAction.SKIP:
+        soul_path.write_text(DEFAULT_SOUL, encoding="utf-8")
+        print(f"  Created {soul_path}")
+
+    # 4. Seed USER.md
+    user_path = MERKABA_DIR / "USER.md"
+    action = check_file_safety(user_path, DEFAULT_USER, force=force)
+    if action != FileAction.SKIP:
+        user_path.write_text(DEFAULT_USER, encoding="utf-8")
+        print(f"  Created {user_path}")
+
+    # 5. Check Ollama and models
+    status = check_ollama()
+    if not status.available:
+        print("\n  Ollama is not running.")
+        print("  Start it with: ollama serve\n")
+    else:
+        print("\n  Ollama is running.")
+        _print_model_inventory(status)
+
+    return status
+
+
+def _print_model_inventory(status: ModelStatus) -> None:
+    """Print model availability table."""
+    print("\n  Merkaba uses three models:\n")
+    for role, model in REQUIRED_MODELS.items():
+        desc = MODEL_DESCRIPTIONS[role]
+        installed = model in status.installed_models
+        marker = "+" if installed else "-"
+        print(f"    {marker} {role.capitalize():12s} ({model:20s})  {desc}")
+
+    if status.missing_models:
+        print("\n  To install missing models:")
+        for model in status.missing_models:
+            print(f"    ollama pull {model}")
+    print()
