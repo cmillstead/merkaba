@@ -199,3 +199,16 @@ def scrape_url(url: str) -> ScrapedSkill:
         return scrape_clawhub(url)
     else:
         raise ValueError(f"Unsupported URL: {url}. Provide a ClawHub or GitHub URL.")
+
+
+def check_security_gate(skill: ScrapedSkill) -> str:
+    """Check the ClawHub security verdict and return action.
+
+    Returns: "proceed", "warn", or "double_warn"
+    """
+    verdict = (skill.security_verdict or "").lower()
+    if verdict == "malicious":
+        return "double_warn"
+    if verdict == "suspicious":
+        return "warn"
+    return "proceed"
