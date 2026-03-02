@@ -6,8 +6,12 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
+from typer.testing import CliRunner
+from merkaba.cli import app
 from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras, run_init
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
+
+cli_runner = CliRunner()
 
 
 def test_check_file_safety_missing_file(tmp_path):
@@ -287,3 +291,17 @@ def test_run_init_no_interview(tmp_path, monkeypatch):
     assert (home / "config.json").exists()
     # SOUL.md should have the default (not interview-generated)
     assert (home / "SOUL.md").read_text() == DEFAULT_SOUL
+
+
+def test_cli_init_no_interview(tmp_path, monkeypatch):
+    """CLI `merkaba init --no-interview` runs preflight and extras."""
+    home = tmp_path / "merkaba"
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    mock_status = ModelStatus(available=False, missing_models=[])
+    monkeypatch.setattr("merkaba.init.check_ollama", lambda: mock_status)
+    monkeypatch.setattr("builtins.input", lambda _="": "n")
+
+    result = cli_runner.invoke(app, ["init", "--no-interview"])
+    assert result.exit_code == 0
+    assert "Welcome to Merkaba" in result.output
+    assert (home / "config.json").exists()

@@ -64,6 +64,16 @@ def main(
 
 
 @app.command()
+def init(
+    no_interview: bool = typer.Option(False, "--no-interview", help="Skip the LLM onboarding interview"),
+    force: bool = typer.Option(False, "--force", help="Re-initialize, backing up edited files"),
+):
+    """Set up Merkaba — creates config, checks prerequisites, personalizes your agent."""
+    from merkaba.init import run_init
+    run_init(no_interview=no_interview, force=force)
+
+
+@app.command()
 def chat(
     message: str = typer.Argument(None, help="Message to send to Merkaba"),
     model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
