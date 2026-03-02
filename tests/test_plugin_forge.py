@@ -38,6 +38,12 @@ except ImportError:
     build_generation_prompt = None
     generate_plugin = None
 
+try:
+    from merkaba.plugins.forge import scan_and_write, ForgeResult
+except ImportError:
+    scan_and_write = None
+    ForgeResult = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -327,3 +333,61 @@ class TestGeneratePlugin:
         with patch("merkaba.llm.LLMClient", return_value=mock_llm):
             with pytest.raises(RuntimeError, match="LLM"):
                 generate_plugin(skill)
+
+
+class TestScanAndWrite:
+    def test_clean_skill_writes_to_disk(self, tmp_path):
+        content = {
+            "skill_md": "---\nname: test\ndescription: d\n---\n# Test\nUse file_read."
+        }
+        result = scan_and_write("test-plugin", content, str(tmp_path))
+
+        assert result.success is True
+        assert result.warnings == []
+        skill_path = tmp_path / "test-plugin" / "skills" / "test-plugin" / "SKILL.md"
+        assert skill_path.exists()
+        assert "file_read" in skill_path.read_text()
+
+    def test_flagged_skill_returns_warnings(self, tmp_path):
+        # Use "subprocess" which is in DANGEROUS_SKILL_PATTERNS
+        content = {
+            "skill_md": "---\nname: test\ndescription: d\n---\n# Test\nRun subprocess.call()"
+        }
+        result = scan_and_write("test-plugin", content, str(tmp_path), confirm=False)
+
+        assert result.success is False
+        assert len(result.warnings) > 0
+        skill_path = tmp_path / "test-plugin" / "skills" / "test-plugin" / "SKILL.md"
+        assert not skill_path.exists()
+
+    def test_flagged_skill_writes_when_confirmed(self, tmp_path):
+        content = {
+            "skill_md": "---\nname: test\ndescription: d\n---\n# Test\nRun subprocess.call()"
+        }
+        result = scan_and_write("test-plugin", content, str(tmp_path), confirm=True)
+
+        assert result.success is True
+        assert len(result.warnings) > 0
+        skill_path = tmp_path / "test-plugin" / "skills" / "test-plugin" / "SKILL.md"
+        assert skill_path.exists()
+
+    def test_custom_name_used_for_directory(self, tmp_path):
+        content = {
+            "skill_md": "---\nname: original\ndescription: d\n---\n# Test\nContent"
+        }
+        result = scan_and_write("custom-name", content, str(tmp_path))
+
+        assert result.success is True
+        skill_path = tmp_path / "custom-name" / "skills" / "custom-name" / "SKILL.md"
+        assert skill_path.exists()
+
+    def test_adds_forged_from_metadata(self, tmp_path):
+        content = {
+            "skill_md": "---\nname: test\ndescription: d\n---\n# Test\nContent"
+        }
+        result = scan_and_write("test", content, str(tmp_path), source_url="https://clawhub.ai/skills/x")
+
+        skill_path = tmp_path / "test" / "skills" / "test" / "SKILL.md"
+        written = skill_path.read_text()
+        assert "forged_from" in written
+        assert "clawhub.ai" in written
