@@ -2332,5 +2332,112 @@ def config_edit_user(business: int = typer.Option(None, help="Business ID")):
     subprocess.run([editor, path], check=False)
 
 
+# -- Migrate commands --
+migrate_app = typer.Typer(help="Migrate workspaces from other agent frameworks")
+app.add_typer(migrate_app, name="migrate")
+
+
+@migrate_app.command("openclaw")
+def migrate_openclaw(
+    path: str = typer.Argument(help="Path to the OpenClaw workspace directory"),
+    business: str = typer.Option(..., "--business", "-b", help="Target business name"),
+):
+    """Migrate an OpenClaw workspace into a Merkaba business directory."""
+    from pathlib import Path as _Path
+
+    from merkaba.plugins.importer_openclaw import OpenClawMigrator
+
+    workspace = _Path(path).expanduser().resolve()
+    if not workspace.is_dir():
+        console.print(f"[red]Error:[/red] Not a directory: {workspace}")
+        raise typer.Exit(1)
+
+    migrator = OpenClawMigrator()
+    if not migrator.detect(workspace):
+        console.print(f"[red]Error:[/red] Not an OpenClaw workspace: {workspace}")
+        raise typer.Exit(1)
+
+    result = migrator.migrate(workspace, business)
+
+    if result.migrated:
+        console.print(f"[bold green]Migrated {len(result.migrated)} file(s):[/bold green]")
+        for f in result.migrated:
+            console.print(f"  {f}")
+
+    if result.skipped:
+        console.print(f"[yellow]Skipped {len(result.skipped)} file(s):[/yellow]")
+        for f in result.skipped:
+            console.print(f"  {f}")
+
+    if result.errors:
+        console.print(f"[red]Errors ({len(result.errors)}):[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
+
+    if not result.migrated and not result.skipped:
+        console.print("[dim]No files found in workspace.[/dim]")
+    else:
+        console.print(f"\n[green]Migration complete.[/green] Business: [cyan]{business}[/cyan]")
+
+
+# -- Identity commands --
+identity_app = typer.Typer(help="Import and export agent identity (AIEOS format)")
+app.add_typer(identity_app, name="identity")
+
+
+@identity_app.command("import")
+def identity_import(
+    path: str = typer.Argument(help="Path to AIEOS v1.1 JSON file"),
+    business: str = typer.Option(..., "--business", "-b", help="Target business name"),
+):
+    """Import an AIEOS v1.1 identity file into a Merkaba business."""
+    from pathlib import Path as _Path
+
+    from merkaba.identity.aieos import import_aieos
+
+    aieos_path = _Path(path).expanduser().resolve()
+    if not aieos_path.is_file():
+        console.print(f"[red]Error:[/red] File not found: {aieos_path}")
+        raise typer.Exit(1)
+
+    result = import_aieos(aieos_path, business)
+
+    if result.success:
+        console.print(f"[green]Identity imported successfully.[/green]")
+        console.print(f"  SOUL.md: [cyan]{result.soul_md_path}[/cyan]")
+        console.print(f"  Business: [cyan]{business}[/cyan]")
+    else:
+        console.print("[red]Import failed:[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
+
+
+@identity_app.command("export")
+def identity_export(
+    business: str = typer.Option(..., "--business", "-b", help="Business name to export"),
+    output: str = typer.Option(None, "--output", "-o", help="Output file path (default: ./<business>.aieos.json)"),
+):
+    """Export a Merkaba business identity as AIEOS v1.1 JSON."""
+    from pathlib import Path as _Path
+
+    from merkaba.identity.aieos import export_aieos
+
+    output_path = _Path(output).expanduser().resolve() if output else _Path(f"{business}.aieos.json").resolve()
+
+    result = export_aieos(business, output_path=output_path)
+
+    if result.success:
+        console.print(f"[green]Identity exported successfully.[/green]")
+        console.print(f"  Output: [cyan]{result.output_path}[/cyan]")
+        console.print(f"  Business: [cyan]{business}[/cyan]")
+    else:
+        console.print("[red]Export failed:[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
