@@ -602,3 +602,255 @@ input:focus, textarea:focus {
   position: relative;
   z-index: 2;
 }
+
+/* Diagnostics View */
+.diagnostics-view {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.diagnostics-waiting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5a5a7c;
+  font-family: monospace;
+  font-style: italic;
+}
+
+.diagnostics-sidebar {
+  width: 260px;
+  background: rgba(18, 18, 26, 0.9);
+  border-right: 1px solid #1a1a3e;
+  padding: 16px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+}
+
+.diagnostics-section {
+  margin-bottom: 24px;
+}
+
+.diagnostics-heading {
+  color: #5a5a7c;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+
+.diagnostics-empty {
+  color: #3a3a5c;
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* Connection items */
+.diagnostics-connection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(42, 42, 62, 0.5);
+}
+
+.diagnostics-conn-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e0e0ff;
+}
+
+.diagnostics-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a3a5c;
+}
+
+.diagnostics-dot--active {
+  background: #00ff88;
+  box-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
+}
+
+.diagnostics-conn-stats {
+  color: #5a5a7c;
+  font-size: 10px;
+}
+
+/* Summary stats */
+.diagnostics-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+}
+
+.diagnostics-summary dt {
+  color: #5a5a7c;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.diagnostics-summary dd {
+  color: #e0e0ff;
+  text-align: right;
+}
+
+.diagnostics-error-count {
+  color: #f87171;
+}
+
+/* Trace depth toggle */
+.diagnostics-depth-toggle {
+  display: flex;
+  border: 1px solid #2a2a3e;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.diagnostics-depth-btn {
+  flex: 1;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid #2a2a3e;
+  color: #5a5a7c;
+  font-family: monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.diagnostics-depth-btn:last-child {
+  border-right: none;
+}
+
+.diagnostics-depth-btn:hover {
+  background: rgba(108, 99, 255, 0.1);
+  color: #e0e0ff;
+}
+
+.diagnostics-depth-btn--active {
+  background: rgba(108, 99, 255, 0.2);
+  color: #6c63ff;
+  font-weight: 700;
+}
+
+/* Request Timeline */
+.diagnostics-timeline {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.diagnostics-timeline-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Request rows */
+.diagnostics-request {
+  border-bottom: 1px solid rgba(42, 42, 62, 0.3);
+}
+
+.diagnostics-request-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  list-style: none;
+}
+
+.diagnostics-request-row:hover {
+  background: rgba(26, 26, 46, 0.5);
+}
+
+.diagnostics-request-row::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostics-req-time {
+  color: #5a5a7c;
+  min-width: 70px;
+}
+
+.diagnostics-req-method {
+  color: #e0e0ff;
+  font-weight: 600;
+  min-width: 32px;
+}
+
+.diagnostics-req-path {
+  color: #e0e0ff;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-req-status {
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+}
+
+.diagnostics-req-duration {
+  color: #5a5a7c;
+  min-width: 48px;
+  text-align: right;
+}
+
+.diagnostics-req-route {
+  color: #3a3a5c;
+  font-size: 10px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Expanded detail */
+.diagnostics-request-detail {
+  padding: 8px 8px 8px 14px;
+  background: rgba(10, 10, 15, 0.6);
+  font-family: monospace;
+  font-size: 11px;
+  color: #8888a0;
+  line-height: 1.6;
+}
+
+.diagnostics-error-detail {
+  color: #f87171;
+  margin-bottom: 4px;
+}
+
+.diagnostics-label {
+  color: #5a5a7c;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.diagnostics-headers {
+  margin-top: 4px;
+}
+
+.diagnostics-header-row {
+  padding-left: 12px;
+}
+
+.diagnostics-header-key {
+  color: #6c63ff;
+}
