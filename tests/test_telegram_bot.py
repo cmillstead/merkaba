@@ -197,33 +197,58 @@ class TestMerkabaBot:
     # --- handle_message happy path + error ---
 
     @pytest.mark.asyncio
-    async def test_handle_message_happy_path(self):
-        """handle_message should pass message to agent and return response."""
+    async def test_handle_message_uses_pool(self):
+        """handle_message should route through pool.submit, not blocking agent.run."""
         bot = MerkabaBot(token="test", allowed_user_ids=[111])
-        bot.agent = MagicMock()
-        bot.agent.run.return_value = "Hello! I'm Merkaba."
+        bot.pool = MagicMock()
+        bot.pool.submit = AsyncMock(return_value="Hello! I'm Merkaba.")
 
         update = MagicMock()
         update.effective_user.id = 111
         update.message.text = "Hi there"
+        update.message.message_thread_id = None
         update.message.reply_text = AsyncMock()
 
         await bot.handle_message(update, MagicMock())
 
-        bot.agent.run.assert_called_once_with("Hi there")
+        bot.pool.submit.assert_awaited_once()
+        # Verify session_id and message were passed
+        call_args = bot.pool.submit.call_args
+        assert call_args[0][0] == "telegram:111"  # session_id
+        assert call_args[0][1] == "Hi there"  # message
         msg = update.message.reply_text.call_args[0][0]
         assert "Hello! I'm Merkaba." == msg
 
     @pytest.mark.asyncio
-    async def test_handle_message_agent_error(self):
-        """handle_message should send error message when agent raises."""
+    async def test_handle_message_includes_topic_id(self):
+        """Session ID includes topic_id for Telegram threads."""
+        bot = MerkabaBot(token="test", allowed_user_ids=[456])
+        bot.pool = MagicMock()
+        bot.pool.submit = AsyncMock(return_value="response")
+
+        update = MagicMock()
+        update.effective_user.id = 456
+        update.message.text = "hello"
+        update.message.message_thread_id = 789
+        update.message.reply_text = AsyncMock()
+
+        await bot.handle_message(update, MagicMock())
+
+        call_args = bot.pool.submit.call_args
+        session_id = call_args[0][0]
+        assert session_id == "telegram:456:topic:789"
+
+    @pytest.mark.asyncio
+    async def test_handle_message_pool_error(self):
+        """handle_message should send error message when pool.submit raises."""
         bot = MerkabaBot(token="test", allowed_user_ids=[111])
-        bot.agent = MagicMock()
-        bot.agent.run.side_effect = RuntimeError("LLM unavailable")
+        bot.pool = MagicMock()
+        bot.pool.submit = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
 
         update = MagicMock()
         update.effective_user.id = 111
         update.message.text = "Hello"
+        update.message.message_thread_id = None
         update.message.reply_text = AsyncMock()
 
         await bot.handle_message(update, MagicMock())
@@ -264,19 +289,25 @@ class TestMerkabaBot:
         msg = update.message.reply_text.call_args[0][0]
         assert "not authorized" in msg.lower()
 
-    # --- _get_agent lazy init ---
+    # --- _get_agent fallback for skills ---
 
     def test_get_agent_lazy_init(self):
-        """_get_agent should create agent on first call and reuse it."""
+        """_get_agent should create fallback agent on first call and reuse it."""
         bot = MerkabaBot(token="test", allowed_user_ids=[111])
-        assert bot.agent is None
+        assert not hasattr(bot, "_fallback_agent")
 
-        with patch("merkaba.telegram.bot.Agent") as MockAgent:
+        with patch("merkaba.agent.Agent") as MockAgent:
             agent1 = bot._get_agent()
             agent2 = bot._get_agent()
 
         assert agent1 is agent2
         MockAgent.assert_called_once()
+
+    def test_pool_initialized_on_creation(self):
+        """SessionPool should be initialized in __post_init__."""
+        bot = MerkabaBot(token="test", allowed_user_ids=[111])
+        from merkaba.orchestration.session_pool import SessionPool
+        assert isinstance(bot.pool, SessionPool)
 
 
 class TestBotSkillInvocation:
@@ -307,8 +338,8 @@ class TestBotSkillInvocation:
 
         await bot.handle_skill_command(mock_update, mock_context, "brainstorming")
 
-        # Verify skill was activated
-        assert bot.agent.active_skill == mock_skill
+        # Verify skill was activated on the fallback agent
+        assert bot._fallback_agent.active_skill == mock_skill
 
     @pytest.mark.asyncio
     async def test_skill_not_found(self):

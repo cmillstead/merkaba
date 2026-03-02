@@ -73,6 +73,9 @@ cloud = [
     "anthropic>=0.25.0",
     "openai>=1.12.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+]
 all-integrations = [
     "slack_sdk>=3.21.0",
     "PyGithub>=2.0.0",
