@@ -156,34 +156,30 @@ class MemoryRetrieval:
             dist = hit.get("distance", float("inf"))
             if dist > max_dist:
                 continue
-            decisions = self.store.get_decisions(business_id or 0)
-            for d in decisions:
-                if d["id"] == hit["id"]:
-                    score = max(0.0, 1.0 - dist / max_dist)
-                    results.append({
-                        "type": "decision",
-                        "distance": dist,
-                        "score": score,
-                        **d,
-                    })
-                    break
+            d = self.store.get_decision(hit["id"])
+            if d:
+                score = max(0.0, 1.0 - dist / max_dist)
+                results.append({
+                    "type": "decision",
+                    "distance": dist,
+                    "score": score,
+                    **d,
+                })
 
         learning_hits = self.vectors.search_learnings(query, limit)
         for hit in learning_hits:
             dist = hit.get("distance", float("inf"))
             if dist > max_dist:
                 continue
-            learnings = self.store.get_learnings()
-            for l in learnings:
-                if l["id"] == hit["id"]:
-                    score = max(0.0, 1.0 - dist / max_dist)
-                    results.append({
-                        "type": "learning",
-                        "distance": dist,
-                        "score": score,
-                        **l,
-                    })
-                    break
+            l = self.store.get_learning(hit["id"])
+            if l:
+                score = max(0.0, 1.0 - dist / max_dist)
+                results.append({
+                    "type": "learning",
+                    "distance": dist,
+                    "score": score,
+                    **l,
+                })
 
         results.sort(key=lambda r: r.get("distance", float("inf")))
         return results[:limit]

@@ -303,6 +303,12 @@ class MemoryStore:
         self._conn.commit()
         return cursor.lastrowid
 
+    def get_decision(self, decision_id: int) -> dict[str, Any] | None:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM decisions WHERE id = ?", (decision_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
     def get_decisions(
         self, business_id: int, action_type: str | None = None, include_archived: bool = False
     ) -> list[dict[str, Any]]:
@@ -517,6 +523,12 @@ class MemoryStore:
         )
         self._conn.commit()
         return cursor.lastrowid
+
+    def get_learning(self, learning_id: int) -> dict[str, Any] | None:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM learnings WHERE id = ?", (learning_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
     def get_learnings(self, category: str | None = None, include_archived: bool = False) -> list[dict[str, Any]]:
         cursor = self._conn.cursor()

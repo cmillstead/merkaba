@@ -457,3 +457,73 @@ def test_recall_no_relationship_noise(retrieval):
     results = retrieval.recall("price", business_id=bid)
     rel_results = [r for r in results if r["type"] == "relationship"]
     assert len(rel_results) == 0
+
+
+# ------------------------------------------------------------------
+# N+1 query fix tests: verify single-ID lookups replace bulk fetches
+# ------------------------------------------------------------------
+
+
+def test_semantic_decision_uses_get_decision_not_get_decisions(semantic_retrieval):
+    """Semantic retrieval calls get_decision(id) per hit, not get_decisions(business_id).
+
+    We fill the semantic limit so the keyword backfill path does not trigger,
+    isolating the assertion to the semantic code path only.
+    """
+    r = semantic_retrieval
+    r.config = RetrievalConfig(max_items=2, min_relevance_score=0.25)
+    biz_id = r.store.add_business("Shop", "ecommerce")
+    dec1 = r.store.add_decision(biz_id, "pricing", "Lower price", "Competition")
+    dec2 = r.store.add_decision(biz_id, "inventory", "Restock", "Low stock")
+
+    # Return exactly max_items hits so keyword backfill is skipped
+    r.vectors.search_decisions.return_value = [
+        {"id": dec1, "distance": 0.3},
+        {"id": dec2, "distance": 0.5},
+    ]
+
+    with patch.object(r.store, "get_decision", wraps=r.store.get_decision) as mock_single, \
+         patch.object(r.store, "get_decisions", wraps=r.store.get_decisions) as mock_bulk:
+        results = r.recall("test", business_id=biz_id)
+
+    # Single-ID method should be called once per hit
+    assert mock_single.call_count == 2
+    mock_single.assert_any_call(dec1)
+    mock_single.assert_any_call(dec2)
+    # Bulk method should NOT be called during semantic retrieval
+    mock_bulk.assert_not_called()
+
+    dec_results = [x for x in results if x["type"] == "decision"]
+    assert len(dec_results) == 2
+
+
+def test_semantic_learning_uses_get_learning_not_get_learnings(semantic_retrieval):
+    """Semantic retrieval calls get_learning(id) per hit, not get_learnings().
+
+    We fill the semantic limit so the keyword backfill path does not trigger,
+    isolating the assertion to the semantic code path only.
+    """
+    r = semantic_retrieval
+    r.config = RetrievalConfig(max_items=2, min_relevance_score=0.25)
+    l1 = r.store.add_learning("marketing", "Post at 9am")
+    l2 = r.store.add_learning("pricing", "Bundle discounts work")
+
+    # Return exactly max_items hits so keyword backfill is skipped
+    r.vectors.search_learnings.return_value = [
+        {"id": l1, "distance": 0.4},
+        {"id": l2, "distance": 0.6},
+    ]
+
+    with patch.object(r.store, "get_learning", wraps=r.store.get_learning) as mock_single, \
+         patch.object(r.store, "get_learnings", wraps=r.store.get_learnings) as mock_bulk:
+        results = r.recall("test")
+
+    # Single-ID method should be called once per hit
+    assert mock_single.call_count == 2
+    mock_single.assert_any_call(l1)
+    mock_single.assert_any_call(l2)
+    # Bulk method should NOT be called during semantic retrieval
+    mock_bulk.assert_not_called()
+
+    learn_results = [x for x in results if x["type"] == "learning"]
+    assert len(learn_results) == 2

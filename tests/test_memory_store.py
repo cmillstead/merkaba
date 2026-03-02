@@ -98,6 +98,27 @@ def test_add_decision(store):
     assert decisions[0]["decision"] == "Lower price to $3.99"
 
 
+def test_get_decision_by_id(store):
+    """get_decision retrieves a single decision by ID."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    dec_id = store.add_decision(
+        biz_id, "pricing", "Lower price to $3.99", "Competitors are cheaper"
+    )
+    d = store.get_decision(dec_id)
+    assert d is not None
+    assert d["id"] == dec_id
+    assert d["business_id"] == biz_id
+    assert d["action_type"] == "pricing"
+    assert d["decision"] == "Lower price to $3.99"
+    assert d["reasoning"] == "Competitors are cheaper"
+    assert d["created_at"] is not None
+
+
+def test_get_decision_not_found(store):
+    """get_decision returns None for a non-existent ID."""
+    assert store.get_decision(999) is None
+
+
 def test_get_decisions_by_type(store):
     biz_id = store.add_business("Shop", "ecommerce")
     store.add_decision(biz_id, "pricing", "Lower price", "Competition")
@@ -191,6 +212,31 @@ def test_add_learning(store):
     learnings = store.get_learnings()
     assert len(learnings) == 1
     assert learnings[0]["insight"] == "Lower prices increase volume but not revenue"
+
+
+def test_get_learning_by_id(store):
+    """get_learning retrieves a single learning by ID."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    learn_id = store.add_learning(
+        "pricing", "Lower prices increase volume but not revenue",
+        evidence="A/B test results",
+        confidence=80,
+        source_business_id=biz_id,
+    )
+    l = store.get_learning(learn_id)
+    assert l is not None
+    assert l["id"] == learn_id
+    assert l["source_business_id"] == biz_id
+    assert l["category"] == "pricing"
+    assert l["insight"] == "Lower prices increase volume but not revenue"
+    assert l["evidence"] == "A/B test results"
+    assert l["confidence"] == 80
+    assert l["created_at"] is not None
+
+
+def test_get_learning_not_found(store):
+    """get_learning returns None for a non-existent ID."""
+    assert store.get_learning(999) is None
 
 
 def test_get_learnings_by_category(store):
