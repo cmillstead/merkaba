@@ -295,3 +295,58 @@ class TestDiagnosticsREST:
         assert "recent_requests" in data
         assert "recent_errors" in data
         assert "summary" in data or "total_requests" in data
+
+
+@pytest.mark.skipif(not HAS_WEB_DEPS, reason="Missing web dependencies")
+class TestDiagnosticsIntegration:
+    """Full flow: make requests, subscribe, verify traces appear."""
+
+    def test_requests_appear_in_diagnostics(self, app_client):
+        """HTTP requests made before subscribing should appear in the buffer."""
+        client, app = app_client
+        # Make some requests
+        client.get("/api/system/status")
+        client.get("/api/system/models")
+        client.get("/api/nonexistent")
+
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state (no diagnostics)
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()
+            diag = msg["diagnostics"]
+            assert diag["total_requests"] >= 3
+            assert diag["total_errors"] >= 1
+            paths = [r["path"] for r in diag["recent_requests"]]
+            assert "/api/system/status" in paths
+
+    def test_trace_depth_filters_fields(self, app_client):
+        """Lightweight trace depth should exclude headers and query params."""
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            ws.send_json({"type": "set_trace_depth", "level": "lightweight"})
+
+        # Make a request after changing depth
+        client.get("/api/system/status?foo=bar")
+
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()
+            recent = msg["diagnostics"]["recent_requests"]
+            lightweight_req = next(
+                (r for r in recent if r.get("path") == "/api/system/status"),
+                None,
+            )
+            if lightweight_req:
+                assert "headers" not in lightweight_req
+                assert "query_string" not in lightweight_req
+
+    def test_diagnostics_self_traces(self, app_client):
+        """The diagnostics REST endpoint should itself appear in traces."""
+        client, app = app_client
+        client.get("/api/system/diagnostics")
+        store = app.state.diagnostics_store
+        paths = [r["path"] for r in store.get_recent(20)]
+        assert "/api/system/diagnostics" in paths
