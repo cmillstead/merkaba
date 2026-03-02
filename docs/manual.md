@@ -906,6 +906,48 @@ The code worker uses verification results to decide whether to retry, rollback, 
 
 ---
 
+## Skill Forge
+
+Generate merkaba plugins from ClawHub or GitHub skill descriptions. No code is imported -- only the concept is extracted and the LLM generates fresh, merkaba-native content from scratch.
+
+**Key file:** `plugins/forge.py`
+
+### Why Forge?
+
+ClawHub's skill store contains useful concepts but also prompt injections and AI malware. Forge lets you safely adopt skill ideas without importing untrusted code.
+
+### Usage
+
+```bash
+# From GitHub
+merkaba skills forge --from https://github.com/user/repo/blob/main/skills/my-skill/SKILL.md
+
+# From ClawHub
+merkaba skills forge --from https://clawhub.ai/skills/my-skill
+
+# Custom name
+merkaba skills forge --from <url> --name my-custom-name
+
+# Force past security warnings
+merkaba skills forge --from <url> --force
+```
+
+### How It Works
+
+1. **Scrape**: Fetches skill description from URL (httpx first, Playwright fallback for JS-rendered ClawHub pages)
+2. **Security gate**: Checks ClawHub security verdict -- Benign passes, Suspicious warns, Malicious double-warns
+3. **Generate**: LLM creates a fresh merkaba plugin inspired by the concept (no source code imported)
+4. **Scan**: Output checked against `DANGEROUS_SKILL_PATTERNS` before writing
+5. **Write**: Plugin saved to `~/.merkaba/plugins/<name>/skills/<name>/SKILL.md`
+
+### Security
+
+- **ClawHub verdicts**: Benign passes, Suspicious warns with confirmation, Malicious requires `--force`
+- **Post-generation scan**: All output scanned against `DANGEROUS_SKILL_PATTERNS`
+- **No code imported**: Only the skill description is read; the LLM generates from scratch
+
+---
+
 ## Plugin System
 
 Merkaba's plugin system supports four component types: skills, commands, hooks, and agents.

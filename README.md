@@ -273,6 +273,14 @@ merkaba plugins uninstall <name>         # Uninstall a plugin
 merkaba commands list                    # List plugin commands
 ```
 
+### Skills
+
+```bash
+merkaba skills forge --from <url>            # Generate plugin from ClawHub/GitHub skill
+merkaba skills forge --from <url> --name x   # Generate with custom name
+merkaba skills forge --from <url> --force    # Proceed even if flagged dangerous
+```
+
 ### Observability
 
 ```bash
