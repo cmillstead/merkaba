@@ -22,6 +22,11 @@ try:
 except ImportError:
     scrape_clawhub = None
 
+try:
+    from merkaba.plugins.forge import scrape_url
+except ImportError:
+    scrape_url = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -191,3 +196,25 @@ class TestScrapeClawhub:
                        side_effect=ImportError("pip install merkaba[browser]")):
                 with pytest.raises(ImportError, match="browser"):
                     scrape_clawhub("https://clawhub.ai/skills/test")
+
+
+class TestScrapeUrl:
+    def test_dispatches_github(self):
+        with patch("merkaba.plugins.forge.scrape_github") as mock_gh:
+            mock_gh.return_value = ScrapedSkill(name="s", description="d", content="c")
+            result = scrape_url("https://github.com/user/repo/blob/main/SKILL.md")
+        mock_gh.assert_called_once()
+
+    def test_dispatches_clawhub(self):
+        with patch("merkaba.plugins.forge.scrape_clawhub") as mock_ch:
+            mock_ch.return_value = ScrapedSkill(name="s", description="d", content="c")
+            result = scrape_url("https://clawhub.ai/skills/test")
+        mock_ch.assert_called_once()
+
+    def test_unknown_url_raises(self):
+        with pytest.raises(ValueError, match="Unsupported URL"):
+            scrape_url("https://example.com/page")
+
+    def test_non_https_raises(self):
+        with pytest.raises(ValueError, match="HTTPS"):
+            scrape_url("http://clawhub.ai/skills/test")
