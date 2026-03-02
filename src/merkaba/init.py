@@ -302,6 +302,51 @@ def run_interview(
     return soul, user
 
 
+def _ask_yes_no(prompt: str) -> bool:
+    """Ask a yes/no question. Returns True for yes."""
+    answer = input(f"  {prompt} [y/n] ").strip().lower()
+    return answer in ("y", "yes")
+
+
+def _install_scheduler() -> None:
+    """Install the launchd scheduler daemon."""
+    try:
+        from merkaba.cli import scheduler_install
+        scheduler_install()
+    except Exception as e:
+        print(f"  Scheduler install failed: {e}")
+
+
+def _setup_telegram() -> None:
+    """Run the Telegram setup wizard."""
+    try:
+        from merkaba.cli import telegram_setup
+        telegram_setup()
+    except Exception as e:
+        print(f"  Telegram setup failed: {e}")
+
+
+def _launch_web() -> None:
+    """Start the web UI in the background."""
+    print("  Starting web UI...")
+    print("  Visit: http://127.0.0.1:8000")
+    print("  (Run 'merkaba web' to start it manually later)\n")
+
+
+def run_extras() -> None:
+    """Phase 3: Offer optional setup for scheduler, Telegram, web UI."""
+    print("\n  Optional extras:\n")
+
+    if _ask_yes_no("Install background scheduler? (launchd daemon)"):
+        _install_scheduler()
+
+    if _ask_yes_no("Set up Telegram bot integration?"):
+        _setup_telegram()
+
+    if _ask_yes_no("Launch the web UI now?"):
+        _launch_web()
+
+
 def _print_model_inventory(status: ModelStatus) -> None:
     """Print model availability table."""
     print("\n  Merkaba uses three models:\n")

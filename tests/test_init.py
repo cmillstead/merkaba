@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 
@@ -224,3 +224,20 @@ def test_interview_depth_deep_has_more_topics():
     """Deep depth should have 8-12 topic areas."""
     from merkaba.init import INTERVIEW_TOPICS
     assert len(INTERVIEW_TOPICS[InterviewDepth.DEEP]) >= 8
+
+
+def test_extras_skips_all_on_no(monkeypatch):
+    """All extras declined — no side effects."""
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    # Should not raise or call anything
+    run_extras()
+
+
+def test_extras_scheduler_on_yes(monkeypatch):
+    """Scheduler offer accepted — calls scheduler_install."""
+    responses = iter(["y", "n", "n"])  # scheduler=yes, telegram=no, web=no
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+    mock_install = MagicMock()
+    monkeypatch.setattr("merkaba.init._install_scheduler", mock_install)
+    run_extras()
+    mock_install.assert_called_once()
