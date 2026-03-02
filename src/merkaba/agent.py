@@ -23,6 +23,7 @@ from merkaba.plugins import PluginRegistry, Skill, PluginSandbox, PluginPermissi
 from merkaba.verification.deterministic import DeterministicVerifier
 from merkaba.config.prompts import PromptLoader
 from merkaba.security.sanitizer import sanitize_memory_value
+from merkaba.memory.context_budget import ContextWindowConfig
 
 
 SIMPLE_MODEL = "qwen3:8b"
@@ -51,10 +52,12 @@ class Agent:
     active_skill: Skill | None = field(init=False, default=None)
     _prompt_loader: PromptLoader = field(init=False)
     _verifier: DeterministicVerifier = field(init=False)
+    context_config: ContextWindowConfig = field(init=False)
 
     def __post_init__(self):
         self.llm = LLMClient(model=self.model)
         self.registry = ToolRegistry()
+        self.context_config = ContextWindowConfig()
         self._prompt_loader = PromptLoader(base_dir=self.prompt_dir)
         self._tree = ConversationTree()
         if self.memory_storage_dir:
@@ -364,7 +367,9 @@ class Agent:
         return "I've reached my iteration limit. Please try a simpler request."
 
     def _format_conversation(self) -> str:
-        """Format conversation history for the LLM."""
+        """Format conversation history for the LLM, trimming long tool outputs."""
+        head = self.context_config.head_chars
+        tail = self.context_config.tail_chars
         parts = []
         for msg in self._tree.get_active_branch():
             if msg.role == "user":
@@ -376,7 +381,15 @@ class Agent:
                     tool_names = [tc["name"] for tc in msg.metadata["tool_calls"]]
                     parts.append(f"Assistant: [Called tools: {', '.join(tool_names)}]")
             elif msg.role == "tool":
-                parts.append(f"Tool Result: {msg.content}")
+                content = msg.content or ""
+                if len(content) > (head + tail + 100):
+                    trimmed_len = len(content) - head - tail
+                    content = (
+                        content[:head]
+                        + f"\n\n... [{trimmed_len} chars trimmed] ...\n\n"
+                        + content[-tail:]
+                    )
+                parts.append(f"Tool Result: {content}")
             elif msg.role == "system":
                 parts.append(f"System: {msg.content}")
         return "\n\n".join(parts)
