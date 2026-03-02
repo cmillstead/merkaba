@@ -709,6 +709,13 @@ class MemoryStore:
             counts[table] = cursor.fetchone()[0]
         return counts
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def close(self):
         if self._conn:
             self._conn.close()

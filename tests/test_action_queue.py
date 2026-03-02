@@ -179,3 +179,35 @@ def test_approval_stats_tracking(queue):
 def test_close_idempotent(queue):
     queue.close()
     queue.close()  # should not crash
+
+
+# --- Context manager ---
+
+
+def test_context_manager_returns_self():
+    """ActionQueue as context manager returns self."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "actions.db")
+        with ActionQueue(db_path=db_path) as q:
+            assert isinstance(q, ActionQueue)
+            assert q._conn is not None
+
+
+def test_context_manager_closes_connection():
+    """ActionQueue connection is closed after exiting the with block."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "actions.db")
+        with ActionQueue(db_path=db_path) as q:
+            q.add_action(business_id=1, action_type="a", description="X")
+        assert q._conn is None
+
+
+def test_context_manager_closes_on_exception():
+    """ActionQueue connection is closed even when an exception occurs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "actions.db")
+        with pytest.raises(RuntimeError, match="boom"):
+            with ActionQueue(db_path=db_path) as q:
+                q.add_action(business_id=1, action_type="a", description="X")
+                raise RuntimeError("boom")
+        assert q._conn is None

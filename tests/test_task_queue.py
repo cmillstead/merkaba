@@ -257,3 +257,35 @@ def test_stats(queue):
     assert stats["task_runs"] == 1
     assert stats["tasks_pending"] == 2  # Task A (back to pending after run) + Task B
     assert stats["tasks_paused"] == 1
+
+
+# --- Context manager ---
+
+
+def test_context_manager_returns_self():
+    """TaskQueue as context manager returns self."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "tasks.db")
+        with TaskQueue(db_path=db_path) as q:
+            assert isinstance(q, TaskQueue)
+            assert q._conn is not None
+
+
+def test_context_manager_closes_connection():
+    """TaskQueue connection is closed after exiting the with block."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "tasks.db")
+        with TaskQueue(db_path=db_path) as q:
+            q.add_task("Test Task", "check")
+        assert q._conn is None
+
+
+def test_context_manager_closes_on_exception():
+    """TaskQueue connection is closed even when an exception occurs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "tasks.db")
+        with pytest.raises(RuntimeError, match="boom"):
+            with TaskQueue(db_path=db_path) as q:
+                q.add_task("Test Task", "check")
+                raise RuntimeError("boom")
+        assert q._conn is None

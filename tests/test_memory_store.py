@@ -512,3 +512,35 @@ def test_touch_accessed_rejects_invalid_table(store):
     """touch_accessed() raises ValueError for invalid table names."""
     with pytest.raises(ValueError, match="Invalid table: logs"):
         store.touch_accessed("logs", [1, 2])
+
+
+# --- Context manager ---
+
+
+def test_context_manager_returns_self():
+    """MemoryStore as context manager returns self."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "memory.db")
+        with MemoryStore(db_path=db_path) as store:
+            assert isinstance(store, MemoryStore)
+            assert store._conn is not None
+
+
+def test_context_manager_closes_connection():
+    """MemoryStore connection is closed after exiting the with block."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "memory.db")
+        with MemoryStore(db_path=db_path) as store:
+            store.add_business("Test", "ecommerce")
+        assert store._conn is None
+
+
+def test_context_manager_closes_on_exception():
+    """MemoryStore connection is closed even when an exception occurs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "memory.db")
+        with pytest.raises(RuntimeError, match="boom"):
+            with MemoryStore(db_path=db_path) as store:
+                store.add_business("Test", "ecommerce")
+                raise RuntimeError("boom")
+        assert store._conn is None
