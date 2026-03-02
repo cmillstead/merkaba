@@ -14,6 +14,20 @@ from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 MERKABA_DIR = Path(os.path.expanduser("~/.merkaba"))
 
+_nudge_shown = False
+
+
+def check_first_run() -> None:
+    """Print a gentle nudge if merkaba init hasn't been run. Called at most once per process."""
+    global _nudge_shown
+    if _nudge_shown:
+        return
+
+    _nudge_shown = True
+    config_path = MERKABA_DIR / "config.json"
+    if not config_path.exists():
+        print("\n  Welcome to Merkaba! Run `merkaba init` to set up your agent.\n")
+
 DEFAULT_CONFIG = {
     "models": {
         "simple": "qwen3:8b",

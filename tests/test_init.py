@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock, call
 
 from typer.testing import CliRunner
 from merkaba.cli import app
-from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras, run_init
+from merkaba.init import check_file_safety, FileAction, check_ollama, ModelStatus, run_preflight, pull_model, run_interview, InterviewDepth, run_extras, run_init, check_first_run
 from merkaba.config.prompts import DEFAULT_SOUL, DEFAULT_USER
 
 cli_runner = CliRunner()
@@ -305,3 +305,39 @@ def test_cli_init_no_interview(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Welcome to Merkaba" in result.output
     assert (home / "config.json").exists()
+
+
+def test_first_run_nudge_when_no_config(tmp_path, capsys, monkeypatch):
+    """Prints nudge when config.json doesn't exist."""
+    home = tmp_path / "merkaba"
+    home.mkdir()
+    # No config.json
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    monkeypatch.setattr("merkaba.init._nudge_shown", False)
+    check_first_run()
+    captured = capsys.readouterr()
+    assert "merkaba init" in captured.out
+
+
+def test_first_run_no_nudge_when_config_exists(tmp_path, capsys, monkeypatch):
+    """No nudge when config.json exists."""
+    home = tmp_path / "merkaba"
+    home.mkdir()
+    (home / "config.json").write_text("{}")
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    monkeypatch.setattr("merkaba.init._nudge_shown", False)
+    check_first_run()
+    captured = capsys.readouterr()
+    assert "merkaba init" not in captured.out
+
+
+def test_first_run_nudge_only_once(tmp_path, capsys, monkeypatch):
+    """Nudge prints only once per process."""
+    home = tmp_path / "merkaba"
+    home.mkdir()
+    monkeypatch.setattr("merkaba.init.MERKABA_DIR", home)
+    monkeypatch.setattr("merkaba.init._nudge_shown", False)
+    check_first_run()
+    check_first_run()  # second call should be silent
+    captured = capsys.readouterr()
+    assert captured.out.count("merkaba init") == 1
