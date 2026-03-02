@@ -6,7 +6,8 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from merkaba.orchestration.session_pool import SessionPool
+from merkaba.orchestration.session_pool import SessionPool, PAIRING_PROMPT
+from merkaba.security.pairing import GatewayPairing
 
 # Ensure ollama mock is available
 if "ollama" not in sys.modules:
@@ -107,3 +108,93 @@ async def test_async_submit():
     pool = _make_pool()
     result = await pool.submit("web:user1", "hello")
     assert result == "response"
+
+
+# --- Gateway pairing integration ---
+
+
+def test_cli_bypasses_pairing():
+    """CLI sessions are always trusted, even when pairing is configured."""
+    gp = GatewayPairing()
+    pool = _make_pool(pairing=gp)
+    result = pool.submit_sync("cli:local", "hello")
+    assert result == "response"
+    pool._create_agent.assert_called_once()
+
+
+def test_unpaired_telegram_returns_prompt():
+    """Unpaired non-CLI sessions receive a pairing prompt."""
+    gp = GatewayPairing()
+    pool = _make_pool(pairing=gp)
+    result = pool.submit_sync("telegram:user1", "hello")
+    assert result == PAIRING_PROMPT
+    pool._create_agent.assert_not_called()
+
+
+def test_paired_telegram_proceeds():
+    """After pairing, non-CLI sessions process messages normally."""
+    gp = GatewayPairing()
+    code = gp.initiate("telegram", "telegram:user1")
+    gp.confirm("telegram:user1", code)
+
+    pool = _make_pool(pairing=gp)
+    result = pool.submit_sync("telegram:user1", "hello")
+    assert result == "response"
+    pool._create_agent.assert_called_once()
+
+
+def test_no_pairing_configured_allows_all():
+    """Without pairing configured (None), all sessions proceed."""
+    pool = _make_pool(pairing=None)
+    result = pool.submit_sync("telegram:user1", "hello")
+    assert result == "response"
+
+
+def test_unpaired_web_returns_prompt():
+    """Web sessions also require pairing when configured."""
+    gp = GatewayPairing()
+    pool = _make_pool(pairing=gp)
+    result = pool.submit_sync("web:user1", "hello")
+    assert result == PAIRING_PROMPT
+
+
+def test_unpaired_does_not_create_agent():
+    """An unpaired session should not allocate an agent."""
+    gp = GatewayPairing()
+    pool = _make_pool(pairing=gp)
+    pool.submit_sync("discord:user1", "hello")
+    assert pool.active_session_count() == 0
+
+
+def test_pairing_with_complex_session_id():
+    """Pairing works with full session IDs containing topic and biz segments."""
+    gp = GatewayPairing()
+    session_id = "telegram:user1:topic:42:biz:etsy"
+    code = gp.initiate("telegram", session_id)
+    gp.confirm(session_id, code)
+
+    pool = _make_pool(pairing=gp)
+    result = pool.submit_sync(session_id, "hello")
+    assert result == "response"
+
+
+def test_revoked_identity_blocked():
+    """After revoking a paired identity, it is blocked again."""
+    gp = GatewayPairing()
+    code = gp.initiate("slack", "slack:user1")
+    gp.confirm("slack:user1", code)
+
+    pool = _make_pool(pairing=gp)
+    assert pool.submit_sync("slack:user1", "hello") == "response"
+
+    gp.revoke("slack:user1")
+    assert pool.submit_sync("slack:user1", "hello again") == PAIRING_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_async_submit_respects_pairing():
+    """Async submit also enforces pairing."""
+    gp = GatewayPairing()
+    pool = _make_pool(pairing=gp)
+    result = await pool.submit("telegram:user1", "hello")
+    assert result == PAIRING_PROMPT

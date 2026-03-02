@@ -1,14 +1,24 @@
 # src/merkaba/orchestration/session_pool.py
+from __future__ import annotations
+
 import asyncio
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from merkaba.orchestration.lane_queue import LaneQueue
 
+if TYPE_CHECKING:
+    from merkaba.security.pairing import GatewayPairing
+
 logger = logging.getLogger(__name__)
+
+PAIRING_PROMPT = (
+    "This channel is not yet paired. "
+    "Use `merkaba pair confirm <CODE>` on the CLI to pair it."
+)
 
 
 @dataclass
@@ -30,10 +40,12 @@ class SessionPool:
         max_sessions: int = 100,
         idle_timeout: float = 3600.0,
         agent_kwargs: dict | None = None,
+        pairing: GatewayPairing | None = None,
     ):
         self.max_sessions = max_sessions
         self.idle_timeout = idle_timeout
         self.agent_kwargs = agent_kwargs or {}
+        self.pairing = pairing
         self._agents: dict[str, SessionEntry] = {}
         self._lock = threading.Lock()
         self._lane_queue = LaneQueue()
@@ -61,8 +73,37 @@ class SessionPool:
             logger.info("Created agent for session %s (%d active)", session_id, len(self._agents))
             return agent
 
+    @staticmethod
+    def _extract_channel(session_id: str) -> str:
+        """Extract the channel prefix from a session ID.
+
+        Session IDs use the format ``channel:sender[:topic:id][:biz:id]``.
+        Returns the first segment before ``:``, or the full string if no
+        colon is present.
+        """
+        return session_id.split(":", 1)[0]
+
+    def _requires_pairing(self, session_id: str) -> bool:
+        """Return True if this session must be paired but is not yet."""
+        if self.pairing is None:
+            return False
+        if self._extract_channel(session_id) == "cli":
+            return False
+        if self.pairing.is_paired(session_id):
+            return False
+        return True
+
     def submit_sync(self, session_id: str, message: str, **kwargs) -> str:
-        """Submit a message for processing. Serialized per-session."""
+        """Submit a message for processing. Serialized per-session.
+
+        If gateway pairing is configured and the session's channel is not
+        CLI and the identity is not yet paired, returns a pairing prompt
+        instead of creating an Agent or processing the message.
+        """
+        if self._requires_pairing(session_id):
+            logger.info("Unpaired session blocked: %s", session_id)
+            return PAIRING_PROMPT
+
         agent = self._get_or_create_agent(session_id)
         agent.session_id = session_id
 

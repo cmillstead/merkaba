@@ -31,9 +31,18 @@ except ImportError:
     logger.debug("pyobjc-framework-EventKit not installed -- Calendar adapter unavailable")
 
 try:
+    from merkaba.integrations import discord_adapter  # noqa: F401
+except ImportError:
+    logger.debug("discord.py not installed -- Discord adapter unavailable")
+
+try:
     from merkaba.integrations import qmd_adapter  # noqa: F401
 except ImportError:
     logger.debug("QMD not available -- QMD adapter unavailable")
+
+# signal-cli is an external system binary, not a pip package.
+# The adapter always loads; connect() checks for the binary at runtime.
+from merkaba.integrations import signal_adapter  # noqa: F401
 
 __all__ = [
     "IntegrationAdapter",
