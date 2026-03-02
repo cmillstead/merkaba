@@ -6,7 +6,13 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
 
 ## Table of Contents
 
-1. [Memory System](#memory-system)
+1. [Onboarding](#onboarding)
+   - [Preflight (Phase 1)](#preflight-phase-1)
+   - [Interview (Phase 2)](#interview-phase-2)
+   - [Extras (Phase 3)](#extras-phase-3)
+   - [Re-running Init](#re-running-init)
+   - [First-Run Nudge](#first-run-nudge)
+2. [Memory System](#memory-system)
    - [Retrieval Pipeline](#retrieval-pipeline)
    - [Conversation Trees](#conversation-trees)
    - [Contradiction Detection](#contradiction-detection)
@@ -16,7 +22,7 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Archived Memory](#archived-memory)
    - [Session Extraction](#session-extraction)
    - [Vector Memory](#vector-memory)
-2. [Security](#security)
+3. [Security](#security)
    - [Input Classifier](#input-classifier)
    - [Argument Validation](#argument-validation)
    - [Memory Sanitization](#memory-sanitization)
@@ -24,12 +30,12 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Conversation Encryption](#conversation-encryption)
    - [Integrity Monitoring](#integrity-monitoring)
    - [Security Scanner](#security-scanner)
-3. [Approval System](#approval-system)
+4. [Approval System](#approval-system)
    - [Action Queue](#action-queue)
    - [TOTP 2FA](#totp-2fa)
    - [Rate Limiting](#rate-limiting)
    - [Graduation](#graduation)
-4. [Orchestration](#orchestration)
+5. [Orchestration](#orchestration)
    - [Supervisor & Dispatch Modes](#supervisor--dispatch-modes)
    - [Workers](#workers)
    - [Code Worker](#code-worker)
@@ -39,14 +45,14 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Learning Extractor](#learning-extractor)
    - [Health Checks](#health-checks)
    - See also: [Session Management](#session-management), [Message Interruption](#message-interruption), [Heartbeat Checklist](#heartbeat-checklist)
-5. [LLM Client](#llm-client)
+6. [LLM Client](#llm-client)
    - [Request Priority](#request-priority)
    - [Concurrency Gate](#concurrency-gate)
    - [Retry & Fallback Chains](#retry--fallback-chains)
    - [Provider Routing](#provider-routing)
-6. [Verification](#verification)
+7. [Verification](#verification)
    - [Deterministic Verifier](#deterministic-verifier)
-7. [Plugin System](#plugin-system)
+8. [Plugin System](#plugin-system)
    - [Plugin Registry](#plugin-registry)
    - [Skills](#skills)
    - [Commands](#commands)
@@ -55,40 +61,132 @@ This manual covers Merkaba's subsystems in depth. For installation, quickstart, 
    - [Sandbox & Manifests](#sandbox--manifests)
    - [Importing from Claude Code](#importing-from-claude-code)
    - [Skill Activation](#skill-activation)
-8. [Extension System](#extension-system)
+9. [Extension System](#extension-system)
    - [Entry Points](#entry-points)
    - [Custom Workers](#custom-workers)
    - [Custom Adapters](#custom-adapters)
    - [Custom CLI Commands](#custom-cli-commands)
-9. [Observability](#observability)
-   - [Decision Audit Trail](#decision-audit-trail)
-   - [Token Usage Tracking](#token-usage-tracking)
-   - [Tracing](#tracing)
-10. [Web Dashboard](#web-dashboard)
+10. [Observability](#observability)
+    - [Decision Audit Trail](#decision-audit-trail)
+    - [Token Usage Tracking](#token-usage-tracking)
+    - [Tracing](#tracing)
+11. [Web Dashboard](#web-dashboard)
     - [API Authentication](#api-authentication)
-11. [Session Management](#session-management)
+12. [Session Management](#session-management)
     - [Session IDs](#session-ids)
     - [SessionPool](#sessionpool)
     - [LaneQueue](#lanequeue)
-12. [Context Window Management](#context-window-management)
+13. [Context Window Management](#context-window-management)
     - [Token Estimation](#token-estimation)
     - [Tool Result Trimming](#tool-result-trimming)
     - [Automatic Compression](#automatic-compression)
-13. [Hot-Reloadable Configuration](#hot-reloadable-configuration)
-14. [Message Interruption](#message-interruption)
-15. [Startup Configuration Warnings](#startup-configuration-warnings)
-16. [Browser Automation](#browser-automation)
-17. [Channel Adapters](#channel-adapters)
+14. [Hot-Reloadable Configuration](#hot-reloadable-configuration)
+15. [Message Interruption](#message-interruption)
+16. [Startup Configuration Warnings](#startup-configuration-warnings)
+17. [Browser Automation](#browser-automation)
+18. [Channel Adapters](#channel-adapters)
     - [Discord](#discord)
     - [Slack Real-Time](#slack-real-time)
     - [Signal](#signal)
-18. [Gateway Pairing](#gateway-pairing)
-19. [Heartbeat Checklist](#heartbeat-checklist)
-20. [Message Chunking](#message-chunking)
-21. [Migration & Identity Portability](#migration--identity-portability)
+19. [Gateway Pairing](#gateway-pairing)
+20. [Heartbeat Checklist](#heartbeat-checklist)
+21. [Message Chunking](#message-chunking)
+22. [Migration & Identity Portability](#migration--identity-portability)
     - [OpenClaw Migration](#openclaw-migration)
     - [AIEOS Import/Export](#aieos-importexport)
-22. [Protocol Definitions](#protocol-definitions)
+23. [Protocol Definitions](#protocol-definitions)
+
+---
+
+## Onboarding
+
+The `merkaba init` command runs a layered setup wizard that prepares the `~/.merkaba/` directory, optionally conducts an LLM-driven interview to personalize the agent, and offers to install optional extras. It is the recommended first step after installing Merkaba.
+
+**Key file:** `init.py`
+
+```bash
+merkaba init                    # Full wizard (preflight + interview + extras)
+merkaba init --no-interview     # Skip the LLM interview, just seed defaults
+merkaba init --force            # Back up and overwrite user-edited files
+```
+
+### Preflight (Phase 1)
+
+Preflight always runs and handles the foundational setup:
+
+1. **Create directories** -- `~/.merkaba/logs/`, `conversations/`, `plugins/`
+2. **Seed `config.json`** -- default model routing (`qwen3:8b` for simple, `qwen3.5:122b` for complex)
+3. **Seed `SOUL.md`** -- global agent personality (built-in default)
+4. **Seed `USER.md`** -- global owner context (built-in default)
+5. **Check Ollama** -- queries `http://127.0.0.1:11434/api/tags` for availability
+6. **Model inventory** -- reports which of the three standard models are installed
+
+**Model roles:**
+
+| Role | Default Model | Purpose |
+|------|--------------|---------|
+| Simple | `qwen3:8b` | Fast responses, routing, classification |
+| Complex | `qwen3.5:122b` | Deep reasoning, tool use, long tasks |
+| Classifier | `qwen3:4b` | Safety checks, complexity routing |
+
+If `qwen3:8b` is missing and Ollama is running, init offers to pull it automatically (~5GB). Larger models are listed as manual `ollama pull` commands.
+
+**File safety:** When a file already exists and has been edited (content differs from the default), init asks what to do:
+
+- **Overwrite** -- replace with the new default
+- **Skip** -- leave the existing file untouched
+- **Backup** -- copy the original to `<filename>.bak`, then overwrite
+
+The `--force` flag automatically backs up and overwrites without prompting.
+
+### Interview (Phase 2)
+
+If Ollama is available and at least one model is installed, init offers an LLM-driven interview to personalize `SOUL.md` and `USER.md`. The interview is skipped when `--no-interview` is passed or when no LLM is available.
+
+**Three depth levels:**
+
+| Level | Questions | Topics |
+|-------|-----------|--------|
+| Quick | 3-4 | Name, what you're building, what you want help with |
+| Medium | 5-8 | + communication style, schedule/timezone, pushback preferences |
+| Deep | 8-12 | + values, decision-making style, pet peeves, long-term vision |
+
+The interview is conversational -- the LLM asks one question at a time and adapts follow-ups based on answers. When all topics are covered, the LLM signals completion and synthesizes two personalized documents:
+
+- **SOUL.md** -- agent personality tailored to the user (tone, priorities, style)
+- **USER.md** -- owner profile (who they are, what they're building, preferences)
+
+The generated documents are shown for review before saving. If declined, the defaults from Phase 1 are kept.
+
+### Extras (Phase 3)
+
+After setup, init offers three optional add-ons:
+
+- **Background scheduler** -- installs a macOS launchd daemon (`merkaba scheduler install`)
+- **Telegram bot** -- runs the Telegram setup wizard (`merkaba telegram setup`)
+- **Web UI** -- launches the Mission Control dashboard
+
+Each extra is a yes/no prompt. All are optional and can be set up independently later.
+
+### Re-running Init
+
+Running `merkaba init` again is safe and useful for:
+
+- **Re-personalizing** after your goals or preferences change
+- **Picking up missing models** that you've pulled since the first run
+- **Adding extras** you skipped initially
+
+Without `--force`, init will detect user-edited files and ask before overwriting. The interview can be re-run to generate fresh `SOUL.md` and `USER.md` based on a new conversation.
+
+### First-Run Nudge
+
+If `~/.merkaba/config.json` does not exist, Merkaba prints a one-time suggestion when the memory store initializes:
+
+```
+  Welcome to Merkaba! Run `merkaba init` to set up your agent.
+```
+
+This nudge appears at most once per process and only when no configuration has been created yet. Running `merkaba init` (or manually creating `config.json`) suppresses it permanently.
 
 ---
 
@@ -927,6 +1025,48 @@ After code generation, the `DeterministicVerifier` runs language-appropriate lin
 - Returns `None` if disabled or no checks exist for the file type
 
 The code worker uses verification results to decide whether to retry, rollback, or proceed.
+
+---
+
+## Skill Forge
+
+Generate merkaba plugins from ClawHub or GitHub skill descriptions. No code is imported -- only the concept is extracted and the LLM generates fresh, merkaba-native content from scratch.
+
+**Key file:** `plugins/forge.py`
+
+### Why Forge?
+
+ClawHub's skill store contains useful concepts but also prompt injections and AI malware. Forge lets you safely adopt skill ideas without importing untrusted code.
+
+### Usage
+
+```bash
+# From GitHub
+merkaba skills forge --from https://github.com/user/repo/blob/main/skills/my-skill/SKILL.md
+
+# From ClawHub
+merkaba skills forge --from https://clawhub.ai/skills/my-skill
+
+# Custom name
+merkaba skills forge --from <url> --name my-custom-name
+
+# Force past security warnings
+merkaba skills forge --from <url> --force
+```
+
+### How It Works
+
+1. **Scrape**: Fetches skill description from URL (httpx first, Playwright fallback for JS-rendered ClawHub pages)
+2. **Security gate**: Checks ClawHub security verdict -- Benign passes, Suspicious warns, Malicious double-warns
+3. **Generate**: LLM creates a fresh merkaba plugin inspired by the concept (no source code imported)
+4. **Scan**: Output checked against `DANGEROUS_SKILL_PATTERNS` before writing
+5. **Write**: Plugin saved to `~/.merkaba/plugins/<name>/skills/<name>/SKILL.md`
+
+### Security
+
+- **ClawHub verdicts**: Benign passes, Suspicious warns with confirmation, Malicious requires `--force`
+- **Post-generation scan**: All output scanned against `DANGEROUS_SKILL_PATTERNS`
+- **No code imported**: Only the skill description is read; the LLM generates from scratch
 
 ---
 

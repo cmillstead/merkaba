@@ -27,6 +27,11 @@ class MemoryStore:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._create_tables()
+        try:
+            from merkaba.init import check_first_run
+            check_first_run()
+        except Exception:
+            pass
 
     def _create_tables(self):
         cursor = self._conn.cursor()

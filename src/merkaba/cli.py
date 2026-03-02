@@ -64,6 +64,16 @@ def main(
 
 
 @app.command()
+def init(
+    no_interview: bool = typer.Option(False, "--no-interview", help="Skip the LLM onboarding interview"),
+    force: bool = typer.Option(False, "--force", help="Re-initialize, backing up edited files"),
+):
+    """Set up Merkaba — creates config, checks prerequisites, personalizes your agent."""
+    from merkaba.init import run_init
+    run_init(no_interview=no_interview, force=force)
+
+
+@app.command()
 def chat(
     message: str = typer.Argument(None, help="Message to send to Merkaba"),
     model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
@@ -433,6 +443,76 @@ def plugins_uninstall(
     if result.settings_cleaned:
         console.print("[green]Cleaned settings.json enabledPlugins.[/green]")
     console.print("\n[dim]Restart Claude Code for changes to take effect.[/dim]")
+
+
+# --- Skills Command Group ---
+
+skills_app = typer.Typer(help="Skill management commands")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("forge")
+def skills_forge(
+    from_url: str = typer.Option(..., "--from", help="ClawHub or GitHub URL to forge from"),
+    name: str = typer.Option(None, "--name", help="Override the generated plugin name"),
+    force: bool = typer.Option(False, "--force", "-f", help="Proceed even if flagged as dangerous"),
+):
+    """Generate a merkaba plugin from a ClawHub or GitHub skill."""
+    from merkaba.plugins.forge import forge, check_security_gate, scrape_url
+
+    console.print(f"[cyan]Forging plugin from:[/cyan] {from_url}\n")
+
+    # Scrape first to show security gate before LLM call
+    try:
+        skill = scrape_url(from_url)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Failed to fetch URL:[/red] {e}")
+        raise typer.Exit(1)
+
+    # Security gate
+    gate = check_security_gate(skill)
+    if gate == "warn":
+        console.print("[yellow]WARNING: ClawHub rates this skill as Suspicious.[/yellow]")
+        if not force:
+            confirm = typer.confirm("Continue anyway?")
+            if not confirm:
+                raise typer.Exit(0)
+    elif gate == "double_warn":
+        console.print("[red bold]DANGER: ClawHub rates this skill as MALICIOUS.[/red bold]")
+        console.print("[red]This skill was flagged for dangerous patterns.[/red]")
+        if not force:
+            confirm = typer.confirm("Are you SURE you want to proceed?")
+            if not confirm:
+                raise typer.Exit(0)
+
+    console.print(f"[cyan]Scraped:[/cyan] {skill.name} -- {skill.description}")
+    console.print("[cyan]Generating plugin...[/cyan]")
+
+    result = forge(
+        url=from_url,
+        name=name,
+        confirm_dangerous=force,
+    )
+
+    if result.success:
+        console.print(f"\n[green]Plugin forged successfully![/green]")
+        console.print(f"  Name: {result.name}")
+        console.print(f"  Path: {result.path}")
+        if result.warnings:
+            console.print(f"\n[yellow]Warnings ({len(result.warnings)}):[/yellow]")
+            for w in result.warnings:
+                console.print(f"  - {w}")
+    else:
+        console.print(f"\n[red]Forge failed:[/red] {result.error}")
+        if result.warnings:
+            console.print(f"\n[yellow]Security scan warnings:[/yellow]")
+            for w in result.warnings:
+                console.print(f"  - {w}")
+            console.print("\n[dim]Use --force to write anyway.[/dim]")
+        raise typer.Exit(1)
 
 
 # --- Commands Command Group ---
