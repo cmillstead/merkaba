@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from merkaba.memory.store import MemoryStore
+from merkaba.protocols import MemoryBackend
 from merkaba.memory.retrieval import MemoryRetrieval
 from merkaba.orchestration.workers import Worker, WorkerResult, get_worker_class
 from merkaba.orchestration.learnings import LearningExtractor
@@ -58,7 +58,7 @@ def resolve_model(task_type: str, config_path: str = CONFIG_PATH) -> str:
 class Supervisor:
     """Coordinates task execution by dispatching to appropriate Workers."""
 
-    memory_store: MemoryStore
+    memory_store: MemoryBackend
     on_needs_approval: Callable[[dict], None] | None = None
     default_model: str = DEFAULT_MODEL
     config_path: str = CONFIG_PATH

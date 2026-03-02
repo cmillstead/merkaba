@@ -298,3 +298,31 @@ def test_handle_explore_then_execute_injects_context(supervisor, memory):
     # Worker still executed successfully (StubWorker returns success)
     assert worker_result.success is True
     assert worker_result.output["result"] == "stub_ok"
+
+
+# --- Protocol-based mock test ---
+
+
+def test_supervisor_accepts_memory_backend_protocol():
+    """Supervisor should accept any object satisfying the MemoryBackend protocol."""
+    from merkaba.protocols import MemoryBackend
+
+    # Use a plain MagicMock that auto-creates attributes (close, add_episode, etc.)
+    # but verify it still satisfies the protocol via structural typing.
+    mock_store = MagicMock()
+    mock_store.add_fact = MagicMock(return_value=1)
+    mock_store.get_facts = MagicMock(return_value=[])
+    mock_store.add_decision = MagicMock(return_value=1)
+    mock_store.get_decisions = MagicMock(return_value=[])
+
+    assert isinstance(mock_store, MemoryBackend)
+
+    sup = Supervisor(memory_store=mock_store)
+
+    task = {"id": 700, "name": "Protocol Test", "task_type": "_stub", "business_id": 1}
+    result = sup.handle_task(task)
+
+    assert result["success"] is True
+    mock_store.add_fact.assert_called_once()
+    mock_store.add_decision.assert_called_once()
+    sup.close()
