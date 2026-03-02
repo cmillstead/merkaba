@@ -34,6 +34,43 @@ export interface Connection {
   type: string
 }
 
+export interface WebSocketConnection {
+  path: string
+  connected_at: string
+  frames_sent: number
+  frames_received: number
+}
+
+export interface RequestTrace {
+  timestamp: string
+  scope_type: string
+  method: string
+  path: string
+  status: number
+  duration_ms: number
+  route?: string
+  request_size?: number
+  response_size?: number
+  error?: string
+  query_string?: string
+  headers?: [string, string][]
+  event_type?: string
+  frames_sent?: number
+  frames_received?: number
+}
+
+export interface DiagnosticsState {
+  trace_depth: string
+  active_websockets: WebSocketConnection[]
+  recent_requests: RequestTrace[]
+  recent_errors: RequestTrace[]
+  total_requests: number
+  total_errors: number
+  avg_duration_ms: number
+  buffer_size: number
+  buffer_used: number
+}
+
 export interface SystemState {
   status: string
   memory_facts: number
@@ -46,6 +83,7 @@ export interface ControlState {
   agents: AgentState[]
   workers: WorkerState[]
   connections: Connection[]
+  diagnostics: DiagnosticsState | null
 }
 
 type Action =
@@ -60,6 +98,7 @@ const initialState: ControlState = {
   agents: [],
   workers: [],
   connections: [],
+  diagnostics: null,
 }
 
 function controlReducer(state: ControlState, action: Action): ControlState {
@@ -121,6 +160,7 @@ export function useControlSocket() {
               agents: msg.agents,
               workers: msg.workers,
               connections: msg.connections,
+              diagnostics: msg.diagnostics ?? null,
             },
           })
         } else if (msg.type === 'tool_invoked') {
@@ -168,5 +208,17 @@ export function useControlSocket() {
     }
   }, [])
 
-  return { state, connected, sendCommand }
+  const subscribeDiagnostics = useCallback(() => {
+    sendCommand({ type: 'subscribe', channel: 'diagnostics' })
+  }, [sendCommand])
+
+  const unsubscribeDiagnostics = useCallback(() => {
+    sendCommand({ type: 'unsubscribe', channel: 'diagnostics' })
+  }, [sendCommand])
+
+  const setTraceDepth = useCallback((level: 'lightweight' | 'moderate' | 'full') => {
+    sendCommand({ type: 'set_trace_depth', level })
+  }, [sendCommand])
+
+  return { state, connected, sendCommand, subscribeDiagnostics, unsubscribeDiagnostics, setTraceDepth }
 }
