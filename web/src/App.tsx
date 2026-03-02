@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Radar, MessageSquare, ListTodo, ShieldCheck, Brain, BarChart3 } from 'lucide-react'
 import { BusinessProvider } from './context/BusinessContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import BusinessSwitcher from './components/BusinessSwitcher'
 import MissionControl from './pages/MissionControl'
 import Chat from './pages/Chat'
@@ -27,15 +28,17 @@ function App() {
           </nav>
         </aside>
         <main className="main">
-          <Routes>
-            <Route path="/" element={<MissionControl />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/approvals" element={<Approvals />} />
-            <Route path="/memory" element={<Memory />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/businesses/:id/config" element={<BusinessConfig />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<MissionControl />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/approvals" element={<Approvals />} />
+              <Route path="/memory" element={<Memory />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/businesses/:id/config" element={<BusinessConfig />} />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </BusinessProvider>
