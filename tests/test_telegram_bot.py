@@ -200,24 +200,36 @@ class TestMerkabaBot:
     async def test_handle_message_uses_pool(self):
         """handle_message should route through pool.submit, not blocking agent.run."""
         bot = MerkabaBot(token="test", allowed_user_ids=[111])
-        bot.pool = MagicMock()
-        bot.pool.submit = AsyncMock(return_value="Hello! I'm Merkaba.")
+
+        # Track calls manually to avoid AsyncMock event-loop issues in full suite
+        submit_calls = []
+
+        async def mock_submit(session_id, message):
+            submit_calls.append((session_id, message))
+            return "Hello! I'm Merkaba."
+
+        mock_pool = MagicMock()
+        mock_pool.submit = mock_submit
+        bot.pool = mock_pool
+
+        reply_calls = []
+
+        async def mock_reply(text):
+            reply_calls.append(text)
 
         update = MagicMock()
         update.effective_user.id = 111
         update.message.text = "Hi there"
         update.message.message_thread_id = None
-        update.message.reply_text = AsyncMock()
+        update.message.reply_text = mock_reply
 
         await bot.handle_message(update, MagicMock())
 
-        bot.pool.submit.assert_awaited_once()
-        # Verify session_id and message were passed
-        call_args = bot.pool.submit.call_args
-        assert call_args[0][0] == "telegram:111"  # session_id
-        assert call_args[0][1] == "Hi there"  # message
-        msg = update.message.reply_text.call_args[0][0]
-        assert "Hello! I'm Merkaba." == msg
+        assert len(submit_calls) == 1
+        assert submit_calls[0][0] == "telegram:111"  # session_id
+        assert submit_calls[0][1] == "Hi there"  # message
+        assert len(reply_calls) == 1
+        assert reply_calls[0] == "Hello! I'm Merkaba."
 
     @pytest.mark.asyncio
     async def test_handle_message_includes_topic_id(self):

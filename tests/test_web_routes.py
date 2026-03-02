@@ -353,7 +353,7 @@ class TestWebSocketChat:
 
     def test_ws_rejects_without_api_key_when_configured(self, app_client):
         """WebSocket should reject connection when API key is configured but not provided."""
-        from starlette.testclient import WebSocketDenialResponse
+        from starlette.websockets import WebSocketDisconnect
 
         client, app = app_client
         app.state.api_key = "ws-secret-key"
@@ -363,10 +363,10 @@ class TestWebSocketChat:
         mock_agent.permission_manager = MagicMock()
 
         with patch("merkaba.agent.Agent", return_value=mock_agent):
-            with pytest.raises(WebSocketDenialResponse) as exc_info:
+            with pytest.raises(WebSocketDisconnect) as exc_info:
                 with client.websocket_connect("/ws/chat"):
                     pass  # Should not reach here
-            assert exc_info.value.status_code == 401
+            assert exc_info.value.code == 4001
 
     def test_ws_accepts_with_valid_api_key(self, app_client):
         """WebSocket should accept connection when correct API key is provided."""
@@ -485,7 +485,7 @@ class TestFileUpload:
             with patch("merkaba.web.routes.chat.UPLOAD_DIR", tmpdir):
                 resp = client.post(
                     "/api/upload",
-                    files={"file": ("../../etc/passwd", file_content, "application/octet-stream")},
+                    files={"file": ("../../etc/config.txt", file_content, "text/plain")},
                 )
                 assert resp.status_code == 200
                 data = resp.json()
@@ -494,7 +494,7 @@ class TestFileUpload:
                 assert saved_path.startswith(tmpdir)
                 assert os.path.realpath(saved_path).startswith(os.path.realpath(tmpdir))
                 # The original filename is returned as-is for display
-                assert data["filename"] == "../../etc/passwd"
+                assert data["filename"] == "../../etc/config.txt"
                 # But the actual file on disk is safely inside tmpdir
                 assert os.path.isfile(saved_path)
 
