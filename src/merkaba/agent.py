@@ -295,6 +295,14 @@ class Agent:
         # "no_tools" = classifier was unavailable, allow response but without tools
         use_tools = complexity not in ("simple", "no_tools")
 
+        # Check context budget and compress if needed
+        from merkaba.memory.compression import should_compress, compress_context
+        formatted = self._format_conversation()
+        if should_compress(formatted, self.context_config):
+            logger.info("Context utilization high, compressing conversation history")
+            summary = self._generate_compression_summary()
+            compress_context(self._tree, summary)
+
         # Track repeated verification failures for branching
         failure_count: dict[str, int] = {}
         first_failure_parent: dict[str, str] = {}
@@ -365,6 +373,26 @@ class Agent:
         self.memory.save()
         self._extract_session_memories()
         return "I've reached my iteration limit. Please try a simpler request."
+
+    def _generate_compression_summary(self) -> str:
+        """Generate a summary of older conversation turns for compression."""
+        formatted = self._format_conversation()
+        prompt = (
+            "Summarize the following conversation concisely. "
+            "Include: the current goal, key decisions made, what has been done, "
+            "and what remains to be done. Keep it under 500 words.\n\n"
+            f"{formatted}"
+        )
+        try:
+            response = self.llm.chat_with_fallback(
+                message=prompt,
+                system_prompt="You are a conversation summarizer. Be concise and factual.",
+                tier="simple",
+            )
+            return response.content or "Previous conversation context."
+        except Exception as e:
+            logger.warning("Failed to generate compression summary: %s", e)
+            return "Previous conversation context (summary unavailable)."
 
     def _format_conversation(self) -> str:
         """Format conversation history for the LLM, trimming long tool outputs."""

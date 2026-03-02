@@ -1,7 +1,9 @@
 # tests/test_agent_context.py
-"""Tests for Agent context management — tool result trimming."""
+"""Tests for Agent context management — tool result trimming and compression."""
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 if "ollama" not in sys.modules:
     mock_ollama = MagicMock()
@@ -9,7 +11,9 @@ if "ollama" not in sys.modules:
     sys.modules["ollama"] = mock_ollama
 
 from merkaba.agent import Agent
+from merkaba.llm import LLMResponse
 from merkaba.memory.context_budget import ContextWindowConfig
+from merkaba.memory.conversation import ConversationTree
 
 
 def test_format_conversation_trims_long_tool_results(disable_llm_gate):
@@ -136,3 +140,161 @@ def test_format_conversation_mixed_messages(disable_llm_gate):
     assert result.endswith("Assistant: done")
     assert "Tool Result: " + "S" * 100 in result
     assert "E" * 100 + "\n\nAssistant: done" in result
+
+
+# ---------- Compression integration ----------
+
+
+@pytest.fixture
+def agent_for_compression(tmp_path):
+    """Create an Agent wired for compression testing."""
+    with patch("merkaba.agent.SecurityScanner"), \
+         patch("merkaba.agent.PluginRegistry"), \
+         patch("merkaba.memory.vectors.VectorMemory", side_effect=ImportError):
+        a = Agent(
+            plugins_enabled=False,
+            memory_storage_dir=str(tmp_path / "conversations"),
+            prompt_dir=str(tmp_path / "merkaba_config"),
+        )
+        a.input_classifier = MagicMock()
+        a.input_classifier.classify.return_value = (True, None, "complex")
+        a._extract_session_memories = MagicMock()
+        yield a
+
+
+def test_agent_compresses_when_over_threshold(agent_for_compression):
+    """Agent triggers compression when context exceeds threshold during run()."""
+    agent = agent_for_compression
+    # Set a very low threshold so compression fires easily
+    agent.context_config.max_context_tokens = 100
+    agent.context_config.compaction_threshold = 0.5
+
+    # Fill conversation with enough content to trigger compression
+    for i in range(20):
+        agent._tree.append("user", f"Message {i} " + "x" * 100)
+        agent._tree.append("assistant", f"Response {i} " + "y" * 100)
+
+    # Mock LLM: first call returns summary (for compression), second returns final answer
+    agent.llm.chat_with_fallback = MagicMock(
+        return_value=LLMResponse(content="Summary of conversation.", model="test"),
+    )
+
+    result = agent.run("trigger compression")
+
+    # Verify some messages were pruned (compression happened)
+    pruned_count = sum(1 for m in agent._tree.messages.values() if m.pruned)
+    assert pruned_count > 0, "Expected some messages to be pruned by compression"
+
+    # Verify summary was inserted
+    summary_msgs = [
+        m for m in agent._tree.messages.values()
+        if m.metadata.get("type") == "compression_summary"
+    ]
+    assert len(summary_msgs) == 1
+    assert "[context optimized]" in summary_msgs[0].content
+
+
+def test_agent_no_compression_below_threshold(agent_for_compression):
+    """Agent does NOT compress when context is below threshold."""
+    agent = agent_for_compression
+    # Default high threshold — a few messages should not trigger it
+    agent.context_config.max_context_tokens = 128000
+    agent.context_config.compaction_threshold = 0.80
+
+    agent._tree.append("user", "hello")
+    agent._tree.append("assistant", "hi there")
+
+    agent.llm.chat_with_fallback = MagicMock(
+        return_value=LLMResponse(content="Final answer", model="test"),
+    )
+
+    result = agent.run("another question")
+    assert result == "Final answer"
+
+    # No pruning should have occurred
+    pruned_count = sum(1 for m in agent._tree.messages.values() if m.pruned)
+    assert pruned_count == 0
+
+    # LLM called only once (for the main response, not for summary generation)
+    assert agent.llm.chat_with_fallback.call_count == 1
+
+
+def test_generate_compression_summary_calls_llm(disable_llm_gate):
+    """_generate_compression_summary uses the simple tier to summarize."""
+    agent = Agent.__new__(Agent)
+    agent._tree = ConversationTree()
+    agent._tree.append("user", "hello")
+    agent._tree.append("assistant", "hi")
+    agent.context_config = ContextWindowConfig()
+    agent.llm = MagicMock()
+    agent.llm.chat_with_fallback.return_value = LLMResponse(
+        content="Conversation summary.", model="test"
+    )
+
+    summary = agent._generate_compression_summary()
+
+    assert summary == "Conversation summary."
+    call_kwargs = agent.llm.chat_with_fallback.call_args
+    assert call_kwargs.kwargs.get("tier") == "simple"
+    assert "summarizer" in call_kwargs.kwargs.get("system_prompt", "").lower()
+
+
+def test_generate_compression_summary_fallback_on_error(disable_llm_gate):
+    """When LLM fails, _generate_compression_summary returns fallback text."""
+    agent = Agent.__new__(Agent)
+    agent._tree = ConversationTree()
+    agent._tree.append("user", "hello")
+    agent.context_config = ContextWindowConfig()
+    agent.llm = MagicMock()
+    agent.llm.chat_with_fallback.side_effect = RuntimeError("LLM down")
+
+    summary = agent._generate_compression_summary()
+
+    assert "summary unavailable" in summary
+
+
+def test_generate_compression_summary_fallback_on_none_content(disable_llm_gate):
+    """When LLM returns None content, use fallback text."""
+    agent = Agent.__new__(Agent)
+    agent._tree = ConversationTree()
+    agent._tree.append("user", "hello")
+    agent.context_config = ContextWindowConfig()
+    agent.llm = MagicMock()
+    agent.llm.chat_with_fallback.return_value = LLMResponse(
+        content=None, model="test"
+    )
+
+    summary = agent._generate_compression_summary()
+
+    assert summary == "Previous conversation context."
+
+
+def test_compression_preserves_recent_turns(agent_for_compression):
+    """After compression, recent turns remain accessible in the active branch."""
+    agent = agent_for_compression
+    agent.context_config.max_context_tokens = 100
+    agent.context_config.compaction_threshold = 0.5
+
+    # Add many turns
+    for i in range(25):
+        agent._tree.append("user", f"Message {i} " + "x" * 100)
+        agent._tree.append("assistant", f"Response {i} " + "y" * 100)
+
+    agent.llm.chat_with_fallback = MagicMock(
+        return_value=LLMResponse(content="done", model="test"),
+    )
+
+    agent.run("final question")
+
+    # Active branch should contain the summary + recent turns + the latest exchange
+    branch = agent._tree.get_active_branch()
+    roles = [m.role for m in branch]
+
+    # Summary system message should be in the branch
+    system_msgs = [m for m in branch if m.role == "system"
+                   and m.metadata.get("type") == "compression_summary"]
+    assert len(system_msgs) == 1
+
+    # The latest user message ("final question") should be in the branch
+    user_contents = [m.content for m in branch if m.role == "user"]
+    assert "final question" in user_contents
