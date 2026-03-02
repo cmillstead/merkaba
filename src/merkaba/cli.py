@@ -2202,6 +2202,80 @@ def security_scan(
     raise typer.Exit(1)
 
 
+# -- Pair commands --
+# TODO: GatewayPairing state is in-memory only. Each CLI invocation creates a
+# new instance, so initiate + confirm must happen in the same process (useful
+# for testing). Persistent pairing state (e.g., SQLite) is needed for real
+# multi-process usage where a channel initiates and the CLI confirms.
+pair_app = typer.Typer(help="Gateway pairing commands")
+app.add_typer(pair_app, name="pair")
+
+
+@pair_app.command("list")
+def pair_list():
+    """Show all paired channel identities."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    paired = gp.list_paired()
+
+    if not paired:
+        console.print("[dim]No paired identities.[/dim]")
+        return
+
+    table = Table(title="Paired Identities")
+    table.add_column("Identity", style="cyan")
+    for identity in paired:
+        table.add_row(identity)
+    console.print(table)
+
+
+@pair_app.command("initiate")
+def pair_initiate(
+    channel: str = typer.Argument(help="Channel type (e.g., telegram, discord, slack)"),
+    identity: str = typer.Argument(help="Channel identity (e.g., telegram:user123)"),
+):
+    """Generate a pairing code for testing. In production, channels initiate pairing themselves."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    code = gp.initiate(channel, identity)
+    console.print(f"Pairing code for [cyan]{identity}[/cyan] on [yellow]{channel}[/yellow]: [bold green]{code}[/bold green]")
+    console.print(f"Confirm with: [bold]merkaba pair confirm {identity} {code}[/bold]")
+    console.print("[dim]Code expires in 5 minutes.[/dim]")
+
+
+@pair_app.command("confirm")
+def pair_confirm(
+    identity: str = typer.Argument(help="Channel identity to confirm"),
+    code: str = typer.Argument(help="6-character pairing code"),
+):
+    """Confirm a pairing code to authorize a channel identity."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    if gp.confirm(identity, code):
+        console.print(f"[green]Identity paired successfully:[/green] {identity}")
+    else:
+        console.print("[red]Pairing failed.[/red] Code may be invalid or expired.")
+        raise typer.Exit(1)
+
+
+@pair_app.command("revoke")
+def pair_revoke(
+    identity: str = typer.Argument(help="Channel identity to revoke"),
+):
+    """Revoke a paired channel identity."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    if gp.is_paired(identity):
+        gp.revoke(identity)
+        console.print(f"[green]Identity revoked:[/green] {identity}")
+    else:
+        console.print(f"[yellow]Identity not found:[/yellow] {identity}")
+
+
 # -- Config commands --
 config_app = typer.Typer(help="Prompt and configuration management")
 app.add_typer(config_app, name="config")
