@@ -201,6 +201,73 @@ def scrape_url(url: str) -> ScrapedSkill:
         raise ValueError(f"Unsupported URL: {url}. Provide a ClawHub or GitHub URL.")
 
 
+FORGE_SYSTEM_PROMPT = """You are a Merkaba plugin generator. You generate complete, original plugin content in SKILL.md format.
+
+Merkaba is a local AI agent with these tools:
+- file_read: Read file contents
+- file_write: Write to files
+- file_list: List files in directory
+- memory_search: Search agent memory
+- memory_store: Store to agent memory
+- shell: Execute shell commands
+- task_queue: Manage task queue
+- web_fetch: Fetch web content
+
+SKILL.md format uses YAML frontmatter:
+---
+name: skill-name
+description: Short description
+version: 0.1.0
+---
+
+# Skill Title
+
+Skill methodology and instructions here.
+
+IMPORTANT: Generate a complete, original merkaba plugin. Do NOT reproduce any code from the source material. Only use the description to understand the concept, then write fresh content."""
+
+
+def build_generation_prompt(skill: ScrapedSkill) -> str:
+    """Build the LLM generation prompt from scraped skill info."""
+    parts = [
+        f"Generate a complete merkaba plugin inspired by this concept:\n",
+        f"Name: {skill.name}",
+        f"Description: {skill.description}",
+    ]
+
+    if skill.security_verdict:
+        parts.append(f"\nSecurity verdict from ClawHub: {skill.security_verdict}")
+    if skill.security_analysis:
+        parts.append(f"Security analysis: {skill.security_analysis}")
+        parts.append("Avoid recreating any patterns flagged in the security analysis.")
+
+    parts.append(
+        "\nGenerate the SKILL.md content with proper YAML frontmatter. "
+        "Include file_read, file_write, memory_search, shell tool references as appropriate. "
+        "Do NOT reproduce any original code. Output ONLY the SKILL.md content."
+    )
+
+    return "\n".join(parts)
+
+
+def generate_plugin(skill: ScrapedSkill) -> dict[str, str]:
+    """Generate a merkaba plugin using the LLM."""
+    from merkaba.llm import LLMClient  # Lazy import to avoid import-time failures
+
+    llm = LLMClient()
+    prompt = build_generation_prompt(skill)
+    response = llm.chat_with_fallback(
+        message=prompt,
+        system_prompt=FORGE_SYSTEM_PROMPT,
+        tier="complex",
+    )
+
+    if not response.content:
+        raise RuntimeError("LLM returned empty response. Generation failed.")
+
+    return {"skill_md": response.content}
+
+
 def check_security_gate(skill: ScrapedSkill) -> str:
     """Check the ClawHub security verdict and return action.
 

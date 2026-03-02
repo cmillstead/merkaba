@@ -32,6 +32,12 @@ try:
 except ImportError:
     check_security_gate = None
 
+try:
+    from merkaba.plugins.forge import build_generation_prompt, generate_plugin
+except ImportError:
+    build_generation_prompt = None
+    generate_plugin = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -241,3 +247,83 @@ class TestSecurityGate:
     def test_no_verdict_passes(self):
         skill = ScrapedSkill(name="s", description="d", content="c")
         assert check_security_gate(skill) == "proceed"
+
+
+class TestBuildGenerationPrompt:
+    def test_includes_skill_description(self):
+        skill = ScrapedSkill(name="test", description="Automates code reviews", content="...")
+        prompt = build_generation_prompt(skill)
+        assert "Automates code reviews" in prompt
+
+    def test_includes_merkaba_tools(self):
+        skill = ScrapedSkill(name="test", description="Does stuff", content="...")
+        prompt = build_generation_prompt(skill)
+        assert "file_read" in prompt
+        assert "memory_search" in prompt
+
+    def test_includes_skill_md_format(self):
+        skill = ScrapedSkill(name="test", description="Does stuff", content="...")
+        prompt = build_generation_prompt(skill)
+        assert "SKILL.md" in prompt
+        assert "frontmatter" in prompt.lower()
+
+    def test_includes_no_code_instruction(self):
+        skill = ScrapedSkill(name="test", description="Does stuff", content="...")
+        prompt = build_generation_prompt(skill)
+        assert "NOT reproduce" in prompt or "not reproduce" in prompt.lower()
+
+    def test_includes_security_context_when_available(self):
+        skill = ScrapedSkill(
+            name="test", description="Does stuff", content="...",
+            security_verdict="Suspicious",
+            security_analysis="Uses dynamic execution patterns"
+        )
+        prompt = build_generation_prompt(skill)
+        assert "Suspicious" in prompt
+        assert "dynamic execution" in prompt
+
+
+class TestGeneratePlugin:
+    def test_calls_llm_with_prompt(self):
+        from merkaba.llm import LLMResponse
+
+        skill = ScrapedSkill(name="review-helper", description="Helps review code", content="...")
+
+        mock_llm = MagicMock()
+        mock_llm.chat_with_fallback.return_value = LLMResponse(
+            content="---\nname: review-helper\ndescription: Helps review code\n---\n# Review Helper\n\nCheck files for issues using file_read.\n",
+            model="test"
+        )
+
+        with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+            result = generate_plugin(skill)
+
+        mock_llm.chat_with_fallback.assert_called_once()
+        assert "review-helper" in result["skill_md"]
+
+    def test_returns_structured_output(self):
+        from merkaba.llm import LLMResponse
+
+        skill = ScrapedSkill(name="test", description="d", content="c")
+        llm_output = "---\nname: test\ndescription: d\n---\n# Test\nContent"
+
+        mock_llm = MagicMock()
+        mock_llm.chat_with_fallback.return_value = LLMResponse(content=llm_output, model="test")
+
+        with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+            result = generate_plugin(skill)
+
+        assert "skill_md" in result
+        assert isinstance(result["skill_md"], str)
+
+    def test_none_response_raises(self):
+        from merkaba.llm import LLMResponse
+
+        skill = ScrapedSkill(name="test", description="d", content="c")
+
+        mock_llm = MagicMock()
+        mock_llm.chat_with_fallback.return_value = LLMResponse(content=None, model="test")
+
+        with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+            with pytest.raises(RuntimeError, match="LLM"):
+                generate_plugin(skill)
