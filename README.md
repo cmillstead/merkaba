@@ -28,7 +28,10 @@ ollama pull qwen3:8b
 # 3. Install Merkaba
 pip install merkaba
 
-# 4. Chat
+# 4. First-time setup
+merkaba init
+
+# 5. Chat
 merkaba chat "Hello, what can you do?"
 ```
 
@@ -126,6 +129,7 @@ merkaba/
 ## CLI Reference
 
 ```bash
+merkaba init                     # First-time setup wizard
 merkaba chat "Hello"             # Single message
 merkaba chat                     # Interactive mode
 merkaba web                      # Start web dashboard on port 5173
@@ -135,6 +139,14 @@ merkaba memory recall "topic"    # Search memories
 
 <details>
 <summary>Full CLI reference</summary>
+
+### Onboarding
+
+```bash
+merkaba init                             # Full setup wizard (preflight + interview + extras)
+merkaba init --no-interview              # Skip the LLM interview, just create defaults
+merkaba init --force                     # Overwrite customized files (backs up originals)
+```
 
 ### Chat
 
@@ -550,7 +562,7 @@ merkaba models set code anthropic:claude-sonnet-4-20250514  # Change at runtime
 
 The README covers installation, quickstart, and configuration. For deeper coverage of every subsystem:
 
-- **[Manual](docs/manual.md)** — Comprehensive reference covering memory (conversation trees, contradiction detection, relationship graphs, episodic memory, lifecycle, context compression), security (classifier, validation, encryption, integrity monitoring, scanner, gateway pairing), approval system (2FA, rate limiting, graduation), orchestration (supervisor dispatch modes, session pool, interruption, heartbeat checklist, code worker, exploration agent, learning extractor, health checks), LLM client (request priority, concurrency gate, fallback chains), browser automation, channel adapters (Discord, Slack RT, Signal), message chunking, hot-reloadable config, startup validation, plugin system (skills, hooks, sandbox manifests, Claude Code import, OpenClaw migration), identity portability (AIEOS import/export), extension system (entry points for workers, adapters, CLI), protocol definitions, and observability (audit trail, token tracking, tracing).
+- **[Manual](docs/manual.md)** — Comprehensive reference covering onboarding (`merkaba init` wizard), memory (conversation trees, contradiction detection, relationship graphs, episodic memory, lifecycle, context compression), security (classifier, validation, encryption, integrity monitoring, scanner, gateway pairing), approval system (2FA, rate limiting, graduation), orchestration (supervisor dispatch modes, session pool, interruption, heartbeat checklist, code worker, exploration agent, learning extractor, health checks), LLM client (request priority, concurrency gate, fallback chains), browser automation, channel adapters (Discord, Slack RT, Signal), message chunking, hot-reloadable config, startup validation, plugin system (skills, hooks, sandbox manifests, Claude Code import, OpenClaw migration), identity portability (AIEOS import/export), extension system (entry points for workers, adapters, CLI), protocol definitions, and observability (audit trail, token tracking, tracing).
 - **[Architecture](docs/architecture.md)** — Module map, data flow diagrams, storage schema, security layers, design decisions.
 - **[QMD Integration](docs/integrations/qmd.md)** — On-device document search setup guide.
 
