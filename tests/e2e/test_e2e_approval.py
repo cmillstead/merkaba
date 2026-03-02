@@ -96,6 +96,38 @@ def test_approval_deny_action(cli_runner, patched_dbs):
 
 
 # ---------------------------------------------------------------------------
+# 4b. Deny action with reason
+# ---------------------------------------------------------------------------
+
+def test_approval_deny_action_with_reason(cli_runner, patched_dbs):
+    """Add an action, deny it with --reason — verify reason in output and DB."""
+    runner, app = cli_runner
+
+    from merkaba.approval.queue import ActionQueue
+
+    queue = ActionQueue()
+    action_id = queue.add_action(
+        business_id=1,
+        action_type="send_email",
+        description="Send welcome email",
+    )
+    queue.close()
+
+    result = runner.invoke(app, ["approval", "deny", str(action_id), "--reason", "test"])
+    assert result.exit_code == 0
+    assert f"Denied action #{action_id}" in result.output
+    assert "send_email" in result.output
+    assert "reason: test" in result.output
+
+    # Verify reason persisted in DB
+    queue = ActionQueue()
+    action = queue.get_action(action_id)
+    queue.close()
+    assert action["reason"] == "test"
+    assert action["status"] == "denied"
+
+
+# ---------------------------------------------------------------------------
 # 5. Approve not found
 # ---------------------------------------------------------------------------
 

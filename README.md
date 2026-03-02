@@ -170,6 +170,8 @@ merkaba memory decay                     # Decay stale memories
 merkaba memory consolidate               # LLM-summarize related clusters
 merkaba memory rebuild-vectors           # Rebuild vector store from SQLite
 merkaba memory episodes                  # View episodic memory
+merkaba memory archived [table]          # List archived items (facts/decisions/learnings)
+merkaba memory unarchive <table> <id>    # Restore an archived item
 ```
 
 ### Scheduler

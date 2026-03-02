@@ -1091,15 +1091,19 @@ def approval_approve(
 @approval_app.command("deny")
 def approval_deny(
     action_id: int = typer.Argument(..., help="Action ID to deny"),
+    reason: str = typer.Option(None, "--reason", "-r", help="Reason for denial"),
 ):
     """Deny a pending action."""
     from merkaba.approval.queue import ActionQueue
 
     queue = ActionQueue()
     try:
-        result = queue.decide(action_id, approved=False, decided_by="cli")
+        result = queue.decide(action_id, approved=False, decided_by="cli", reason=reason)
         if result:
-            console.print(f"[yellow]Denied action #{action_id}[/yellow]: {result['action_type']}")
+            msg = f"[yellow]Denied action #{action_id}[/yellow]: {result['action_type']}"
+            if reason:
+                msg += f" (reason: {reason})"
+            console.print(msg)
         else:
             console.print(f"[red]Cannot deny action #{action_id}[/red] (not found or not pending)")
     finally:

@@ -42,9 +42,15 @@ class ActionQueue:
                 decided_at TEXT,
                 decided_by TEXT,
                 executed_at TEXT,
-                result TEXT
+                result TEXT,
+                reason TEXT
             )
         """)
+        # Migrate: add reason column if missing (existing DBs)
+        try:
+            cursor.execute("ALTER TABLE actions ADD COLUMN reason TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS approval_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,6 +129,7 @@ class ActionQueue:
         action_id: int,
         approved: bool,
         decided_by: str = "cli",
+        reason: str | None = None,
     ) -> dict[str, Any] | None:
         action = self.get_action(action_id)
         if not action or action["status"] != "pending":
@@ -131,8 +138,8 @@ class ActionQueue:
         status = "approved" if approved else "denied"
         now = self._now()
         self._conn.execute(
-            "UPDATE actions SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?",
-            (status, now, decided_by, action_id),
+            "UPDATE actions SET status = ?, decided_at = ?, decided_by = ?, reason = ? WHERE id = ?",
+            (status, now, decided_by, reason, action_id),
         )
         self._conn.commit()
         self._update_stats(action["business_id"], action["action_type"], approved)
