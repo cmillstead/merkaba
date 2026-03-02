@@ -145,19 +145,77 @@ async def change_model(body: ModelChangeRequest):
 
 @ws_router.websocket("/ws/control")
 async def websocket_control(websocket: WebSocket):
-    """WebSocket endpoint for live Mission Control state updates."""
+    """WebSocket endpoint for live Mission Control state updates.
+
+    Supports client messages:
+      {"type": "subscribe", "channel": "diagnostics"} — include diagnostic data
+      {"type": "unsubscribe", "channel": "diagnostics"} — exclude diagnostic data
+      {"type": "set_trace_depth", "level": "lightweight|moderate|full"} — change depth
+    """
     await websocket.accept()
 
+    subscriptions: set[str] = set()
+
+    async def heartbeat_loop():
+        """Send state snapshots every HEARTBEAT_INTERVAL seconds."""
+        try:
+            while True:
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                state = _build_state(websocket)
+                if "diagnostics" in subscriptions:
+                    store = websocket.app.state.diagnostics_store
+                    state["diagnostics"] = store.to_dict()
+                await websocket.send_json(state)
+        except WebSocketDisconnect:
+            pass
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Control heartbeat error")
+
+    async def receive_loop():
+        """Listen for client commands."""
+        try:
+            while True:
+                data = await websocket.receive_json()
+                msg_type = data.get("type")
+                if msg_type == "subscribe":
+                    channel = data.get("channel")
+                    if channel:
+                        subscriptions.add(channel)
+                elif msg_type == "unsubscribe":
+                    channel = data.get("channel")
+                    if channel:
+                        subscriptions.discard(channel)
+                elif msg_type == "set_trace_depth":
+                    level = data.get("level", "full")
+                    try:
+                        from merkaba.web.diagnostics import TraceDepth
+                        store = websocket.app.state.diagnostics_store
+                        store.set_trace_depth(TraceDepth(level))
+                    except (ValueError, AttributeError):
+                        pass
+        except WebSocketDisconnect:
+            pass
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Control receive error")
+
     try:
-        # Send initial full state
+        # Send initial state immediately (no diagnostics yet — not subscribed)
         state = _build_state(websocket)
         await websocket.send_json(state)
 
-        # Heartbeat loop
-        while True:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            state = _build_state(websocket)
-            await websocket.send_json(state)
+        # Run heartbeat and receive concurrently
+        heartbeat_task = asyncio.create_task(heartbeat_loop())
+        receive_task = asyncio.create_task(receive_loop())
+        done, pending = await asyncio.wait(
+            [heartbeat_task, receive_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
     except WebSocketDisconnect:
         pass
     except Exception:

@@ -239,3 +239,41 @@ class TestDiagnosticsMiddleware:
             assert headers.get("authorization") == "[REDACTED]"
             assert headers.get("x-api-key") == "[REDACTED]"
             assert headers.get("x-custom") == "visible"
+
+
+@pytest.mark.skipif(not HAS_WEB_DEPS, reason="Missing web dependencies")
+class TestControlWebSocketProtocol:
+    def test_subscribe_diagnostics(self, app_client):
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            msg = ws.receive_json()  # initial state
+            assert "diagnostics" not in msg  # not subscribed yet
+
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()  # next heartbeat
+            assert "diagnostics" in msg
+            diag = msg["diagnostics"]
+            assert "trace_depth" in diag
+            assert "active_websockets" in diag
+            assert "recent_requests" in diag
+
+    def test_unsubscribe_diagnostics(self, app_client):
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()
+            assert "diagnostics" in msg
+
+            ws.send_json({"type": "unsubscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()
+            assert "diagnostics" not in msg
+
+    def test_set_trace_depth(self, app_client):
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            ws.send_json({"type": "set_trace_depth", "level": "lightweight"})
+            msg = ws.receive_json()
+            assert msg["diagnostics"]["trace_depth"] == "lightweight"
