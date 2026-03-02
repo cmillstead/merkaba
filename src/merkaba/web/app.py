@@ -77,6 +77,7 @@ def _make_lifespan(db_overrides: dict | None = None):
             app.state.task_queue = db_overrides["task_queue"]
             app.state.action_queue = db_overrides["action_queue"]
             app.state.merkaba_base_dir = db_overrides.get("merkaba_base_dir")
+            app.state.session_pool = None  # Tests can set this if needed
 
         else:
             try:
@@ -90,6 +91,9 @@ def _make_lifespan(db_overrides: dict | None = None):
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = TaskQueue()
             app.state.action_queue = ActionQueue()
+
+            from merkaba.orchestration.session_pool import SessionPool
+            app.state.session_pool = SessionPool()
         yield
         # Shutdown
         app.state.memory_store.close()

@@ -83,14 +83,11 @@ async def websocket_chat(websocket: WebSocket):
     """WebSocket endpoint for chat with Merkaba agent."""
     await websocket.accept()
 
-    # Lazy import to avoid loading agent at module level
-    from merkaba.agent import Agent
-    from merkaba.tools.base import PermissionTier
+    pool = websocket.app.state.session_pool
 
-    agent = Agent()
-    logger.debug("Agent created. retrieval=%s", agent.retrieval is not None)
-    # Web chat is user-interactive, so auto-approve up to MODERATE (file writes etc.)
-    agent.permission_manager.auto_approve_level = PermissionTier.MODERATE
+    # Build a unique session ID for this WebSocket connection
+    from merkaba.orchestration.session import build_session_id
+    session_id = build_session_id("web", uuid.uuid4().hex[:12])
 
     try:
         while True:
@@ -119,12 +116,23 @@ async def websocket_chat(websocket: WebSocket):
                     loop,
                 )
 
-            # Run the blocking agent in a thread
-            logger.debug("Running agent with message: %s", user_message[:80])
-            response = await loop.run_in_executor(
-                None,
-                lambda: agent.run(user_message, on_tool_call=on_tool_call),
-            )
+            if pool:
+                # Route through SessionPool — serializes per-session, reuses Agent
+                logger.debug("Submitting to pool session %s: %s", session_id, user_message[:80])
+                response = await pool.submit(session_id, user_message, on_tool_call=on_tool_call)
+            else:
+                # Fallback for test mode (no pool configured)
+                from merkaba.agent import Agent
+                from merkaba.tools.base import PermissionTier
+
+                agent = Agent()
+                agent.permission_manager.auto_approve_level = PermissionTier.MODERATE
+                logger.debug("Running agent with message: %s", user_message[:80])
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: agent.run(user_message, on_tool_call=on_tool_call),
+                )
+
             logger.debug("Agent response: %s", response[:200])
 
             await websocket.send_json({"type": "response", "content": response})
