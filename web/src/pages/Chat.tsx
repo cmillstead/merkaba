@@ -27,7 +27,7 @@ export default function Chat() {
   const wsRef = useRef<{ send: (t: string) => void; close: () => void } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const ws = connectChat((msg: ChatMessage) => {
@@ -229,13 +229,19 @@ export default function Chat() {
         >
           <Paperclip size={16} />
         </button>
-        <input
+        <textarea
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              send()
+            }
+          }}
           placeholder={connected ? 'Message Merkaba...' : 'Connecting...'}
           disabled={!connected}
+          rows={1}
         />
         <button className="btn btn-primary" onClick={send} disabled={!connected}>
           <Send size={16} />
