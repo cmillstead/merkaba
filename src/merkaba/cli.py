@@ -69,6 +69,23 @@ def chat(
     model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
 ):
     """Start a conversation with Merkaba."""
+    from pathlib import Path as _Path
+    from merkaba.config.validation import validate_config, print_startup_report, Severity
+
+    config_path = os.path.expanduser("~/.merkaba/config.json")
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        config = {}
+    base_dir = _Path(os.path.expanduser("~/.merkaba"))
+    issues = validate_config(config, base_dir)
+    if issues:
+        print_startup_report(issues)
+        if any(i.severity == Severity.ERROR for i in issues):
+            console.print("[bold red]Startup blocked due to configuration errors.[/bold red]")
+            raise SystemExit(1)
+
     from merkaba.agent import Agent
     agent = Agent(model=model)
 
@@ -2185,6 +2202,80 @@ def security_scan(
     raise typer.Exit(1)
 
 
+# -- Pair commands --
+# TODO: GatewayPairing state is in-memory only. Each CLI invocation creates a
+# new instance, so initiate + confirm must happen in the same process (useful
+# for testing). Persistent pairing state (e.g., SQLite) is needed for real
+# multi-process usage where a channel initiates and the CLI confirms.
+pair_app = typer.Typer(help="Gateway pairing commands")
+app.add_typer(pair_app, name="pair")
+
+
+@pair_app.command("list")
+def pair_list():
+    """Show all paired channel identities."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    paired = gp.list_paired()
+
+    if not paired:
+        console.print("[dim]No paired identities.[/dim]")
+        return
+
+    table = Table(title="Paired Identities")
+    table.add_column("Identity", style="cyan")
+    for identity in paired:
+        table.add_row(identity)
+    console.print(table)
+
+
+@pair_app.command("initiate")
+def pair_initiate(
+    channel: str = typer.Argument(help="Channel type (e.g., telegram, discord, slack)"),
+    identity: str = typer.Argument(help="Channel identity (e.g., telegram:user123)"),
+):
+    """Generate a pairing code for testing. In production, channels initiate pairing themselves."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    code = gp.initiate(channel, identity)
+    console.print(f"Pairing code for [cyan]{identity}[/cyan] on [yellow]{channel}[/yellow]: [bold green]{code}[/bold green]")
+    console.print(f"Confirm with: [bold]merkaba pair confirm {identity} {code}[/bold]")
+    console.print("[dim]Code expires in 5 minutes.[/dim]")
+
+
+@pair_app.command("confirm")
+def pair_confirm(
+    identity: str = typer.Argument(help="Channel identity to confirm"),
+    code: str = typer.Argument(help="6-character pairing code"),
+):
+    """Confirm a pairing code to authorize a channel identity."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    if gp.confirm(identity, code):
+        console.print(f"[green]Identity paired successfully:[/green] {identity}")
+    else:
+        console.print("[red]Pairing failed.[/red] Code may be invalid or expired.")
+        raise typer.Exit(1)
+
+
+@pair_app.command("revoke")
+def pair_revoke(
+    identity: str = typer.Argument(help="Channel identity to revoke"),
+):
+    """Revoke a paired channel identity."""
+    from merkaba.security.pairing import GatewayPairing
+
+    gp = GatewayPairing()
+    if gp.is_paired(identity):
+        gp.revoke(identity)
+        console.print(f"[green]Identity revoked:[/green] {identity}")
+    else:
+        console.print(f"[yellow]Identity not found:[/yellow] {identity}")
+
+
 # -- Config commands --
 config_app = typer.Typer(help="Prompt and configuration management")
 app.add_typer(config_app, name="config")
@@ -2239,6 +2330,113 @@ def config_edit_user(business: int = typer.Option(None, help="Business ID")):
         path = os.path.join(MERKABA_DIR, "USER.md")
     editor = os.environ.get("EDITOR", "nano")
     subprocess.run([editor, path], check=False)
+
+
+# -- Migrate commands --
+migrate_app = typer.Typer(help="Migrate workspaces from other agent frameworks")
+app.add_typer(migrate_app, name="migrate")
+
+
+@migrate_app.command("openclaw")
+def migrate_openclaw(
+    path: str = typer.Argument(help="Path to the OpenClaw workspace directory"),
+    business: str = typer.Option(..., "--business", "-b", help="Target business name"),
+):
+    """Migrate an OpenClaw workspace into a Merkaba business directory."""
+    from pathlib import Path as _Path
+
+    from merkaba.plugins.importer_openclaw import OpenClawMigrator
+
+    workspace = _Path(path).expanduser().resolve()
+    if not workspace.is_dir():
+        console.print(f"[red]Error:[/red] Not a directory: {workspace}")
+        raise typer.Exit(1)
+
+    migrator = OpenClawMigrator()
+    if not migrator.detect(workspace):
+        console.print(f"[red]Error:[/red] Not an OpenClaw workspace: {workspace}")
+        raise typer.Exit(1)
+
+    result = migrator.migrate(workspace, business)
+
+    if result.migrated:
+        console.print(f"[bold green]Migrated {len(result.migrated)} file(s):[/bold green]")
+        for f in result.migrated:
+            console.print(f"  {f}")
+
+    if result.skipped:
+        console.print(f"[yellow]Skipped {len(result.skipped)} file(s):[/yellow]")
+        for f in result.skipped:
+            console.print(f"  {f}")
+
+    if result.errors:
+        console.print(f"[red]Errors ({len(result.errors)}):[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
+
+    if not result.migrated and not result.skipped:
+        console.print("[dim]No files found in workspace.[/dim]")
+    else:
+        console.print(f"\n[green]Migration complete.[/green] Business: [cyan]{business}[/cyan]")
+
+
+# -- Identity commands --
+identity_app = typer.Typer(help="Import and export agent identity (AIEOS format)")
+app.add_typer(identity_app, name="identity")
+
+
+@identity_app.command("import")
+def identity_import(
+    path: str = typer.Argument(help="Path to AIEOS v1.1 JSON file"),
+    business: str = typer.Option(..., "--business", "-b", help="Target business name"),
+):
+    """Import an AIEOS v1.1 identity file into a Merkaba business."""
+    from pathlib import Path as _Path
+
+    from merkaba.identity.aieos import import_aieos
+
+    aieos_path = _Path(path).expanduser().resolve()
+    if not aieos_path.is_file():
+        console.print(f"[red]Error:[/red] File not found: {aieos_path}")
+        raise typer.Exit(1)
+
+    result = import_aieos(aieos_path, business)
+
+    if result.success:
+        console.print(f"[green]Identity imported successfully.[/green]")
+        console.print(f"  SOUL.md: [cyan]{result.soul_md_path}[/cyan]")
+        console.print(f"  Business: [cyan]{business}[/cyan]")
+    else:
+        console.print("[red]Import failed:[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
+
+
+@identity_app.command("export")
+def identity_export(
+    business: str = typer.Option(..., "--business", "-b", help="Business name to export"),
+    output: str = typer.Option(None, "--output", "-o", help="Output file path (default: ./<business>.aieos.json)"),
+):
+    """Export a Merkaba business identity as AIEOS v1.1 JSON."""
+    from pathlib import Path as _Path
+
+    from merkaba.identity.aieos import export_aieos
+
+    output_path = _Path(output).expanduser().resolve() if output else _Path(f"{business}.aieos.json").resolve()
+
+    result = export_aieos(business, output_path=output_path)
+
+    if result.success:
+        console.print(f"[green]Identity exported successfully.[/green]")
+        console.print(f"  Output: [cyan]{result.output_path}[/cyan]")
+        console.print(f"  Business: [cyan]{business}[/cyan]")
+    else:
+        console.print("[red]Export failed:[/red]")
+        for e in result.errors:
+            console.print(f"  {e}")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

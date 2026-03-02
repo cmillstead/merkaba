@@ -75,6 +75,10 @@ def patched_dbs(merkaba_home):
             "merkaba.approval.queue.ActionQueue.__init__",
             _make_patched_init(actions_db, "merkaba.approval.queue.ActionQueue"),
         ),
+        patch(
+            "merkaba.config.validation.validate_config",
+            return_value=[],
+        ),
     ):
         yield merkaba_home
 

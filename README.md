@@ -43,9 +43,20 @@ merkaba chat "Hello, what can you do?"
 - **Web dashboard** — React SPA with real-time chat, task management, and analytics
 - **Prompt personalization** — Per-business SOUL.md/USER.md personality and context files
 - **Code agent** — Generates code from specs, verifies with linting, auto-repairs on failure
-- **Integrations** — Email, Stripe, Slack, GitHub, Apple Calendar (+ bring your own via adapters)
+- **Integrations** — Email, Stripe, Slack, GitHub, Apple Calendar, Discord, Signal (+ bring your own via adapters)
 - **Plugin system** — Skills, commands, hooks, and agents with sandboxed execution
 - **Conversation encryption** — Optional Fernet encryption for stored conversations
+- **Context management** — Automatic compression at ~80% utilization, tool result trimming, conversation tree pruning
+- **Hot-reloadable config** — Edit `config.json` at runtime; changes take effect on next request
+- **Message interruption** — APPEND/STEER/CANCEL modes let users redirect the agent mid-response
+- **Browser automation** — Headless Playwright with semantic snapshots (accessibility tree, ~50KB vs ~5MB screenshots)
+- **Multi-channel** — Telegram, Discord, Slack (real-time + Block Kit approvals), Signal, Web, CLI
+- **Session pool** — Per-session Agent instances with LRU eviction, idle timeout, and async boundaries
+- **Gateway pairing** — One-time 6-char code authenticates new channel connections; CLI always trusted
+- **Heartbeat checklist** — User-editable `HEARTBEAT.md` files parsed and executed by the scheduler
+- **Message chunking** — Platform-aware delivery splits long responses at paragraph/sentence boundaries
+- **Identity portability** — OpenClaw workspace migration and AIEOS v1.1 import/export
+- **Formal protocols** — `MemoryBackend`, `VectorBackend`, `Observer`, `ConversationBackend` for dependency injection
 
 ## Architecture
 
@@ -91,13 +102,15 @@ merkaba/
 ├── llm_providers/       # Provider adapters (Ollama, Anthropic, OpenAI)
 ├── cli.py               # Typer CLI (all imports lazy)
 ├── memory/              # Persistent memory (store, retrieval, vectors, lifecycle, relationships)
-├── orchestration/       # Supervisor, workers, scheduler, task queue
+├── orchestration/       # Supervisor, workers, scheduler, session pool, interruption
 ├── approval/            # Action queue, graduation, Telegram approval UI
 ├── security/            # Input classifier, validation, encryption, permissions
 ├── verification/        # Deterministic verifier (lint/type-check after writes)
-├── config/              # PromptLoader (SOUL.md/USER.md per-business fallback)
-├── integrations/        # Adapter base + email, Stripe, Slack, GitHub, Calendar
-├── tools/builtin/       # Agent tools (files, shell, search, web, memory)
+├── config/              # PromptLoader, hot-reload, startup validation
+├── integrations/        # Adapter base + email, Stripe, Slack, GitHub, Calendar, Discord, Signal
+├── tools/builtin/       # Agent tools (files, shell, search, web, memory, browser)
+├── identity/            # AIEOS identity import/export
+├── protocols.py         # Formal Protocol definitions for swappable subsystems
 ├── web/                 # Mission Control (FastAPI + React SPA)
 │   ├── app.py           # App factory
 │   ├── routes/          # REST + WebSocket endpoints
@@ -279,6 +292,23 @@ merkaba commands list                    # List plugin commands
 merkaba observe tokens                   # Token usage stats
 merkaba observe audit                    # Audit trail
 merkaba observe trace                    # Tracing logs
+```
+
+### Gateway Pairing
+
+```bash
+merkaba pair list                        # List paired identities
+merkaba pair initiate <channel> <id>     # Generate a 6-char pairing code
+merkaba pair confirm <identity> <code>   # Confirm pairing code
+merkaba pair revoke <identity>           # Revoke a paired identity
+```
+
+### Migration & Identity
+
+```bash
+merkaba migrate openclaw <path> --name "My Business"  # Import OpenClaw workspace
+merkaba identity import <aieos.json> --name "My Agent" # Import AIEOS v1.1 identity
+merkaba identity export <business> --output agent.json  # Export as AIEOS v1.1
 ```
 
 </details>
@@ -512,7 +542,7 @@ merkaba models set code anthropic:claude-sonnet-4-20250514  # Change at runtime
 
 The README covers installation, quickstart, and configuration. For deeper coverage of every subsystem:
 
-- **[Manual](docs/manual.md)** — Comprehensive reference covering memory (conversation trees, contradiction detection, relationship graphs, episodic memory, lifecycle), security (classifier, validation, encryption, integrity monitoring, scanner), approval system (2FA, rate limiting, graduation), orchestration (supervisor dispatch modes, code worker, exploration agent, learning extractor, health checks), LLM client (request priority, concurrency gate, fallback chains), plugin system (skills, hooks, sandbox manifests, Claude Code import), extension system (entry points for workers, adapters, CLI), and observability (audit trail, token tracking, tracing).
+- **[Manual](docs/manual.md)** — Comprehensive reference covering memory (conversation trees, contradiction detection, relationship graphs, episodic memory, lifecycle, context compression), security (classifier, validation, encryption, integrity monitoring, scanner, gateway pairing), approval system (2FA, rate limiting, graduation), orchestration (supervisor dispatch modes, session pool, interruption, heartbeat checklist, code worker, exploration agent, learning extractor, health checks), LLM client (request priority, concurrency gate, fallback chains), browser automation, channel adapters (Discord, Slack RT, Signal), message chunking, hot-reloadable config, startup validation, plugin system (skills, hooks, sandbox manifests, Claude Code import, OpenClaw migration), identity portability (AIEOS import/export), extension system (entry points for workers, adapters, CLI), protocol definitions, and observability (audit trail, token tracking, tracing).
 - **[Architecture](docs/architecture.md)** — Module map, data flow diagrams, storage schema, security layers, design decisions.
 - **[QMD Integration](docs/integrations/qmd.md)** — On-device document search setup guide.
 
@@ -528,7 +558,7 @@ See [docs/integrations/](docs/integrations/) for setup guides.
 
 ## Security
 
-Merkaba has 13 security layers including input classification, permission tiers, approval workflows with optional TOTP 2FA, conversation encryption, memory sanitization, and plugin sandboxing.
+Merkaba has 14 security layers including input classification, permission tiers, approval workflows with optional TOTP 2FA, conversation encryption, memory sanitization, plugin sandboxing, and gateway pairing for new channel connections.
 
 See [SECURITY.md](SECURITY.md) for the full security model.
 

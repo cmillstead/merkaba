@@ -25,7 +25,9 @@ src/merkaba/
 │   ├── vectors.py        # VectorMemory — ChromaDB embeddings (optional)
 │   ├── conversation.py   # ConversationLog — session-scoped JSON persistence
 │   ├── lifecycle.py      # Memory decay, archival, consolidation
-│   └── contradiction.py  # Contradiction detection between facts
+│   ├── contradiction.py  # Contradiction detection between facts
+│   ├── context_budget.py # Token estimation, ContextBudget, ContextWindowConfig
+│   └── compression.py    # Graceful in-place context compression for ConversationTree
 │
 ├── security/
 │   ├── classifier.py     # InputClassifier — pre-flight safety + complexity routing
@@ -36,16 +38,22 @@ src/merkaba/
 │   ├── encryption.py     # Fernet conversation encryption
 │   ├── sanitizer.py      # Memory sanitization
 │   ├── audit.py          # pip-audit wrapper for CVE detection
-│   └── secrets.py        # OS keychain wrapper via keyring
+│   ├── secrets.py        # OS keychain wrapper via keyring
+│   └── pairing.py        # GatewayPairing — one-time 6-char code for channel auth
 │
 ├── orchestration/
 │   ├── supervisor.py     # Task dispatch to workers, configurable model routing
 │   ├── workers.py        # Worker base class + WorkerResult + WORKER_REGISTRY
 │   ├── code_worker.py    # Code generation and review worker
 │   ├── explorer.py       # Codebase exploration worker
-│   ├── scheduler.py      # Tick-based cron executor
+│   ├── scheduler.py      # Tick-based cron executor + heartbeat checklist
 │   ├── queue.py          # TaskQueue — SQLite task + run tracking
+│   ├── session.py        # Session ID builder (channel:sender[:topic][:biz])
+│   ├── session_pool.py   # SessionPool — per-session Agent lifecycle + LRU eviction
+│   ├── lane_queue.py     # LaneQueue — per-session serial execution, cross-session concurrency
+│   ├── interruption.py   # InterruptionManager — APPEND/STEER/CANCEL modes
 │   ├── heartbeat.py      # Lightweight health triage
+│   ├── heartbeat_checklist.py # HEARTBEAT.md parser for user-editable checklists
 │   ├── health.py         # System health checks
 │   ├── backup.py         # Database backup and restore
 │   └── learnings.py      # Rule-based + LLM-based insight extraction
@@ -62,8 +70,11 @@ src/merkaba/
 │   ├── email_adapter.py  # SMTP send, IMAP read, LLM parse
 │   ├── stripe_adapter.py # Stripe payments adapter
 │   ├── github_adapter.py # GitHub API adapter
-│   ├── slack_adapter.py  # Slack API adapter
-│   └── calendar_adapter.py # Apple Calendar adapter (macOS)
+│   ├── slack_adapter.py  # Slack API + Bolt real-time + Block Kit approvals
+│   ├── calendar_adapter.py # Apple Calendar adapter (macOS)
+│   ├── discord_adapter.py  # Discord via discord.py — send, read, list channels
+│   ├── signal_adapter.py   # Signal via signal-cli JSON-RPC subprocess
+│   └── delivery.py         # Platform-aware message chunking (paragraph > sentence > word)
 │
 ├── tools/
 │   ├── base.py           # Tool dataclass, ToolResult, PermissionTier enum
@@ -73,10 +84,13 @@ src/merkaba/
 │       ├── search.py      # grep, glob
 │       ├── web.py         # web_fetch (with SSRF protection)
 │       ├── shell.py       # bash (command allowlist)
-│       └── memory_tools.py # memory_search tool
+│       ├── memory_tools.py # memory_search tool
+│       └── browser.py     # browser_open/snapshot/click/fill/navigate/close (Playwright)
 │
 ├── config/
-│   └── prompts.py        # PromptLoader — SOUL.md / USER.md per-business prompt files
+│   ├── prompts.py        # PromptLoader — SOUL.md / USER.md per-business prompt files
+│   ├── hot_reload.py     # HotConfig — mtime-based config reload with security warnings
+│   └── validation.py     # validate_config() — startup configuration warnings
 │
 ├── verification/
 │   └── deterministic.py  # Deterministic verification loops
@@ -113,7 +127,13 @@ src/merkaba/
 │   ├── converter.py      # Skill format conversion
 │   ├── sandbox.py        # Plugin sandboxing
 │   ├── uninstaller.py    # Plugin removal
-│   └── importer.py       # Plugin import pipeline
+│   ├── importer.py       # Plugin import pipeline
+│   └── importer_openclaw.py # OpenClaw workspace migrator
+│
+├── identity/
+│   └── aieos.py          # AIEOS v1.1 identity import/export
+│
+├── protocols.py          # Formal Protocol definitions (MemoryBackend, VectorBackend, Observer, ConversationBackend)
 │
 └── examples/
     ├── custom_worker.py  # How to create a custom worker
@@ -220,6 +240,70 @@ All data lives in `~/.merkaba/`:
 12. **Conversation Encryption** — optional Fernet encryption for stored conversations
 13. **TOTP 2FA** — optional two-factor authentication for sensitive approvals
 
+## Session Management
+
+### SessionPool + LaneQueue
+
+Multi-channel sessions (Telegram, Discord, Slack, Signal, Web) route through `SessionPool` and `LaneQueue`:
+
+```
+Inbound message (any channel)
+  → build_session_id(channel, sender, topic, business)
+  → SessionPool.submit(session_id, message)
+      → GatewayPairing check (non-CLI channels)
+      → get_or_create Agent (LRU eviction at max_sessions)
+      → LaneQueue.submit(session_id, handler, payload)
+          → per-session threading.Lock serialization
+          → asyncio.to_thread() boundary (async → sync agent.run())
+          → Agent.run(message)
+              → check interruptions at tool boundaries
+              → auto-compress context at ~80% utilization
+          → response returned through async boundary
+```
+
+**Concurrency model:** Messages within a single session execute serially (one at a time). Messages across different sessions execute concurrently. The sync `Agent.run()` is never modified -- all async wrapping happens at the boundary.
+
+### Context Window Management
+
+```
+Agent.run()
+  → _format_conversation()
+      → trim tool results over 4000 chars (head/tail with [trimmed] marker)
+  → estimate_tokens(formatted_text)
+  → if utilization > 80%:
+      → extract memories to MemoryStore (pre-compression)
+      → compress_context(tree, summary, keep_recent_turns=10)
+      → inject "[context optimized]" summary node
+```
+
+### Message Interruption
+
+```
+Async boundary (web/telegram)
+  → InterruptionManager.interrupt(session_id, message, mode)
+      → APPEND: queue behind current response (default)
+      → STEER: inject at next tool boundary
+      → CANCEL: abort current response
+
+Agent._execute_tools() loop
+  → InterruptionManager.check_urgent(session_id)
+      → STEER: inject message, continue with new direction
+      → CANCEL: abort loop, return partial response
+```
+
+## Protocol Definitions
+
+Four `@runtime_checkable` Protocol classes define the expected interfaces for swappable subsystems:
+
+| Protocol | Implemented By | Purpose |
+|----------|---------------|---------|
+| `MemoryBackend` | `MemoryStore` | Structured memory CRUD (facts, decisions) |
+| `VectorBackend` | `VectorMemory` | Semantic similarity search |
+| `Observer` | (custom) | Observability hooks (LLM calls, tool calls, errors) |
+| `ConversationBackend` | `ConversationLog` | Conversation history append/read/persist |
+
+These enable dependency injection and alternative implementations without inheriting from concrete classes. All are defined in `protocols.py`.
+
 ## Key Design Decisions
 
 - **Local-first, cloud-optional**: Ollama for local inference by default. Cloud providers (OpenAI, Anthropic) available for users who prefer them. No cloud dependency for core operation.
@@ -229,3 +313,7 @@ All data lives in `~/.merkaba/`:
 - **Dual-path memory**: ChromaDB for semantic similarity when available; keyword matching as fallback.
 - **Plugin-based extension**: Workers and adapters register via registries, so private packages can extend the framework without modifying core code.
 - **Multi-business support**: Each business gets its own memory scope, prompt config, and approval settings.
+- **Sync core, async boundary**: `Agent.run()` stays synchronous. Async wrappers (`asyncio.to_thread`) are applied at the web/telegram/channel boundary, keeping the core simple.
+- **Per-session serialization**: `LaneQueue` uses one `threading.Lock` per session, so messages within a session are ordered but sessions don't block each other.
+- **Semantic snapshots over screenshots**: Browser automation uses accessibility tree text (~50KB) instead of screenshots (~5MB), giving LLMs structured, actionable element data.
+- **Hot reload safety**: Config changes take effect immediately, but security-critical keys log a warning recommending restart.

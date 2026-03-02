@@ -1,5 +1,6 @@
 # src/merkaba/agent.py
 import logging
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -22,10 +23,14 @@ from merkaba.security.classifier import InputClassifier
 from merkaba.plugins import PluginRegistry, Skill, PluginSandbox, PluginPermissionError
 from merkaba.verification.deterministic import DeterministicVerifier
 from merkaba.config.prompts import PromptLoader
+from merkaba.config.hot_reload import HotConfig
 from merkaba.security.sanitizer import sanitize_memory_value
+from merkaba.memory.context_budget import ContextWindowConfig
+from merkaba.orchestration.interruption import InterruptionManager, InterruptionMode
 
 
 SIMPLE_MODEL = "qwen3:8b"
+MERKABA_CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
 
 
 @dataclass
@@ -51,10 +56,15 @@ class Agent:
     active_skill: Skill | None = field(init=False, default=None)
     _prompt_loader: PromptLoader = field(init=False)
     _verifier: DeterministicVerifier = field(init=False)
+    context_config: ContextWindowConfig = field(init=False)
+    session_id: str | None = field(init=False, default=None)
+    interruption_mgr: InterruptionManager | None = field(init=False, default=None)
+    _hot_config: HotConfig | None = field(init=False, default=None)
 
     def __post_init__(self):
         self.llm = LLMClient(model=self.model)
         self.registry = ToolRegistry()
+        self.context_config = ContextWindowConfig()
         self._prompt_loader = PromptLoader(base_dir=self.prompt_dir)
         self._tree = ConversationTree()
         if self.memory_storage_dir:
@@ -68,6 +78,13 @@ class Agent:
         self._register_builtin_tools()
         if self.plugins_enabled:
             self.plugin_registry = PluginRegistry.default()
+
+        # Initialize hot-reloadable config (model changes take effect without restart)
+        if os.path.isfile(MERKABA_CONFIG_PATH):
+            try:
+                self._hot_config = HotConfig(MERKABA_CONFIG_PATH)
+            except Exception as e:
+                logger.warning("Failed to init HotConfig: %s", e)
 
         # Run security quick scan
         self._run_security_check()
@@ -172,6 +189,22 @@ class Agent:
         """Deactivate the current skill."""
         self.active_skill = None
 
+    def _resolve_model(self, tier: str) -> str:
+        """Resolve model name from HotConfig if available, else static fields.
+
+        Checks the hot-reloadable config for ``models.complex`` / ``models.simple``.
+        Falls back to the static ``self.model`` / ``self.simple_model`` fields
+        when HotConfig is unavailable, the key is missing, or the value is not a dict.
+        """
+        if self._hot_config:
+            models = self._hot_config.get("models")
+            if isinstance(models, dict):
+                if tier == "simple" and "simple" in models:
+                    return models["simple"]
+                elif tier != "simple" and "complex" in models:
+                    return models["complex"]
+        return self.simple_model if tier == "simple" else self.model
+
     def _build_system_prompt(self, user_message: str | None = None) -> str:
         """Build system prompt with memory context and active skill if any."""
         soul, user = self._prompt_loader.load(business_id=self.active_business_id)
@@ -237,7 +270,7 @@ class Agent:
             extractor = SessionExtractor(
                 llm=self.llm,
                 store=self.retrieval.store,
-                model=self.simple_model,
+                model=self._resolve_model("simple"),
             )
             bid = self.active_business_id or 0
             extractor.extract(self.conversation, business_id=bid)
@@ -292,6 +325,14 @@ class Agent:
         # "no_tools" = classifier was unavailable, allow response but without tools
         use_tools = complexity not in ("simple", "no_tools")
 
+        # Check context budget and compress if needed
+        from merkaba.memory.compression import should_compress, compress_context
+        formatted = self._format_conversation()
+        if should_compress(formatted, self.context_config):
+            logger.info("Context utilization high, compressing conversation history")
+            summary = self._generate_compression_summary()
+            compress_context(self._tree, summary)
+
         # Track repeated verification failures for branching
         failure_count: dict[str, int] = {}
         first_failure_parent: dict[str, str] = {}
@@ -300,6 +341,10 @@ class Agent:
             pre_iteration_leaf = self._tree.current_leaf_id
 
             tier = "simple" if complexity == "simple" else "complex"  # no_tools uses complex model
+
+            # Model hot-reload is handled by load_fallback_chains() in llm.py,
+            # which reads config on each chat_with_fallback() call.
+
             try:
                 response = self.llm.chat_with_fallback(
                     message=self._format_conversation(),
@@ -316,6 +361,14 @@ class Agent:
             if response.tool_calls:
                 logger.debug("Tool calls: %s", [tc.name for tc in response.tool_calls])
                 tool_results = self._execute_tools(response.tool_calls, on_tool_call=on_tool_call)
+
+                # Handle CANCEL interruption: don't append partial results to tree.
+                # Instead, inject the cancel message as a user message and re-enter loop.
+                if "[interrupted] Cancelled:" in tool_results:
+                    cancel_msg = tool_results.split("[interrupted] Cancelled: ", 1)[-1].strip()
+                    self._tree.append("user", cancel_msg)
+                    continue
+
                 self._tree.append(
                     "assistant", None,
                     {"tool_calls": [
@@ -363,8 +416,30 @@ class Agent:
         self._extract_session_memories()
         return "I've reached my iteration limit. Please try a simpler request."
 
+    def _generate_compression_summary(self) -> str:
+        """Generate a summary of older conversation turns for compression."""
+        formatted = self._format_conversation()
+        prompt = (
+            "Summarize the following conversation concisely. "
+            "Include: the current goal, key decisions made, what has been done, "
+            "and what remains to be done. Keep it under 500 words.\n\n"
+            f"{formatted}"
+        )
+        try:
+            response = self.llm.chat_with_fallback(
+                message=prompt,
+                system_prompt="You are a conversation summarizer. Be concise and factual.",
+                tier="simple",
+            )
+            return response.content or "Previous conversation context."
+        except Exception as e:
+            logger.warning("Failed to generate compression summary: %s", e)
+            return "Previous conversation context (summary unavailable)."
+
     def _format_conversation(self) -> str:
-        """Format conversation history for the LLM."""
+        """Format conversation history for the LLM, trimming long tool outputs."""
+        head = self.context_config.head_chars
+        tail = self.context_config.tail_chars
         parts = []
         for msg in self._tree.get_active_branch():
             if msg.role == "user":
@@ -376,7 +451,15 @@ class Agent:
                     tool_names = [tc["name"] for tc in msg.metadata["tool_calls"]]
                     parts.append(f"Assistant: [Called tools: {', '.join(tool_names)}]")
             elif msg.role == "tool":
-                parts.append(f"Tool Result: {msg.content}")
+                content = msg.content or ""
+                if len(content) > (head + tail + 100):
+                    trimmed_len = len(content) - head - tail
+                    content = (
+                        content[:head]
+                        + f"\n\n... [{trimmed_len} chars trimmed] ...\n\n"
+                        + content[-tail:]
+                    )
+                parts.append(f"Tool Result: {content}")
             elif msg.role == "system":
                 parts.append(f"System: {msg.content}")
         return "\n\n".join(parts)
@@ -385,6 +468,19 @@ class Agent:
         """Execute a list of tool calls and return results."""
         results = []
         for tc in tool_calls:
+            # Check for urgent interruptions at tool boundary (STEER/CANCEL only).
+            # APPEND events are left in the queue for the submission layer.
+            if self.session_id and self.interruption_mgr:
+                event = self.interruption_mgr.check_urgent(self.session_id)
+                if event:
+                    if event.mode == InterruptionMode.CANCEL:
+                        results.append(f"[interrupted] Cancelled: {event.message}")
+                        return "\n\n".join(results)
+                    elif event.mode == InterruptionMode.STEER:
+                        self._tree.append("user", event.message)
+                        results.append(f"[interrupted] New direction: {event.message}")
+                        return "\n\n".join(results)
+
             tool = self.registry.get(tc.name)
             if tool:
                 try:
@@ -434,4 +530,15 @@ class Agent:
                 results.append(result_text)
                 if on_tool_call:
                     on_tool_call(tc.name, tc.arguments, result_text)
+
+        # Post-loop check: catch interruptions queued during the last tool's execution
+        if self.session_id and self.interruption_mgr:
+            event = self.interruption_mgr.check_urgent(self.session_id)
+            if event:
+                if event.mode == InterruptionMode.CANCEL:
+                    results.append(f"[interrupted] Cancelled: {event.message}")
+                elif event.mode == InterruptionMode.STEER:
+                    self._tree.append("user", event.message)
+                    results.append(f"[interrupted] New direction: {event.message}")
+
         return "\n\n".join(results)

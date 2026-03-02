@@ -77,6 +77,7 @@ def _make_lifespan(db_overrides: dict | None = None):
             app.state.task_queue = db_overrides["task_queue"]
             app.state.action_queue = db_overrides["action_queue"]
             app.state.merkaba_base_dir = db_overrides.get("merkaba_base_dir")
+            app.state.session_pool = None  # Tests can set this if needed
 
         else:
             try:
@@ -90,6 +91,29 @@ def _make_lifespan(db_overrides: dict | None = None):
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = TaskQueue()
             app.state.action_queue = ActionQueue()
+
+            from merkaba.orchestration.session_pool import SessionPool
+            app.state.session_pool = SessionPool()
+
+            # Validate configuration
+            try:
+                from merkaba.config.validation import validate_config, Severity
+                config_path = os.path.expanduser("~/.merkaba/config.json")
+                try:
+                    with open(config_path) as f:
+                        config = json.load(f)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    config = {}
+                issues = validate_config(config, Path(os.path.expanduser("~/.merkaba")))
+                for issue in issues:
+                    if issue.severity == Severity.ERROR:
+                        logger.error("Config: [%s] %s", issue.component, issue.message)
+                    elif issue.severity == Severity.WARNING:
+                        logger.warning("Config: [%s] %s", issue.component, issue.message)
+                    else:
+                        logger.info("Config: [%s] %s", issue.component, issue.message)
+            except Exception as e:
+                logger.warning("Config validation failed: %s", e)
         yield
         # Shutdown
         app.state.memory_store.close()
