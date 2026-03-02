@@ -34,7 +34,8 @@ def test_cli_version():
 
 def test_cli_chat_uses_agent():
     """Test that chat command invokes the agent."""
-    with patch("merkaba.agent.Agent") as mock_agent:
+    with patch("merkaba.config.validation.validate_config", return_value=[]), \
+         patch("merkaba.agent.Agent") as mock_agent:
         mock_instance = mock_agent.return_value
         mock_instance.run.return_value = "Hello from Merkaba!"
 
@@ -47,7 +48,8 @@ def test_cli_chat_uses_agent():
 
 def test_cli_chat_uses_custom_model():
     """Test that chat command passes custom model to agent."""
-    with patch("merkaba.agent.Agent") as mock_agent:
+    with patch("merkaba.config.validation.validate_config", return_value=[]), \
+         patch("merkaba.agent.Agent") as mock_agent:
         mock_instance = mock_agent.return_value
         mock_instance.run.return_value = "Hello from Merkaba!"
 
@@ -60,7 +62,8 @@ def test_cli_chat_uses_custom_model():
 
 def test_cli_chat_interactive_exit():
     """Test interactive mode exit command."""
-    with patch("merkaba.agent.Agent"):
+    with patch("merkaba.config.validation.validate_config", return_value=[]), \
+         patch("merkaba.agent.Agent"):
         result = runner.invoke(app, ["chat"], input="exit\n")
         assert result.exit_code == 0
         assert "Goodbye!" in result.stdout

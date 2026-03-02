@@ -94,6 +94,26 @@ def _make_lifespan(db_overrides: dict | None = None):
 
             from merkaba.orchestration.session_pool import SessionPool
             app.state.session_pool = SessionPool()
+
+            # Validate configuration
+            try:
+                from merkaba.config.validation import validate_config, Severity
+                config_path = os.path.expanduser("~/.merkaba/config.json")
+                try:
+                    with open(config_path) as f:
+                        config = json.load(f)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    config = {}
+                issues = validate_config(config, Path(os.path.expanduser("~/.merkaba")))
+                for issue in issues:
+                    if issue.severity == Severity.ERROR:
+                        logger.error("Config: [%s] %s", issue.component, issue.message)
+                    elif issue.severity == Severity.WARNING:
+                        logger.warning("Config: [%s] %s", issue.component, issue.message)
+                    else:
+                        logger.info("Config: [%s] %s", issue.component, issue.message)
+            except Exception as e:
+                logger.warning("Config validation failed: %s", e)
         yield
         # Shutdown
         app.state.memory_store.close()

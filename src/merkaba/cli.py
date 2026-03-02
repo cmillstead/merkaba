@@ -69,6 +69,23 @@ def chat(
     model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
 ):
     """Start a conversation with Merkaba."""
+    from pathlib import Path as _Path
+    from merkaba.config.validation import validate_config, print_startup_report, Severity
+
+    config_path = os.path.expanduser("~/.merkaba/config.json")
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        config = {}
+    base_dir = _Path(os.path.expanduser("~/.merkaba"))
+    issues = validate_config(config, base_dir)
+    if issues:
+        print_startup_report(issues)
+        if any(i.severity == Severity.ERROR for i in issues):
+            console.print("[bold red]Startup blocked due to configuration errors.[/bold red]")
+            raise SystemExit(1)
+
     from merkaba.agent import Agent
     agent = Agent(model=model)
 
