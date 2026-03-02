@@ -485,3 +485,30 @@ def test_find_entities_empty_when_no_match(store):
 
     matches = store.find_entities("what is the weather", business_id=bid)
     assert matches == []
+
+
+# --- Table name validation ---
+
+
+def test_archive_rejects_invalid_table(store):
+    """archive() raises ValueError for invalid table names."""
+    with pytest.raises(ValueError, match="Invalid table: users"):
+        store.archive("users", 1)
+
+
+def test_unarchive_rejects_invalid_table(store):
+    """unarchive() raises ValueError for invalid table names."""
+    with pytest.raises(ValueError, match="Invalid table: orders"):
+        store.unarchive("orders", 1)
+
+
+def test_list_archived_rejects_invalid_table(store):
+    """list_archived() raises ValueError for invalid table names."""
+    with pytest.raises(ValueError, match="Invalid table: sessions"):
+        store.list_archived("sessions")
+
+
+def test_touch_accessed_rejects_invalid_table(store):
+    """touch_accessed() raises ValueError for invalid table names."""
+    with pytest.raises(ValueError, match="Invalid table: logs"):
+        store.touch_accessed("logs", [1, 2])

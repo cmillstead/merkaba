@@ -619,7 +619,8 @@ class MemoryStore:
 
     def archive(self, table: str, item_id: int, vectors=None) -> None:
         """Mark an item as archived. Optionally delete from vector store."""
-        assert table in ("facts", "decisions", "learnings")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Invalid table: {table}")
         self._conn.execute(f"UPDATE {table} SET archived = 1 WHERE id = ?", (item_id,))
         self._conn.commit()
         if vectors is not None:
@@ -630,13 +631,15 @@ class MemoryStore:
 
     def unarchive(self, table: str, item_id: int) -> None:
         """Restore an archived item."""
-        assert table in ("facts", "decisions", "learnings")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Invalid table: {table}")
         self._conn.execute(f"UPDATE {table} SET archived = 0 WHERE id = ?", (item_id,))
         self._conn.commit()
 
     def list_archived(self, table: str, business_id: int | None = None) -> list[dict[str, Any]]:
         """List all archived items in a table."""
-        assert table in ("facts", "decisions", "learnings")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Invalid table: {table}")
         cursor = self._conn.cursor()
         if business_id is not None:
             bid_col = "business_id" if table != "learnings" else "source_business_id"
@@ -652,7 +655,8 @@ class MemoryStore:
         """Bulk update last_accessed and increment access_count."""
         if not item_ids:
             return
-        assert table in ("facts", "decisions", "learnings")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Invalid table: {table}")
         now = self._now()
         placeholders = ",".join("?" for _ in item_ids)
         self._conn.execute(
