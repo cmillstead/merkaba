@@ -17,15 +17,20 @@ class MemoryDecayJob:
     stale_days: int = 7
     archive_threshold: float = 0.1
 
+    episode_max_age_days: int = 365
+
     def run(self) -> dict:
         """Run decay pass across all memory tables.
 
-        Returns dict with {"decayed": N, "archived": N}.
+        Returns dict with {"decayed": N, "archived": N, "episodes_deleted": N}.
         """
         stats = self.store.decay_stale(
             decay_factor=self.decay_factor,
             stale_days=self.stale_days,
             archive_threshold=self.archive_threshold,
+        )
+        stats["episodes_deleted"] = self.store.archive_old_episodes(
+            max_age_days=self.episode_max_age_days,
         )
         logger.info("Decay job complete: %s", stats)
         return stats

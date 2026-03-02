@@ -563,6 +563,114 @@ def test_touch_accessed_rejects_invalid_table(store):
 # --- Context manager ---
 
 
+# --- Episode TTL / Archival ---
+
+
+def test_archive_old_episodes_deletes_old(store):
+    """archive_old_episodes deletes episodes older than max_age_days."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    # Insert an episode with an old timestamp directly
+    old_ts = (datetime.now() - timedelta(days=400)).isoformat()
+    store._conn.execute(
+        "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (biz_id, "listing", 1, "Old episode", "success", old_ts),
+    )
+    store._conn.commit()
+
+    # Insert a recent episode via the normal API
+    recent_id = store.add_episode(biz_id, "listing", 2, "Recent episode", "success")
+
+    deleted = store.archive_old_episodes(max_age_days=365)
+    assert deleted == 1
+
+    # Old episode is gone
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 1
+    assert eps[0]["summary"] == "Recent episode"
+
+
+def test_archive_old_episodes_returns_zero_when_none_old(store):
+    """archive_old_episodes returns 0 when no episodes exceed the age limit."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_episode(biz_id, "listing", 1, "Fresh episode", "success")
+
+    deleted = store.archive_old_episodes(max_age_days=365)
+    assert deleted == 0
+
+    eps = store.get_episodes(business_id=biz_id)
+    assert len(eps) == 1
+
+
+def test_archive_old_episodes_custom_max_age(store):
+    """archive_old_episodes respects a custom max_age_days threshold."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    # 10-day-old episode
+    ts_10d = (datetime.now() - timedelta(days=10)).isoformat()
+    store._conn.execute(
+        "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (biz_id, "listing", 1, "10 day old", "success", ts_10d),
+    )
+    # 50-day-old episode
+    ts_50d = (datetime.now() - timedelta(days=50)).isoformat()
+    store._conn.execute(
+        "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (biz_id, "listing", 2, "50 day old", "success", ts_50d),
+    )
+    store._conn.commit()
+
+    # With 30-day threshold, only the 50-day-old should be deleted
+    deleted = store.archive_old_episodes(max_age_days=30)
+    assert deleted == 1
+
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 1
+    assert eps[0]["summary"] == "10 day old"
+
+
+def test_archive_old_episodes_empty_table(store):
+    """archive_old_episodes works on an empty episodes table."""
+    deleted = store.archive_old_episodes(max_age_days=365)
+    assert deleted == 0
+
+
+def test_archive_old_episodes_multiple_deletions(store):
+    """archive_old_episodes deletes all episodes older than the threshold."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    for i in range(5):
+        old_ts = (datetime.now() - timedelta(days=400 + i)).isoformat()
+        store._conn.execute(
+            "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (biz_id, "listing", i, f"Old episode {i}", "success", old_ts),
+        )
+    store._conn.commit()
+
+    # Also add a recent one
+    store.add_episode(biz_id, "listing", 99, "Keep this", "success")
+
+    deleted = store.archive_old_episodes(max_age_days=365)
+    assert deleted == 5
+
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 1
+    assert eps[0]["summary"] == "Keep this"
+
+
+# --- Context manager ---
+
+
 def test_context_manager_returns_self():
     """MemoryStore as context manager returns self."""
     with tempfile.TemporaryDirectory() as tmpdir:

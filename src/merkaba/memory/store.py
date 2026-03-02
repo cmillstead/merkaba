@@ -627,6 +627,25 @@ class MemoryStore:
                     d[field] = []
         return d
 
+    # --- Episode TTL ---
+
+    def archive_old_episodes(self, max_age_days: int = 365) -> int:
+        """Delete episodes older than *max_age_days*.
+
+        Returns the number of deleted rows.
+        """
+        from datetime import timedelta
+
+        cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+        cursor = self._conn.execute(
+            "DELETE FROM episodes WHERE created_at < ?", (cutoff,)
+        )
+        self._conn.commit()
+        deleted = cursor.rowcount
+        if deleted:
+            logger.info("Archived %d episodes older than %d days", deleted, max_age_days)
+        return deleted
+
     # --- Lifecycle ---
 
     def archive(self, table: str, item_id: int, vectors=None) -> None:
