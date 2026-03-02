@@ -277,3 +277,21 @@ class TestControlWebSocketProtocol:
             ws.send_json({"type": "set_trace_depth", "level": "lightweight"})
             msg = ws.receive_json()
             assert msg["diagnostics"]["trace_depth"] == "lightweight"
+
+
+@pytest.mark.skipif(not HAS_WEB_DEPS, reason="Missing web dependencies")
+class TestDiagnosticsREST:
+    def test_get_diagnostics_state(self, app_client):
+        client, app = app_client
+        # Make some requests first
+        client.get("/api/system/status")
+        client.get("/api/nonexistent")
+
+        resp = client.get("/api/system/diagnostics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "trace_depth" in data
+        assert "active_websockets" in data
+        assert "recent_requests" in data
+        assert "recent_errors" in data
+        assert "summary" in data or "total_requests" in data

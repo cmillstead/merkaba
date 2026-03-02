@@ -63,6 +63,15 @@ async def route_diagnostics(request: Request):
     return {"route_count": len(routes), "routes": routes}
 
 
+@router.get("/diagnostics")
+async def diagnostics_state(request: Request):
+    """Current diagnostics snapshot — ring buffer contents, active connections, summary."""
+    store = getattr(request.app.state, "diagnostics_store", None)
+    if store is None:
+        return {"error": "Diagnostics store not initialized"}
+    return store.to_dict()
+
+
 @router.get("/token-usage")
 async def token_usage(
     group_by: str = "model",
