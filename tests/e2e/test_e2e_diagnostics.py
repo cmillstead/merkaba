@@ -2,7 +2,6 @@
 """Tests for the DiagnosticsStore ring buffer."""
 
 import threading
-import time
 
 import pytest
 
