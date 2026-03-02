@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocketException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
@@ -63,6 +63,8 @@ def verify_api_key(conn: HTTPConnection):
     import hmac
     provided = conn.headers.get("X-API-Key") or ""
     if not hmac.compare_digest(provided, expected):
+        if conn.scope["type"] == "websocket":
+            raise WebSocketException(code=4001, reason="Invalid API key")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 

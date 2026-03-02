@@ -192,3 +192,63 @@ class TestControlIntegration:
         with client.websocket_connect("/ws/control") as ws:
             msg = ws.receive_json()
             assert msg["agents"][0]["model"] == "qwen3:8b"
+
+
+@pytest.mark.e2e
+class TestWebSocketAuthGuard:
+    """Verify WebSocket connections are rejected with close code 4001 when API key is invalid."""
+
+    @pytest.fixture
+    def authed_app_client(self, tmp_path):
+        """App client with API key authentication enabled."""
+        overrides = {
+            "memory_store": _make_store(MemoryStore, str(tmp_path / "memory.db")),
+            "task_queue": _make_store(TaskQueue, str(tmp_path / "tasks.db")),
+            "action_queue": _make_store(ActionQueue, str(tmp_path / "actions.db")),
+            "merkaba_base_dir": str(tmp_path / "merkaba_home"),
+        }
+        os.makedirs(overrides["merkaba_base_dir"], exist_ok=True)
+        app = create_app(db_overrides=overrides)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            # Set API key after lifespan has initialized (lifespan sets it to None)
+            app.state.api_key = "test-secret-key"
+            yield client, app
+
+    def test_ws_rejected_without_api_key(self, authed_app_client):
+        """WebSocket connection without API key should be closed with code 4001."""
+        from starlette.websockets import WebSocketDisconnect
+
+        client, app = authed_app_client
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("/ws/control") as ws:
+                ws.receive_json()
+        assert exc_info.value.code == 4001
+
+    def test_ws_rejected_with_wrong_api_key(self, authed_app_client):
+        """WebSocket connection with wrong API key should be closed with code 4001."""
+        from starlette.websockets import WebSocketDisconnect
+
+        client, app = authed_app_client
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(
+                "/ws/control",
+                headers={"X-API-Key": "wrong-key"},
+            ) as ws:
+                ws.receive_json()
+        assert exc_info.value.code == 4001
+
+    def test_ws_accepted_with_correct_api_key(self, authed_app_client):
+        """WebSocket connection with correct API key should succeed."""
+        client, app = authed_app_client
+        with client.websocket_connect(
+            "/ws/control",
+            headers={"X-API-Key": "test-secret-key"},
+        ) as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "state_update"
+
+    def test_http_rejected_without_api_key(self, authed_app_client):
+        """HTTP requests without API key should still get 401."""
+        client, app = authed_app_client
+        resp = client.get("/api/control/state")
+        assert resp.status_code == 401
