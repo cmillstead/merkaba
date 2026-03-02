@@ -44,6 +44,11 @@ except ImportError:
     scan_and_write = None
     ForgeResult = None
 
+try:
+    from merkaba.plugins.forge import forge
+except ImportError:
+    forge = None
+
 pytestmark = pytest.mark.skipif(
     not HAS_DEPENDENCIES,
     reason=f"Missing required dependencies: {IMPORT_ERROR if not HAS_DEPENDENCIES else ''}"
@@ -391,3 +396,63 @@ class TestScanAndWrite:
         written = skill_path.read_text()
         assert "forged_from" in written
         assert "clawhub.ai" in written
+
+
+class TestForgePipeline:
+    def test_full_pipeline_github(self, tmp_path):
+        from merkaba.llm import LLMResponse
+
+        mock_resp = MagicMock()
+        mock_resp.text = "---\nname: helper\ndescription: A helper\n---\n# Helper\nContent"
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_llm = MagicMock()
+        mock_llm.chat_with_fallback.return_value = LLMResponse(
+            content="---\nname: helper\ndescription: A helper\n---\n# Helper\nUse file_read.",
+            model="test"
+        )
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+                result = forge(
+                    url="https://github.com/user/repo/blob/main/SKILL.md",
+                    dest_dir=str(tmp_path),
+                )
+
+        assert result.success is True
+        assert (tmp_path / "helper" / "skills" / "helper" / "SKILL.md").exists()
+
+    def test_custom_name_override(self, tmp_path):
+        from merkaba.llm import LLMResponse
+
+        mock_resp = MagicMock()
+        mock_resp.text = "---\nname: original\ndescription: d\n---\ncontent"
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_llm = MagicMock()
+        mock_llm.chat_with_fallback.return_value = LLMResponse(
+            content="---\nname: original\ndescription: d\n---\n# Original\nContent",
+            model="test"
+        )
+
+        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+            with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+                result = forge(
+                    url="https://github.com/user/repo/blob/main/SKILL.md",
+                    name="my-custom-name",
+                    dest_dir=str(tmp_path),
+                )
+
+        assert result.success is True
+        assert result.name == "my-custom-name"
+        assert (tmp_path / "my-custom-name" / "skills" / "my-custom-name" / "SKILL.md").exists()
+
+    def test_pipeline_error_returns_result(self, tmp_path):
+        with patch("merkaba.plugins.forge.httpx.get", side_effect=Exception("Connection failed")):
+            result = forge(
+                url="https://github.com/user/repo/blob/main/SKILL.md",
+                dest_dir=str(tmp_path),
+            )
+
+        assert result.success is False
+        assert "Connection failed" in result.error

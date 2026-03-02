@@ -330,3 +330,47 @@ def scan_and_write(
     result.success = True
     result.path = str(plugin_dir)
     return result
+
+
+def forge(
+    url: str,
+    name: str | None = None,
+    dest_dir: str | None = None,
+    confirm_dangerous: bool = False,
+) -> ForgeResult:
+    """Full forge pipeline: scrape -> generate -> scan -> write."""
+    import os
+
+    if dest_dir is None:
+        dest_dir = os.path.expanduser("~/.merkaba/plugins")
+
+    try:
+        # 1. Scrape
+        skill = scrape_url(url)
+
+        # 2. Security gate (ClawHub only)
+        gate = check_security_gate(skill)
+        if gate == "double_warn" and not confirm_dangerous:
+            return ForgeResult(
+                name=skill.name,
+                error="ClawHub rates this skill as MALICIOUS. Use --force to proceed anyway.",
+            )
+
+        # 3. Generate
+        plugin_name = name or skill.name
+        generated = generate_plugin(skill)
+
+        # 4. Scan + Write
+        return scan_and_write(
+            name=plugin_name,
+            generated=generated,
+            dest_dir=dest_dir,
+            confirm=confirm_dangerous,
+            source_url=url,
+        )
+
+    except Exception as e:
+        return ForgeResult(
+            name=name or "unknown",
+            error=str(e),
+        )
