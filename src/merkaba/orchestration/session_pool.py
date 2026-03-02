@@ -64,6 +64,7 @@ class SessionPool:
     def submit_sync(self, session_id: str, message: str, **kwargs) -> str:
         """Submit a message for processing. Serialized per-session."""
         agent = self._get_or_create_agent(session_id)
+        agent.session_id = session_id
 
         def handler(msg):
             return agent.run(msg, **kwargs)

@@ -24,6 +24,7 @@ from merkaba.verification.deterministic import DeterministicVerifier
 from merkaba.config.prompts import PromptLoader
 from merkaba.security.sanitizer import sanitize_memory_value
 from merkaba.memory.context_budget import ContextWindowConfig
+from merkaba.orchestration.interruption import InterruptionManager, InterruptionMode
 
 
 SIMPLE_MODEL = "qwen3:8b"
@@ -53,6 +54,8 @@ class Agent:
     _prompt_loader: PromptLoader = field(init=False)
     _verifier: DeterministicVerifier = field(init=False)
     context_config: ContextWindowConfig = field(init=False)
+    session_id: str | None = field(init=False, default=None)
+    interruption_mgr: InterruptionManager | None = field(init=False, default=None)
 
     def __post_init__(self):
         self.llm = LLMClient(model=self.model)
@@ -327,6 +330,14 @@ class Agent:
             if response.tool_calls:
                 logger.debug("Tool calls: %s", [tc.name for tc in response.tool_calls])
                 tool_results = self._execute_tools(response.tool_calls, on_tool_call=on_tool_call)
+
+                # Handle CANCEL interruption: don't append partial results to tree.
+                # Instead, inject the cancel message as a user message and re-enter loop.
+                if "[interrupted] Cancelled:" in tool_results:
+                    cancel_msg = tool_results.split("[interrupted] Cancelled: ", 1)[-1].strip()
+                    self._tree.append("user", cancel_msg)
+                    continue
+
                 self._tree.append(
                     "assistant", None,
                     {"tool_calls": [
@@ -426,6 +437,19 @@ class Agent:
         """Execute a list of tool calls and return results."""
         results = []
         for tc in tool_calls:
+            # Check for urgent interruptions at tool boundary (STEER/CANCEL only).
+            # APPEND events are left in the queue for the submission layer.
+            if self.session_id and self.interruption_mgr:
+                event = self.interruption_mgr.check_urgent(self.session_id)
+                if event:
+                    if event.mode == InterruptionMode.CANCEL:
+                        results.append(f"[interrupted] Cancelled: {event.message}")
+                        return "\n\n".join(results)
+                    elif event.mode == InterruptionMode.STEER:
+                        self._tree.append("user", event.message)
+                        results.append(f"[interrupted] New direction: {event.message}")
+                        return "\n\n".join(results)
+
             tool = self.registry.get(tc.name)
             if tool:
                 try:
@@ -475,4 +499,15 @@ class Agent:
                 results.append(result_text)
                 if on_tool_call:
                     on_tool_call(tc.name, tc.arguments, result_text)
+
+        # Post-loop check: catch interruptions queued during the last tool's execution
+        if self.session_id and self.interruption_mgr:
+            event = self.interruption_mgr.check_urgent(self.session_id)
+            if event:
+                if event.mode == InterruptionMode.CANCEL:
+                    results.append(f"[interrupted] Cancelled: {event.message}")
+                elif event.mode == InterruptionMode.STEER:
+                    self._tree.append("user", event.message)
+                    results.append(f"[interrupted] New direction: {event.message}")
+
         return "\n\n".join(results)

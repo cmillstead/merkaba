@@ -65,6 +65,20 @@ class InterruptionManager:
                 return events.pop(0)
             return None
 
+    def check_urgent(self, session_id: str) -> InterruptionEvent | None:
+        """Pop the next STEER or CANCEL event, leaving APPEND events queued.
+
+        Used at tool boundaries where only urgent interruptions should fire.
+        APPEND events are handled at the submission layer after the current
+        response completes.
+        """
+        with self._lock:
+            events = self._pending.get(session_id, [])
+            for i, event in enumerate(events):
+                if event.mode in (InterruptionMode.STEER, InterruptionMode.CANCEL):
+                    return events.pop(i)
+            return None
+
     def has_cancel(self, session_id: str) -> bool:
         """Check whether any pending event is a CANCEL (non-consuming peek).
 

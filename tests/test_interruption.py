@@ -152,3 +152,87 @@ def test_mixed_modes_in_queue():
     assert e2.mode == InterruptionMode.STEER
     assert e3.mode == InterruptionMode.CANCEL
     assert mgr.check("sess1") is None
+
+
+# --- check_urgent tests ---
+
+
+def test_check_urgent_returns_cancel():
+    """check_urgent returns CANCEL events."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "stop", InterruptionMode.CANCEL)
+    event = mgr.check_urgent("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.CANCEL
+    assert event.message == "stop"
+
+
+def test_check_urgent_returns_steer():
+    """check_urgent returns STEER events."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "redirect", InterruptionMode.STEER)
+    event = mgr.check_urgent("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.STEER
+    assert event.message == "redirect"
+
+
+def test_check_urgent_skips_append():
+    """check_urgent leaves APPEND events in the queue."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "queue this", InterruptionMode.APPEND)
+    event = mgr.check_urgent("sess1")
+    assert event is None
+    # APPEND event should still be available via regular check()
+    event = mgr.check("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.APPEND
+    assert event.message == "queue this"
+
+
+def test_check_urgent_skips_append_returns_cancel():
+    """check_urgent skips APPEND and returns the next CANCEL."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "queue this", InterruptionMode.APPEND)
+    mgr.interrupt("sess1", "stop", InterruptionMode.CANCEL)
+    event = mgr.check_urgent("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.CANCEL
+    assert event.message == "stop"
+    # APPEND should still be in queue
+    event = mgr.check("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.APPEND
+    assert event.message == "queue this"
+
+
+def test_check_urgent_skips_append_returns_steer():
+    """check_urgent skips APPEND and returns the next STEER."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "also do Y", InterruptionMode.APPEND)
+    mgr.interrupt("sess1", "go left", InterruptionMode.STEER)
+    event = mgr.check_urgent("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.STEER
+    assert event.message == "go left"
+    # APPEND should still be in queue
+    event = mgr.check("sess1")
+    assert event is not None
+    assert event.mode == InterruptionMode.APPEND
+
+
+def test_check_urgent_empty_session():
+    """check_urgent returns None for sessions with no events."""
+    mgr = InterruptionManager()
+    assert mgr.check_urgent("nonexistent") is None
+
+
+def test_check_urgent_multiple_appends_only():
+    """check_urgent returns None when only APPEND events are queued."""
+    mgr = InterruptionManager()
+    mgr.interrupt("sess1", "a", InterruptionMode.APPEND)
+    mgr.interrupt("sess1", "b", InterruptionMode.APPEND)
+    assert mgr.check_urgent("sess1") is None
+    # Both APPEND events should still be in queue
+    assert mgr.check("sess1").message == "a"
+    assert mgr.check("sess1").message == "b"
