@@ -129,6 +129,20 @@ class MemoryStore:
             ON episodes(business_id, task_type, created_at)
         """)
 
+        # Indexes for common query patterns on relationships and state tables.
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_relationships_entity
+            ON relationships(business_id, entity_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_relationships_related
+            ON relationships(business_id, related_entity)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_state_business_type
+            ON state(business_id, entity_type)
+        """)
+
         self._conn.commit()
         self._run_migrations()
 
@@ -147,6 +161,20 @@ class MemoryStore:
                 self._conn.execute(sql)
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+        # Indexes on archived column (must run after migration adds the column).
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_facts_business_archived
+            ON facts(business_id, archived)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_decisions_business_archived
+            ON decisions(business_id, archived)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_learnings_archived
+            ON learnings(archived)
+        """)
         self._conn.commit()
 
     def _now(self) -> str:

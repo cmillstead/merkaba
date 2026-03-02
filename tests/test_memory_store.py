@@ -220,6 +220,35 @@ def test_stats(store):
     assert stats["decisions"] == 0
 
 
+# --- Database Indexes ---
+
+
+def test_database_indexes_exist(store):
+    """All expected indexes are created during table initialization."""
+    expected_indexes = {
+        "idx_episodes_business_type",
+        "idx_facts_business_archived",
+        "idx_decisions_business_archived",
+        "idx_learnings_archived",
+        "idx_relationships_entity",
+        "idx_relationships_related",
+        "idx_state_business_type",
+    }
+    tables_with_indexes = [
+        "episodes", "facts", "decisions", "learnings",
+        "relationships", "state",
+    ]
+    found_indexes = set()
+    cursor = store._conn.cursor()
+    for table in tables_with_indexes:
+        cursor.execute(f"PRAGMA index_list({table})")
+        for row in cursor.fetchall():
+            found_indexes.add(row[1])  # column 1 is the index name
+
+    missing = expected_indexes - found_indexes
+    assert not missing, f"Missing indexes: {missing}"
+
+
 # --- Episodes CRUD ---
 
 
