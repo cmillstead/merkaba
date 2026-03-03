@@ -1429,6 +1429,26 @@ input:focus, textarea:focus {
 }
 
 /* ========================================
+   Kanban Page
+   ======================================== */
+
+.kanban-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.kanban-filter {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* ========================================
    Kanban Board
    ======================================== */
 
