@@ -40,7 +40,7 @@ merkaba chat "Hello, what can you do?"
 - **Security layers** — Input classifier, permission tiers, argument validation, memory sanitization
 - **Approval workflows** — Human-in-the-loop via Telegram or web UI, with optional TOTP 2FA
 - **Task orchestration** — Supervisor dispatches to specialized workers with heartbeat monitoring
-- **Web dashboard** — React SPA with real-time chat, task management, and analytics
+- **Web dashboard** — React SPA with real-time chat, task management, analytics, calendar, and configurable settings
 - **Prompt personalization** — Per-business SOUL.md/USER.md personality and context files
 - **Code agent** — Generates code from specs, verifies with linting, auto-repairs on failure
 - **Integrations** — Email, Stripe, Slack, GitHub, Apple Calendar, Discord, Signal (+ bring your own via adapters)
@@ -152,6 +152,12 @@ merkaba web --port 8080                  # Custom port
 ```
 
 Provides a React dashboard with:
+- Dashboard with KPI cards (active tasks, agents online, pending approvals, connection status)
+- Grouped sidebar navigation (Operations, Knowledge, Team, System)
+- Calendar view with weekly CSS Grid, month toggle, cron parsing, and click-to-trigger
+- Standalone kanban board with worker type filtering
+- Notification center with unread badge and event history
+- Settings page for models, security, scheduler, and system info
 - System status, task queue, and approval management
 - Business overview with per-business switcher
 - Per-business config editing (SOUL.md/USER.md prompt files)
@@ -159,6 +165,7 @@ Provides a React dashboard with:
 - Memory browser with search
 - Real-time chat with file upload and tool streaming (WebSocket)
 - Chat history with session management
+- Keyboard shortcuts: H (dashboard), C (constellation), K (kanban), D (diagnostics)
 
 ### Memory
 
