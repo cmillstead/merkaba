@@ -489,3 +489,113 @@ class TestControlKanbanWebSocket:
             ws.send_json({"type": "unsubscribe", "channel": "kanban"})
             msg = ws.receive_json()
             assert "kanban" not in msg
+
+
+@pytest.mark.e2e
+class TestControlAgentActivity:
+    def test_agent_includes_memory_stats(self, app_client):
+        client, app = app_client
+        ms = app.state.memory_store
+        ms.add_business("test", "test")
+        ms.add_fact(1, "general", "key1", "value1")
+        ms.add_fact(1, "general", "key2", "value2")
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        system = data["system"]
+        assert system["memory_facts"] == 2
+        assert "memory_archived" in system
+
+    def test_agent_includes_recent_activity(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert "recent_activity" in agent
+        assert isinstance(agent["recent_activity"], list)
+
+    def test_recent_activity_reads_conversations(self, app_client):
+        """When conversation files exist, recent_activity includes them."""
+        client, app = app_client
+        import json, os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        conv = {
+            "session_id": "20260302-120000",
+            "messages": [
+                {"role": "user", "content": "Hello there", "timestamp": "2026-03-02T12:00:00"},
+                {"role": "assistant", "content": "Hi!", "timestamp": "2026-03-02T12:00:01"},
+            ],
+            "saved_at": "2026-03-02T12:00:01"
+        }
+        with open(os.path.join(conv_dir, "20260302-120000.json"), "w") as f:
+            json.dump(conv, f)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert len(agent["recent_activity"]) == 1
+        assert agent["recent_activity"][0]["session_id"] == "20260302-120000"
+        assert agent["recent_activity"][0]["preview"] == "Hello there"
+
+    def test_recent_activity_limits_to_5(self, app_client):
+        """Only the 5 most recent conversations should be returned."""
+        client, app = app_client
+        import json, os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        for i in range(7):
+            conv = {
+                "session_id": f"20260302-12000{i}",
+                "messages": [
+                    {"role": "user", "content": f"Message {i}", "timestamp": f"2026-03-02T12:00:0{i}"},
+                ],
+                "saved_at": f"2026-03-02T12:00:0{i}"
+            }
+            with open(os.path.join(conv_dir, f"20260302-12000{i}.json"), "w") as f:
+                json.dump(conv, f)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert len(agent["recent_activity"]) == 5
+
+    def test_recent_activity_truncates_preview(self, app_client):
+        """Preview should be truncated to 80 characters."""
+        client, app = app_client
+        import json, os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        long_msg = "A" * 200
+        conv = {
+            "session_id": "20260302-130000",
+            "messages": [
+                {"role": "user", "content": long_msg, "timestamp": "2026-03-02T13:00:00"},
+            ],
+            "saved_at": "2026-03-02T13:00:00"
+        }
+        with open(os.path.join(conv_dir, "20260302-130000.json"), "w") as f:
+            json.dump(conv, f)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert len(agent["recent_activity"]) == 1
+        assert len(agent["recent_activity"][0]["preview"]) <= 80
+
+    def test_memory_archived_counts_archived_facts(self, app_client):
+        """memory_archived should count facts where archived = 1."""
+        client, app = app_client
+        ms = app.state.memory_store
+        ms.add_business("test", "test")
+        fact_id1 = ms.add_fact(1, "general", "k1", "v1")
+        fact_id2 = ms.add_fact(1, "general", "k2", "v2")
+        ms.add_fact(1, "general", "k3", "v3")
+        ms.archive("facts", fact_id1)
+        ms.archive("facts", fact_id2)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        assert data["system"]["memory_archived"] == 2
+        # Only non-archived facts counted
+        assert data["system"]["memory_facts"] == 1

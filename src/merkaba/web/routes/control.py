@@ -1,8 +1,11 @@
 """Mission Control endpoints — state aggregation and WebSocket control channel."""
 
 import asyncio
+import json
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -37,6 +40,45 @@ class ModelChangeRequest(BaseModel):
 _model_overrides: dict[str, str] = {}
 
 
+def _get_recent_activity(base_dir: str | None, limit: int = 5) -> list[dict]:
+    """Read the latest conversation JSON files and return summaries."""
+    if not base_dir:
+        return []
+    conv_dir = Path(base_dir) / "conversations"
+    if not conv_dir.is_dir():
+        return []
+
+    try:
+        files = sorted(
+            (f for f in conv_dir.iterdir() if f.suffix == ".json"),
+            key=lambda f: f.name,
+            reverse=True,
+        )[:limit]
+    except OSError:
+        return []
+
+    results = []
+    for f in files:
+        try:
+            data = json.loads(f.read_text())
+            messages = data.get("messages", [])
+            # Find the first user message for preview
+            preview = ""
+            for msg in messages:
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    preview = content[:80]
+                    break
+            results.append({
+                "session_id": f.stem,
+                "preview": preview,
+                "timestamp": data.get("saved_at"),
+            })
+        except (OSError, json.JSONDecodeError, KeyError):
+            continue
+    return results
+
+
 def _build_state(conn: HTTPConnection) -> dict:
     """Aggregate system state from existing stores and registries."""
     from merkaba.orchestration.workers import WORKER_REGISTRY
@@ -60,6 +102,13 @@ def _build_state(conn: HTTPConnection) -> dict:
         facts_count = cursor.fetchone()[0]
     except Exception:
         facts_count = 0
+
+    try:
+        cursor = memory_store._conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM facts WHERE archived = 1")
+        archived_count = cursor.fetchone()[0]
+    except Exception:
+        archived_count = 0
 
     try:
         pending_approvals = action_queue.get_pending_count()
@@ -156,6 +205,7 @@ def _build_state(conn: HTTPConnection) -> dict:
         "system": {
             "status": "online",
             "memory_facts": facts_count,
+            "memory_archived": archived_count,
             "pending_approvals": pending_approvals,
             "active_tasks": active_tasks,
         },
@@ -169,6 +219,9 @@ def _build_state(conn: HTTPConnection) -> dict:
             "workers": [w["id"] for w in workers],
             "active_skill": None,
             "current_task": None,
+            "recent_activity": _get_recent_activity(
+                getattr(conn.app.state, "merkaba_base_dir", None)
+            ),
         }],
         "workers": workers,
         "connections": connections,
