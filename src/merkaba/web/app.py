@@ -56,14 +56,31 @@ def verify_api_key(conn: HTTPConnection):
 
     Uses HTTPConnection (parent of both Request and WebSocket) so this
     dependency works on HTTP *and* WebSocket endpoints.
+
+    For WebSocket connections, if no Authorization or X-API-Key header is
+    present, the ``token`` query parameter is also accepted.  This allows
+    browser-native WebSocket clients (which cannot set custom headers) to
+    authenticate via ``ws://host/ws/chat?token=<api_key>``.
     """
     expected = conn.app.state.api_key
     if expected is None:
         return
     import hmac
-    provided = conn.headers.get("X-API-Key") or ""
+
+    is_websocket = conn.scope["type"] == "websocket"
+
+    # Prefer the Authorization Bearer token, then fall back to X-API-Key header.
+    # For WebSocket connections, also accept the ?token= query parameter as a
+    # last resort (browsers cannot set custom headers on WebSocket handshakes).
+    provided = (
+        conn.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        or conn.headers.get("X-API-Key")
+        or (conn.query_params.get("token") if is_websocket else None)
+        or ""
+    )
+
     if not hmac.compare_digest(provided, expected):
-        if conn.scope["type"] == "websocket":
+        if is_websocket:
             raise WebSocketException(code=4001, reason="Invalid API key")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -131,13 +148,27 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
         lifespan=_make_lifespan(db_overrides),
     )
 
+    # Build CORS origins: start with the hard-coded dev origins, then merge
+    # any user-configured origins from ~/.merkaba/config.json.  This is done
+    # eagerly (before lifespan) because CORSMiddleware is not hot-reloadable.
+    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    try:
+        with open(os.path.expanduser("~/.merkaba/config.json")) as _f:
+            _user_cfg = json.load(_f)
+        cors_origins.extend(_user_cfg.get("cors_origins", []))
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    from merkaba.web.middleware import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Register routes
     from merkaba.web.routes.system import router as system_router

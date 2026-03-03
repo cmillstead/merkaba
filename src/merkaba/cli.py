@@ -215,6 +215,11 @@ def web(
     """Start Mission Control web interface."""
     import uvicorn
     from merkaba.web.app import create_app
+    if host not in ("127.0.0.1", "localhost", "0.0.0.0"):
+        console.print(
+            "[yellow]Warning:[/yellow] Binding to non-localhost without TLS. "
+            "Consider using a reverse proxy with TLS."
+        )
     console.print(f"[bold green]Starting Mission Control...[/bold green]")
     console.print(f"Open [bold]http://{host}:{port}[/bold] in your browser")
     console.print("Press Ctrl+C to stop\n")
