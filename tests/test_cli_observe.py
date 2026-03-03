@@ -304,7 +304,7 @@ def test_backup_list_with_entries():
 
 def test_backup_restore():
     with patch("merkaba.orchestration.backup.BackupManager") as MockMgr:
-        result = runner.invoke(app, ["backup", "restore", "2026-02-28_100000", "memory.db"])
+        result = runner.invoke(app, ["backup", "restore", "2026-02-28_100000", "memory.db", "--yes"])
     assert result.exit_code == 0
     assert "restored" in result.output.lower()
     MockMgr.return_value.restore.assert_called_once_with("2026-02-28_100000", "memory.db")
@@ -313,6 +313,6 @@ def test_backup_restore():
 def test_backup_restore_not_found():
     with patch("merkaba.orchestration.backup.BackupManager") as MockMgr:
         MockMgr.return_value.restore.side_effect = FileNotFoundError("Backup not found")
-        result = runner.invoke(app, ["backup", "restore", "nonexistent", "memory.db"])
+        result = runner.invoke(app, ["backup", "restore", "nonexistent", "memory.db", "--yes"])
     assert result.exit_code == 1
     assert "not found" in result.output.lower()

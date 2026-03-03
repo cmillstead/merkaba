@@ -180,10 +180,41 @@ def test_memory_recall_business_scoped(cli_runner):
 
 def test_memory_decay_on_fresh_db(cli_runner):
     runner, app = cli_runner
-    result = runner.invoke(app, ["memory", "decay"])
+    result = runner.invoke(app, ["memory", "decay", "--yes"])
     assert result.exit_code == 0
     assert "0 decayed" in result.output
     assert "0 archived" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 9b. memory decay — prompts for confirmation without --yes
+# ---------------------------------------------------------------------------
+
+def test_memory_decay_confirms(cli_runner):
+    """Verify decay asks for confirmation when --yes is not passed."""
+    runner, app = cli_runner
+    result = runner.invoke(app, ["memory", "decay"], input="y\n")
+    assert result.exit_code == 0
+    assert "Continue?" in result.output
+    assert "0 decayed" in result.output
+    assert "0 archived" in result.output
+
+
+def test_memory_decay_yes_skips_confirm(cli_runner):
+    """Verify --yes bypasses the confirmation prompt entirely."""
+    runner, app = cli_runner
+    result = runner.invoke(app, ["memory", "decay", "--yes"])
+    assert result.exit_code == 0
+    assert "Continue?" not in result.output
+    assert "0 decayed" in result.output
+    assert "0 archived" in result.output
+
+
+def test_memory_decay_aborts_on_no(cli_runner):
+    """Verify decay aborts when user says no at the confirmation prompt."""
+    runner, app = cli_runner
+    result = runner.invoke(app, ["memory", "decay"], input="n\n")
+    assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------

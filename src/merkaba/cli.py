@@ -1,6 +1,9 @@
 # src/merkaba/cli.py
 import json
+import logging
 import os
+import platform
+import sys
 from datetime import datetime
 
 import typer
@@ -15,6 +18,28 @@ from merkaba import __version__
 
 CLAUDE_PLUGIN_DIR = os.path.expanduser("~/.claude/plugins/cache")
 MERKABA_DIR = os.path.expanduser("~/.merkaba")
+
+# Exit code constants
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_CONFIG = 2
+EXIT_NOT_FOUND = 3
+
+# Module-level verbose flag; set True when --verbose / -V is passed
+verbose: bool = False
+
+
+def format_date(value: str | None) -> str:
+    """Format an ISO timestamp to a short date string (YYYY-MM-DD).
+
+    Returns the original string unchanged if it cannot be parsed, and an
+    empty string for None.
+    """
+    if value is None:
+        return ""
+    if "T" in value:
+        return value.split("T")[0]
+    return value
 
 
 def _load_adapters():
@@ -45,7 +70,12 @@ _load_cli_extensions()
 
 def version_callback(value: bool):
     if value:
-        console.print(f"merkaba version {__version__}")
+        py = sys.version_info
+        console.print(
+            f"merkaba {__version__} "
+            f"(Python {py.major}.{py.minor}.{py.micro}, "
+            f"{platform.system()} {platform.machine()})"
+        )
         raise typer.Exit()
 
 
@@ -54,16 +84,31 @@ def main(
     version: bool = typer.Option(
         None, "--version", "-v", callback=version_callback, is_eager=True
     ),
+    verbose_flag: bool = typer.Option(
+        False, "--verbose", "-V", help="Enable verbose (DEBUG) output"
+    ),
 ):
     """Merkaba - Local AI Agent Framework"""
+    global verbose
+    verbose = verbose_flag
     try:
         from merkaba.observability.tracing import setup_logging
-        setup_logging()
+        if verbose_flag:
+            setup_logging(level=logging.DEBUG)
+            # Also attach a Rich console handler to the root logger so DEBUG
+            # messages appear on the terminal during verbose runs.
+            from rich.logging import RichHandler
+            root = logging.getLogger()
+            root.setLevel(logging.DEBUG)
+            if not any(isinstance(h, RichHandler) for h in root.handlers):
+                root.addHandler(RichHandler(console=console, show_time=False))
+        else:
+            setup_logging()
     except Exception:
         pass
 
 
-@app.command()
+@app.command(rich_help_panel="Core")
 def chat(
     message: str = typer.Argument(None, help="Message to send to Merkaba"),
     model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
@@ -84,7 +129,7 @@ def chat(
         print_startup_report(issues)
         if any(i.severity == Severity.ERROR for i in issues):
             console.print("[bold red]Startup blocked due to configuration errors.[/bold red]")
-            raise SystemExit(1)
+            raise typer.Exit(EXIT_CONFIG)
 
     from merkaba.agent import Agent
     agent = Agent(model=model)
@@ -121,7 +166,7 @@ def chat(
                 break
 
 
-@app.command("init")
+@app.command("init", rich_help_panel="Core")
 def init_cmd(
     force: bool = typer.Option(False, "--force", "-f", help="Re-create config even if already initialized"),
 ):
@@ -162,7 +207,7 @@ def init_cmd(
 # --- Telegram Command Group ---
 
 telegram_app = typer.Typer(help="Telegram bot commands")
-app.add_typer(telegram_app, name="telegram")
+app.add_typer(telegram_app, name="telegram", rich_help_panel="Operations")
 
 
 @telegram_app.command("setup")
@@ -207,7 +252,7 @@ def telegram_status():
     console.print(f"Allowed users: {user_ids}")
 
 
-@app.command("web")
+@app.command("web", rich_help_panel="Core")
 def web(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(5173, "--port", "-p", help="Port to listen on"),
@@ -226,7 +271,7 @@ def web(
     uvicorn.run(create_app(), host=host, port=port)
 
 
-@app.command("serve")
+@app.command("serve", rich_help_panel="Core")
 def serve():
     """Start Merkaba with Telegram bot integration."""
     from merkaba.telegram import TelegramConfig, MerkabaBot
@@ -252,10 +297,76 @@ def serve():
         console.print("\n[yellow]Shutting down...[/yellow]")
 
 
+@app.command("status", rich_help_panel="Core")
+def status():
+    """One-command health check: Ollama, databases, pending approvals, workers."""
+    import sqlite3 as _sqlite3
+
+    table = Table(title="Merkaba Status", show_header=True)
+    table.add_column("Check", style="bold")
+    table.add_column("Status")
+    table.add_column("Detail", style="dim")
+
+    # --- Ollama ---
+    try:
+        import urllib.request as _req
+        with _req.urlopen("http://localhost:11434/api/tags", timeout=2):
+            ollama_status = "[green]OK[/green]"
+            ollama_detail = "reachable at localhost:11434"
+    except Exception as exc:
+        ollama_status = "[red]FAIL[/red]"
+        ollama_detail = f"not reachable: {exc.__class__.__name__}"
+    table.add_row("Ollama", ollama_status, ollama_detail)
+
+    # --- Databases ---
+    for db_name in ("memory.db", "tasks.db", "actions.db"):
+        db_path = os.path.join(MERKABA_DIR, db_name)
+        if os.path.exists(db_path):
+            try:
+                conn = _sqlite3.connect(db_path)
+                conn.execute("PRAGMA integrity_check")
+                conn.close()
+                db_status = "[green]OK[/green]"
+                db_detail = db_path
+            except Exception as exc:
+                db_status = "[red]FAIL[/red]"
+                db_detail = str(exc)
+        else:
+            db_status = "[yellow]MISSING[/yellow]"
+            db_detail = db_path
+        table.add_row(db_name, db_status, db_detail)
+
+    # --- Pending approvals ---
+    try:
+        from merkaba.approval.queue import ActionQueue
+        aq = ActionQueue()
+        count = aq.get_pending_count()
+        aq.close()
+        approval_status = "[green]OK[/green]" if count == 0 else "[yellow]PENDING[/yellow]"
+        approval_detail = f"{count} pending approval(s)"
+    except Exception as exc:
+        approval_status = "[dim]N/A[/dim]"
+        approval_detail = str(exc)
+    table.add_row("Approvals", approval_status, approval_detail)
+
+    # --- Workers ---
+    try:
+        from merkaba.orchestration.workers import WORKER_REGISTRY
+        worker_count = len(WORKER_REGISTRY)
+        workers_status = "[green]OK[/green]"
+        workers_detail = f"{worker_count} worker(s) registered"
+    except Exception as exc:
+        workers_status = "[dim]N/A[/dim]"
+        workers_detail = str(exc)
+    table.add_row("Workers", workers_status, workers_detail)
+
+    console.print(table)
+
+
 # --- Plugin Command Group ---
 
 plugins_app = typer.Typer(help="Plugin management commands")
-app.add_typer(plugins_app, name="plugins")
+app.add_typer(plugins_app, name="plugins", rich_help_panel="Extensions")
 
 
 @plugins_app.command("list")
@@ -481,7 +592,7 @@ def plugins_uninstall(
 # --- Skills Command Group ---
 
 skills_app = typer.Typer(help="Skill management commands")
-app.add_typer(skills_app, name="skills")
+app.add_typer(skills_app, name="skills", rich_help_panel="Extensions")
 
 
 @skills_app.command("forge")
@@ -551,7 +662,7 @@ def skills_forge(
 # --- Commands Command Group ---
 
 commands_app = typer.Typer(help="Plugin command management")
-app.add_typer(commands_app, name="commands")
+app.add_typer(commands_app, name="commands", rich_help_panel="Extensions")
 
 
 @commands_app.command("list")
@@ -574,7 +685,7 @@ def commands_list():
 # --- Memory Command Group ---
 
 memory_app = typer.Typer(help="Memory management commands")
-app.add_typer(memory_app, name="memory")
+app.add_typer(memory_app, name="memory", rich_help_panel="Data")
 
 
 @memory_app.command("status")
@@ -602,7 +713,8 @@ def memory_status():
 
 @memory_app.command("businesses")
 def memory_businesses():
-    """List registered businesses."""
+    """List registered businesses. (Alias for 'merkaba business list'.)"""
+    console.print("[dim]Tip: use [bold]merkaba business list[/bold] for the full business command group.[/dim]\n")
     from merkaba.memory.store import MemoryStore
 
     store = MemoryStore()
@@ -612,7 +724,7 @@ def memory_businesses():
         store.close()
 
     if not businesses:
-        console.print("[dim]No businesses registered yet.[/dim]")
+        console.print("[dim]No businesses found.[/dim]")
         return
 
     table = Table(title="Registered Businesses")
@@ -623,15 +735,12 @@ def memory_businesses():
     table.add_column("Created", style="dim")
 
     for biz in businesses:
-        created = biz["created_at"]
-        if "T" in created:
-            created = created.split("T")[0]
         table.add_row(
             str(biz["id"]),
             biz["name"],
             biz["type"],
             str(biz["autonomy_level"]),
-            created,
+            format_date(biz["created_at"]),
         )
 
     console.print(table)
@@ -664,15 +773,24 @@ def memory_recall(
 
 
 @memory_app.command("decay")
-def memory_decay():
+def memory_decay(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
     """Run memory decay: reduce relevance of stale memories and archive low-score items."""
     from merkaba.memory.store import MemoryStore
     from merkaba.memory.lifecycle import MemoryDecayJob
 
+    if not yes:
+        typer.confirm(
+            "This will reduce relevance scores and archive low-score memories. Continue?",
+            abort=True,
+        )
+
     store = MemoryStore()
     try:
-        job = MemoryDecayJob(store=store)
-        stats = job.run()
+        with console.status("[bold]Running memory decay...[/bold]"):
+            job = MemoryDecayJob(store=store)
+            stats = job.run()
         console.print(f"[bold]Decay complete:[/bold] {stats['decayed']} decayed, {stats['archived']} archived")
     finally:
         store.close()
@@ -807,17 +925,26 @@ def memory_episodes(
 
 
 @memory_app.command("consolidate")
-def memory_consolidate():
+def memory_consolidate(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
     """Consolidate related facts into summaries using LLM."""
     from merkaba.memory.store import MemoryStore
     from merkaba.memory.lifecycle import MemoryConsolidationJob
     from merkaba.llm import LLMClient
 
+    if not yes:
+        typer.confirm(
+            "This will group and summarize related facts via LLM, archiving the originals. Continue?",
+            abort=True,
+        )
+
     store = MemoryStore()
     llm = LLMClient()
     try:
-        job = MemoryConsolidationJob(store=store, llm=llm)
-        stats = job.run()
+        with console.status("[bold]Running memory consolidation...[/bold]"):
+            job = MemoryConsolidationJob(store=store, llm=llm)
+            stats = job.run()
         console.print(
             f"[bold]Consolidation complete:[/bold] "
             f"{stats['groups']} groups, {stats['summaries']} summaries, {stats['archived']} archived"
@@ -827,17 +954,26 @@ def memory_consolidate():
 
 
 @memory_app.command("rebuild-vectors")
-def memory_rebuild_vectors():
+def memory_rebuild_vectors(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
     """Rebuild vector store from non-archived SQLite data."""
     from merkaba.memory.store import MemoryStore
     from merkaba.memory.vectors import VectorMemory
 
+    if not yes:
+        typer.confirm(
+            "This will delete and rebuild the entire vector store from SQLite data. Continue?",
+            abort=True,
+        )
+
     store = MemoryStore()
     try:
-        vectors = VectorMemory()
-        stats = vectors.rebuild_from_store(store)
+        with console.status("[bold]Rebuilding vector store...[/bold]"):
+            vectors = VectorMemory()
+            stats = vectors.rebuild_from_store(store)
+            vectors.close()
         console.print(f"[green]Vector rebuild complete:[/green] {stats}")
-        vectors.close()
     except ImportError:
         console.print("[red]ChromaDB not installed. Run: pip install chromadb[/red]")
     except Exception as e:
@@ -846,10 +982,205 @@ def memory_rebuild_vectors():
         store.close()
 
 
+# --- Memory: Conversations Sub-Group ---
+
+conversations_app = typer.Typer(help="Conversation history management")
+memory_app.add_typer(conversations_app, name="conversations")
+
+
+@conversations_app.command("list")
+def conversations_list(
+    limit: int = typer.Option(20, "--limit", "-l", help="Max conversations to show"),
+):
+    """List conversation files by date."""
+    import glob as _glob
+    convos_dir = os.path.expanduser("~/.merkaba/conversations")
+    if not os.path.isdir(convos_dir):
+        console.print("[dim]No conversations found.[/dim]")
+        return
+
+    files = sorted(
+        _glob.glob(os.path.join(convos_dir, "*.json")),
+        key=os.path.getmtime,
+        reverse=True,
+    )[:limit]
+
+    if not files:
+        console.print("[dim]No conversations found.[/dim]")
+        return
+
+    table = Table(title="Conversations")
+    table.add_column("ID", style="cyan")
+    table.add_column("Messages", justify="right")
+    table.add_column("Modified", style="dim")
+
+    for fpath in files:
+        conv_id = os.path.splitext(os.path.basename(fpath))[0]
+        mtime = datetime.fromtimestamp(os.path.getmtime(fpath)).strftime("%Y-%m-%d %H:%M")
+        msg_count = "-"
+        try:
+            with open(fpath) as f:
+                raw = f.read()
+            if not raw.startswith("MERKABA_ENC:"):
+                data = json.loads(raw)
+                msg_count = str(len(data.get("messages", [])))
+        except (json.JSONDecodeError, OSError):
+            pass
+        table.add_row(conv_id, msg_count, mtime)
+
+    console.print(table)
+
+
+@conversations_app.command("show")
+def conversations_show(
+    conversation_id: str = typer.Argument(..., help="Conversation ID (session filename without .json)"),
+):
+    """Display a conversation."""
+    convos_dir = os.path.expanduser("~/.merkaba/conversations")
+    fpath = os.path.join(convos_dir, f"{conversation_id}.json")
+
+    if not os.path.exists(fpath):
+        console.print(f"[red]Conversation '{conversation_id}' not found.[/red]")
+        raise typer.Exit(EXIT_NOT_FOUND)
+
+    try:
+        with open(fpath) as f:
+            raw = f.read()
+        if raw.startswith("MERKABA_ENC:"):
+            console.print("[yellow]Conversation is encrypted -- use 'merkaba security enable-encryption' to configure decryption.[/yellow]")
+            raise typer.Exit(EXIT_ERROR)
+        data = json.loads(raw)
+    except (json.JSONDecodeError, OSError) as e:
+        console.print(f"[red]Failed to read conversation:[/red] {e}")
+        raise typer.Exit(EXIT_ERROR)
+
+    messages = data.get("messages", [])
+    console.print(f"[bold]Conversation:[/bold] {conversation_id}")
+    console.print(f"[dim]{len(messages)} message(s)[/dim]\n")
+
+    role_styles = {"user": "bold blue", "assistant": "bold green", "system": "dim", "tool": "yellow"}
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        timestamp = format_date(msg.get("timestamp", ""))
+        style = role_styles.get(role, "white")
+        label = f"[{style}]{role.upper()}[/{style}]"
+        if timestamp:
+            label += f" [dim]({timestamp})[/dim]"
+        console.print(f"{label}: {content}\n")
+
+
+@conversations_app.command("delete")
+def conversations_delete(
+    conversation_id: str = typer.Argument(..., help="Conversation ID to delete"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Delete a conversation file."""
+    convos_dir = os.path.expanduser("~/.merkaba/conversations")
+    fpath = os.path.join(convos_dir, f"{conversation_id}.json")
+
+    if not os.path.exists(fpath):
+        console.print(f"[red]Conversation '{conversation_id}' not found.[/red]")
+        raise typer.Exit(EXIT_NOT_FOUND)
+
+    if not yes:
+        typer.confirm(f"Delete conversation '{conversation_id}'?", abort=True)
+
+    os.remove(fpath)
+    console.print(f"[green]Deleted:[/green] {conversation_id}")
+
+
+@conversations_app.command("export")
+def conversations_export(
+    conversation_id: str = typer.Argument(..., help="Conversation ID to export"),
+    output: str = typer.Option(..., "--output", "-o", help="Output JSON file path"),
+):
+    """Export a conversation as JSON."""
+    convos_dir = os.path.expanduser("~/.merkaba/conversations")
+    fpath = os.path.join(convos_dir, f"{conversation_id}.json")
+
+    if not os.path.exists(fpath):
+        console.print(f"[red]Conversation '{conversation_id}' not found.[/red]")
+        raise typer.Exit(EXIT_NOT_FOUND)
+
+    try:
+        with open(fpath) as f:
+            raw = f.read()
+        if raw.startswith("MERKABA_ENC:"):
+            console.print("[yellow]Conversation is encrypted -- cannot export without decryption key.[/yellow]")
+            raise typer.Exit(EXIT_ERROR)
+        data = json.loads(raw)
+    except (json.JSONDecodeError, OSError) as e:
+        console.print(f"[red]Failed to read conversation:[/red] {e}")
+        raise typer.Exit(EXIT_ERROR)
+
+    with open(output, "w") as f:
+        json.dump(data, f, indent=2)
+
+    msg_count = len(data.get("messages", []))
+    console.print(f"[green]Exported[/green] {msg_count} message(s) to [bold]{output}[/bold]")
+
+
+# --- Memory: Relationships Command ---
+
+@memory_app.command("relationships")
+def memory_relationships(
+    entity: str = typer.Option(None, "--entity", "-e", help="Filter by entity name"),
+    business_id: int = typer.Option(None, "--business", "-b", help="Filter by business ID"),
+):
+    """Show entity relationships from the memory store."""
+    from merkaba.memory.store import MemoryStore
+
+    store = MemoryStore()
+    try:
+        businesses = store.list_businesses()
+        if not businesses:
+            console.print("[dim]No relationships found.[/dim]")
+            return
+
+        rows: list[dict] = []
+        target_ids = (
+            [b["id"] for b in businesses if b["id"] == business_id]
+            if business_id is not None
+            else [b["id"] for b in businesses]
+        )
+        for biz_id in target_ids:
+            rels = store.get_relationships(biz_id)
+            rows.extend(rels)
+    finally:
+        store.close()
+
+    if entity:
+        entity_lower = entity.lower()
+        rows = [r for r in rows if entity_lower in r["entity_id"].lower() or entity_lower in r["related_entity"].lower()]
+
+    if not rows:
+        console.print("[dim]No relationships found.[/dim]")
+        return
+
+    table = Table(title="Entity Relationships")
+    table.add_column("Entity", style="cyan")
+    table.add_column("Related Entity", style="green")
+    table.add_column("Relationship", style="yellow")
+    table.add_column("Type", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for r in rows:
+        table.add_row(
+            r["entity_id"],
+            r["related_entity"],
+            r["relation"],
+            r.get("entity_type", ""),
+            format_date(r.get("updated_at", "")),
+        )
+
+    console.print(table)
+
+
 # --- Scheduler Command Group ---
 
 scheduler_app = typer.Typer(help="Task scheduler commands")
-app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(scheduler_app, name="scheduler", rich_help_panel="Operations")
 
 
 @scheduler_app.command("run")
@@ -1005,7 +1336,9 @@ def scheduler_install():
 
 
 @scheduler_app.command("remove")
-def scheduler_remove():
+def scheduler_remove(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
     """Remove launchd plist."""
     import subprocess
 
@@ -1017,6 +1350,12 @@ def scheduler_remove():
         console.print("[yellow]Plist not installed[/yellow]")
         return
 
+    if not yes:
+        typer.confirm(
+            "This will unload and remove the scheduler launchd plist. Continue?",
+            abort=True,
+        )
+
     subprocess.run(["launchctl", "unload", plist_path], check=False)
     os.remove(plist_path)
     console.print(f"[green]Removed:[/green] {plist_path}")
@@ -1025,7 +1364,7 @@ def scheduler_remove():
 # --- Approval Command Group ---
 
 approval_app = typer.Typer(help="Approval workflow commands")
-app.add_typer(approval_app, name="approval")
+app.add_typer(approval_app, name="approval", rich_help_panel="Operations")
 
 
 @approval_app.command("list")
@@ -1055,16 +1394,13 @@ def approval_list(
     table.add_column("Created", style="dim")
 
     for a in actions:
-        created = a["created_at"]
-        if "T" in created:
-            created = created.split("T")[0]
         table.add_row(
             str(a["id"]),
             a["action_type"],
             a["description"][:50],
             str(a["autonomy_level"]),
             a["status"],
-            created,
+            format_date(a["created_at"]),
         )
 
     console.print(table)
@@ -1160,7 +1496,7 @@ def approval_graduation(
 # --- Tasks Command Group ---
 
 tasks_app = typer.Typer(help="Task management commands")
-app.add_typer(tasks_app, name="tasks")
+app.add_typer(tasks_app, name="tasks", rich_help_panel="Data")
 
 
 @tasks_app.command("list")
@@ -1333,29 +1669,56 @@ def tasks_runs(
 # --- Integrations commands ---
 
 integrations_app = typer.Typer(help="Manage external integrations")
-app.add_typer(integrations_app, name="integrations")
+app.add_typer(integrations_app, name="integrations", rich_help_panel="Extensions")
 
 
 @integrations_app.command("list")
 def integrations_list():
-    """List registered integration adapters."""
+    """List available integrations and their configuration status."""
     _load_adapters()
     from merkaba.integrations import list_adapters, get_adapter_class
+    from merkaba.integrations.credentials import CredentialManager
 
     adapters = list_adapters()
     if not adapters:
-        console.print("No adapters registered.")
+        console.print("[dim]No integrations found.[/dim]")
         return
 
-    table = Table(title="Integration Adapters")
+    creds = CredentialManager()
+
+    # Map known adapters to their required credential keys
+    _known_creds: dict[str, list[str]] = {
+        "email": ["host", "port", "user", "password"],
+        "stripe": ["api_key"],
+        "slack": ["bot_token"],
+        "github": ["token"],
+        "discord": ["bot_token"],
+        "signal": ["account"],
+        "calendar": [],
+        "qmd": [],
+    }
+
+    table = Table(title="Integrations")
     table.add_column("Name", style="cyan")
     table.add_column("Class", style="green")
+    table.add_column("Status", style="bold")
 
     for name in sorted(adapters):
         cls = get_adapter_class(name)
-        table.add_row(name, cls.__name__ if cls else "?")
+        class_name = cls.__name__ if cls else "?"
+        required = _known_creds.get(name, [])
+        if not required:
+            status = "[dim]no credentials needed[/dim]"
+        else:
+            ok, missing = creds.has_required(name, required)
+            if ok:
+                status = "[green]configured[/green]"
+            else:
+                status = f"[yellow]missing: {', '.join(missing)}[/yellow]"
+        table.add_row(name, class_name, status)
 
     console.print(table)
+    console.print("\n[dim]Configure with: merkaba integrations setup <name>[/dim]")
 
 
 @integrations_app.command("test")
@@ -1420,7 +1783,7 @@ def integrations_setup(name: str = typer.Argument(help="Adapter name to configur
 # --- Business Command Group ---
 
 business_app = typer.Typer(help="Business management commands")
-app.add_typer(business_app, name="business")
+app.add_typer(business_app, name="business", rich_help_panel="Data")
 
 
 @business_app.command("add")
@@ -1454,7 +1817,7 @@ def business_list():
         store.close()
 
     if not businesses:
-        console.print("[dim]No businesses registered yet.[/dim]")
+        console.print("[dim]No businesses found.[/dim]")
         return
 
     table = Table(title="Businesses")
@@ -1465,15 +1828,12 @@ def business_list():
     table.add_column("Created", style="dim")
 
     for biz in businesses:
-        created = biz["created_at"]
-        if "T" in created:
-            created = created.split("T")[0]
         table.add_row(
             str(biz["id"]),
             biz["name"],
             biz["type"],
             str(biz["autonomy_level"]),
-            created,
+            format_date(biz["created_at"]),
         )
 
     console.print(table)
@@ -1662,7 +2022,7 @@ def business_dashboard(
 
 
 models_app = typer.Typer(help="Model routing commands")
-app.add_typer(models_app, name="models")
+app.add_typer(models_app, name="models", rich_help_panel="System")
 
 
 @models_app.command("list")
@@ -1807,7 +2167,7 @@ def models_providers():
 # --- Backup commands ---
 
 backup_app = typer.Typer(help="Database backup and restore")
-app.add_typer(backup_app, name="backup")
+app.add_typer(backup_app, name="backup", rich_help_panel="System")
 
 
 @backup_app.command("run")
@@ -1816,7 +2176,8 @@ def backup_run():
     from merkaba.orchestration.backup import BackupManager
 
     mgr = BackupManager()
-    path = mgr.run_backup()
+    with console.status("[bold]Creating backup...[/bold]"):
+        path = mgr.run_backup()
     console.print(f"[green]Backup created:[/green] {path}")
     files = [f.name for f in path.iterdir() if f.is_file()]
     for f in files:
@@ -1849,13 +2210,21 @@ def backup_list():
 def backup_restore(
     timestamp: str = typer.Argument(..., help="Backup timestamp to restore from"),
     db_name: str = typer.Argument(..., help="Database file to restore (e.g. memory.db)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """Restore a database from a backup."""
     from merkaba.orchestration.backup import BackupManager
 
+    if not yes:
+        typer.confirm(
+            f"This will overwrite {db_name} with the backup from {timestamp}. Continue?",
+            abort=True,
+        )
+
     mgr = BackupManager()
     try:
-        mgr.restore(timestamp, db_name)
+        with console.status(f"[bold]Restoring {db_name}...[/bold]"):
+            mgr.restore(timestamp, db_name)
         console.print(f"[green]Restored {db_name} from {timestamp}[/green]")
         console.print(f"[dim]Safety copy at {db_name}.pre-restore[/dim]")
     except FileNotFoundError as e:
@@ -1866,7 +2235,7 @@ def backup_restore(
 # --- Data Command Group ---
 
 data_app = typer.Typer(help="Data management (export, delete)")
-app.add_typer(data_app, name="data")
+app.add_typer(data_app, name="data", rich_help_panel="Data")
 
 
 @data_app.command("export")
@@ -1966,7 +2335,7 @@ def data_delete_all(
 # --- Code agent commands ---
 
 code_app = typer.Typer(help="Coding agent commands")
-app.add_typer(code_app, name="code")
+app.add_typer(code_app, name="code", rich_help_panel="Core")
 
 
 @code_app.command("run")
@@ -2106,7 +2475,7 @@ def code_review(
 # -- Observe command group --
 
 observe_app = typer.Typer(help="Observability tools: token usage, audit trail, tracing")
-app.add_typer(observe_app, name="observe")
+app.add_typer(observe_app, name="observe", rich_help_panel="System")
 
 
 @observe_app.command("tokens")
@@ -2236,7 +2605,7 @@ def observe_trace(
 # -- Security command group --
 
 security_app = typer.Typer(help="Security settings: 2FA, rate limits")
-app.add_typer(security_app, name="security")
+app.add_typer(security_app, name="security", rich_help_panel="System")
 
 
 @security_app.command("setup-2fa")
@@ -2477,7 +2846,7 @@ def security_migrate_keys():
 # for testing). Persistent pairing state (e.g., SQLite) is needed for real
 # multi-process usage where a channel initiates and the CLI confirms.
 pair_app = typer.Typer(help="Gateway pairing commands")
-app.add_typer(pair_app, name="pair")
+app.add_typer(pair_app, name="pair", rich_help_panel="System")
 
 
 @pair_app.command("list")
@@ -2547,7 +2916,153 @@ def pair_revoke(
 
 # -- Config commands --
 config_app = typer.Typer(help="Prompt and configuration management")
-app.add_typer(config_app, name="config")
+app.add_typer(config_app, name="config", rich_help_panel="System")
+
+
+@config_app.command("show")
+def config_show():
+    """Pretty-print ~/.merkaba/config.json with API keys redacted."""
+    import re
+
+    from rich.syntax import Syntax
+
+    config_path = os.path.join(MERKABA_DIR, "config.json")
+    try:
+        with open(config_path) as f:
+            raw = f.read()
+        config = json.loads(raw)
+    except FileNotFoundError:
+        console.print(f"[dim]No config.json found at {config_path}[/dim]")
+        return
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] Could not parse config.json: {exc}")
+        raise typer.Exit(1)
+
+    def _redact(obj):
+        if isinstance(obj, dict):
+            return {
+                k: "***redacted***" if re.search(r"api[_-]?key|secret", k, re.IGNORECASE) else _redact(v)
+                for k, v in obj.items()
+            }
+        if isinstance(obj, list):
+            return [_redact(v) for v in obj]
+        return obj
+
+    redacted = _redact(config)
+    formatted = json.dumps(redacted, indent=2)
+    syntax = Syntax(formatted, "json", theme="monokai", line_numbers=False)
+    console.print(syntax)
+
+
+@config_app.command("validate")
+def config_validate():
+    """Validate ~/.merkaba/config.json and report issues."""
+    from pathlib import Path as _Path
+
+    from merkaba.config.validation import validate_config, Severity
+
+    config_path = os.path.join(MERKABA_DIR, "config.json")
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        console.print(f"[dim]No config.json found at {config_path} — using empty config.[/dim]")
+        config = {}
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] Could not parse config.json: {exc}")
+        raise typer.Exit(1)
+
+    base_dir = _Path(MERKABA_DIR)
+    issues = validate_config(config, base_dir, _skip_runtime_checks=True)
+
+    if not issues:
+        console.print("[green]Config is valid — no issues found.[/green]")
+        return
+
+    errors = [i for i in issues if i.severity == Severity.ERROR]
+    warnings = [i for i in issues if i.severity == Severity.WARNING]
+    infos = [i for i in issues if i.severity == Severity.INFO]
+
+    if errors:
+        table = Table(title=f"Errors ({len(errors)})", style="red")
+        table.add_column("Component", style="cyan")
+        table.add_column("Message")
+        table.add_column("Hint", style="dim")
+        for issue in errors:
+            table.add_row(issue.component, issue.message, issue.hint or "")
+        console.print(table)
+
+    if warnings:
+        table = Table(title=f"Warnings ({len(warnings)})", style="yellow")
+        table.add_column("Component", style="cyan")
+        table.add_column("Message")
+        table.add_column("Hint", style="dim")
+        for issue in warnings:
+            table.add_row(issue.component, issue.message, issue.hint or "")
+        console.print(table)
+
+    if infos:
+        table = Table(title=f"Info ({len(infos)})")
+        table.add_column("Component", style="cyan")
+        table.add_column("Message")
+        for issue in infos:
+            table.add_row(issue.component, issue.message)
+        console.print(table)
+
+    if errors:
+        raise typer.Exit(1)
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(help="Dotted config key (e.g. security.classifier_fail_mode)"),
+    value: str = typer.Argument(help="Value to set"),
+):
+    """Set a config value at a dotted path in ~/.merkaba/config.json."""
+    config_path = os.path.join(MERKABA_DIR, "config.json")
+
+    # Load existing config or start fresh
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        config = {}
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] Could not parse config.json: {exc}")
+        raise typer.Exit(1)
+
+    # Auto-detect type
+    def _coerce(v: str):
+        if v.lower() == "true":
+            return True
+        if v.lower() == "false":
+            return False
+        try:
+            return int(v)
+        except ValueError:
+            pass
+        try:
+            return float(v)
+        except ValueError:
+            pass
+        return v
+
+    coerced = _coerce(value)
+
+    # Navigate and set via dotted path
+    parts = key.split(".")
+    d = config
+    for part in parts[:-1]:
+        if part not in d or not isinstance(d[part], dict):
+            d[part] = {}
+        d = d[part]
+    d[parts[-1]] = coerced
+
+    os.makedirs(MERKABA_DIR, exist_ok=True)
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+    console.print(f"[green]Set[/green] [cyan]{key}[/cyan] = [yellow]{coerced!r}[/yellow]")
 
 
 @config_app.command("show-prompt")
@@ -2603,7 +3118,7 @@ def config_edit_user(business: int = typer.Option(None, help="Business ID")):
 
 # -- Migrate commands --
 migrate_app = typer.Typer(help="Migrate workspaces from other agent frameworks")
-app.add_typer(migrate_app, name="migrate")
+app.add_typer(migrate_app, name="migrate", rich_help_panel="Extensions")
 
 
 @migrate_app.command("openclaw")
@@ -2652,7 +3167,7 @@ def migrate_openclaw(
 
 # -- Identity commands --
 identity_app = typer.Typer(help="Import and export agent identity (AIEOS format)")
-app.add_typer(identity_app, name="identity")
+app.add_typer(identity_app, name="identity", rich_help_panel="Extensions")
 
 
 @identity_app.command("import")
