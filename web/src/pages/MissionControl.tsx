@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useControlSocket } from '../hooks/useControlSocket'
 import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
@@ -6,6 +6,7 @@ import AgentDetailView from '../components/AgentDetailView'
 import DiagnosticsView from '../components/DiagnosticsView'
 import KanbanBoard from '../components/KanbanBoard'
 import WorkerDetailView from '../components/WorkerDetailView'
+import CommandPalette from '../components/CommandPalette'
 
 type View =
   | { mode: 'constellation' }
@@ -37,6 +38,22 @@ export default function MissionControl() {
       body: JSON.stringify({ agent: 'merkaba-prime', model }),
     })
   }, [])
+
+  const commands = useMemo(() => [
+    { id: 'nav-constellation', label: 'Go to Constellation', action: () => setView({ mode: 'constellation' }) },
+    { id: 'nav-kanban', label: 'Go to Kanban', action: () => setView({ mode: 'kanban' }) },
+    { id: 'nav-diagnostics', label: 'Go to Diagnostics', action: () => setView({ mode: 'diagnostics' }) },
+    ...state.workers.map(w => ({
+      id: `nav-worker-${w.id}`,
+      label: `Go to Worker: ${w.name}`,
+      action: () => setView({ mode: 'worker', workerId: w.id }),
+    })),
+    ...state.workers.map(w => ({
+      id: `trigger-${w.id}`,
+      label: `Trigger Worker: ${w.name}`,
+      action: () => { fetch(`/api/control/worker/${w.id}/trigger`, { method: 'POST' }) },
+    })),
+  ], [state.workers])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -110,6 +127,8 @@ export default function MissionControl() {
           onSetTraceDepth={setTraceDepth}
         />
       )}
+
+      <CommandPalette commands={commands} />
 
       <div className="command-bar">
         <span className="command-hint">Ctrl+/ Command Palette</span>
