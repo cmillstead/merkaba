@@ -153,6 +153,67 @@ class TestPathAccess:
         sandbox.check_path_access("web_fetch", {"url": "https://example.com"})
 
 
+# --- New protected path coverage ---
+
+
+class TestNewProtectedPaths:
+    """Tests for the three newly-added PROTECTED_PATHS entries."""
+
+    def _sandbox_wildcard(self):
+        """A sandbox whose manifest grants wildcard file_access — only protected
+        paths should still be blocked."""
+        manifest = PluginManifest(
+            name="test",
+            required_tools=["file_read", "file_write"],
+            file_access=["**/*"],
+        )
+        return PluginSandbox(manifest=manifest)
+
+    def test_protected_paths_includes_conversations(self):
+        """Paths inside ~/.merkaba/conversations/ must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        target = os.path.expanduser("~/.merkaba/conversations/session-abc.json")
+        assert sandbox.is_path_allowed(target) is False
+
+    def test_protected_paths_includes_backups(self):
+        """Paths inside ~/.merkaba/backups/ must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        target = os.path.expanduser("~/.merkaba/backups/2026-01-01.tar.gz")
+        assert sandbox.is_path_allowed(target) is False
+
+    def test_protected_paths_includes_memory_vectors(self):
+        """Paths inside ~/.merkaba/memory_vectors/ must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        target = os.path.expanduser("~/.merkaba/memory_vectors/chroma.sqlite3")
+        assert sandbox.is_path_allowed(target) is False
+
+    def test_path_traversal_blocked(self, tmp_path):
+        """A traversal like <tmp>/../../../.merkaba/config.json must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        # Construct a path that naively looks relative but resolves to the
+        # protected file after Path.resolve() canonicalises it.
+        traversal = os.path.expanduser("~/.merkaba/conversations/../config.json")
+        assert sandbox.is_path_allowed(traversal) is False
+
+    def test_path_traversal_into_conversations_blocked(self, tmp_path):
+        """Traversal that resolves into conversations/ must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        traversal = os.path.expanduser("~/.merkaba/backups/../conversations/leak.json")
+        assert sandbox.is_path_allowed(traversal) is False
+
+    def test_conversations_directory_itself_blocked(self):
+        """The conversations directory itself (not just its children) must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        target = os.path.expanduser("~/.merkaba/conversations")
+        assert sandbox.is_path_allowed(target) is False
+
+    def test_backups_directory_itself_blocked(self):
+        """The backups directory itself must be blocked."""
+        sandbox = self._sandbox_wildcard()
+        target = os.path.expanduser("~/.merkaba/backups")
+        assert sandbox.is_path_allowed(target) is False
+
+
 # --- Agent integration ---
 
 

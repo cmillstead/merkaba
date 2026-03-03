@@ -14,6 +14,25 @@ PROTECTED_PATHS = [
     "**/.merkaba/memory.db",
     "**/.merkaba/actions.db",
     "**/.merkaba/tasks.db",
+    "**/.merkaba/conversations/*",
+    "**/.merkaba/memory_vectors/*",
+    "**/.merkaba/backups/*",
+]
+
+# Resolved absolute paths for critical ~/.merkaba sub-directories.
+# Used as a defense-in-depth layer alongside the fnmatch check — path
+# traversal tricks that defeat fnmatch (e.g. symlinks, ``..`` segments)
+# are still caught here because we compare fully-resolved strings.
+_MERKABA_HOME = Path(os.path.expanduser("~/.merkaba")).resolve()
+_RESOLVED_PROTECTED_DIRS: list[str] = [
+    str(_MERKABA_HOME / "conversations"),
+    str(_MERKABA_HOME / "memory_vectors"),
+    str(_MERKABA_HOME / "backups"),
+    # Individual protected files (stored as their parent + full path)
+    str(_MERKABA_HOME / "config.json"),
+    str(_MERKABA_HOME / "memory.db"),
+    str(_MERKABA_HOME / "actions.db"),
+    str(_MERKABA_HOME / "tasks.db"),
 ]
 
 FILE_TOOLS = {"file_read", "file_write", "file_list"}
@@ -64,14 +83,35 @@ class PluginSandbox:
             )
 
     def is_path_allowed(self, path: str) -> bool:
-        """Return True if path passes both protected check and manifest allowlist."""
+        """Return True if path passes both protected check and manifest allowlist.
+
+        Protection is applied in two complementary layers:
+
+        1. **fnmatch check** against ``PROTECTED_PATHS`` glob patterns — fast
+           and covers the common cases.
+        2. **Resolved-path check** against ``_RESOLVED_PROTECTED_DIRS`` — a
+           defense-in-depth layer that catches path-traversal attempts (e.g.
+           ``../../.merkaba/config.json``) that might slip past fnmatch because
+           the pattern never sees the canonical absolute path.
+        """
         resolved = str(Path(os.path.expanduser(path)).resolve())
 
-        # Block protected paths regardless of manifest
+        # --- Layer 1: fnmatch against glob patterns ---
         for pattern in PROTECTED_PATHS:
             expanded = str(Path(os.path.expanduser(pattern)))
             if fnmatch(resolved, expanded):
                 return False
+
+        # --- Layer 2: resolved-path prefix / exact match ---
+        for protected in _RESOLVED_PROTECTED_DIRS:
+            # Directory entries: block anything inside the directory
+            if protected.endswith(("/conversations", "/memory_vectors", "/backups")):
+                if resolved.startswith(protected + os.sep) or resolved == protected:
+                    return False
+            else:
+                # Exact file match
+                if resolved == protected:
+                    return False
 
         # Check manifest allowlist
         if not self.manifest.file_access:
