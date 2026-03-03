@@ -393,6 +393,23 @@ class TestControlWorkerTrigger:
         assert runs[0]["status"] == "success"
         assert runs[0]["finished_at"] is not None
 
+    def test_trigger_updates_last_run(self, app_client):
+        """Triggering a worker should set last_run on the task."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        tq = app.state.task_queue
+        existing_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+        assert tq.get_task(existing_id)["last_run"] is None
+
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+
+        task = tq.get_task(existing_id)
+        assert task["last_run"] is not None
+
     def test_trigger_reuses_existing_task(self, app_client):
         """Triggering should reuse an existing task, not create a duplicate."""
         from unittest.mock import patch
@@ -441,6 +458,50 @@ class TestControlWorkerTrigger:
         assert len(runs) >= 1
         assert runs[0]["status"] == "failed"
         assert "boom" in (runs[0].get("error") or "")
+
+
+@pytest.mark.e2e
+class TestEnsureScheduledWorkers:
+    """Tests for ensure_scheduled_workers initialization."""
+
+    def test_creates_default_scheduled_tasks(self, app_client):
+        """ensure_scheduled_workers should create tasks for known workers."""
+        from merkaba.web.routes.control import ensure_scheduled_workers, WORKER_SCHEDULES
+
+        client, app = app_client
+        tq = app.state.task_queue
+        ensure_scheduled_workers(tq)
+
+        tasks = tq.list_tasks()
+        task_types = {t["task_type"] for t in tasks}
+        for worker_type in WORKER_SCHEDULES:
+            assert worker_type in task_types
+
+    def test_idempotent(self, app_client):
+        """Calling ensure_scheduled_workers twice should not create duplicates."""
+        from merkaba.web.routes.control import ensure_scheduled_workers
+
+        client, app = app_client
+        tq = app.state.task_queue
+        ensure_scheduled_workers(tq)
+        ensure_scheduled_workers(tq)
+
+        tasks = tq.list_tasks()
+        hc_tasks = [t for t in tasks if t["task_type"] == "health_check"]
+        assert len(hc_tasks) == 1
+
+    def test_scheduled_tasks_have_cron(self, app_client):
+        """Created tasks should have a cron schedule and next_run."""
+        from merkaba.web.routes.control import ensure_scheduled_workers
+
+        client, app = app_client
+        tq = app.state.task_queue
+        ensure_scheduled_workers(tq)
+
+        tasks = tq.list_tasks()
+        hc = next(t for t in tasks if t["task_type"] == "health_check")
+        assert hc["schedule"] is not None
+        assert hc["next_run"] is not None
 
 
 @pytest.mark.e2e

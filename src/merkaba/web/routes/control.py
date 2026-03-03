@@ -26,8 +26,33 @@ WORKER_DESCRIPTIONS = {
     "code": "Writes and reviews code using file and search tools",
     "review": "Reviews business decisions and suggests improvements",
     "memory_decay": "Reduces relevance scores on stale facts (daily 3am)",
-    "memory_consolidation": "Summarizes and archives old memories (weekly Sun 4am)",
+    "memory_consolidate": "Summarizes and archives old memories (weekly Sun 4am)",
 }
+
+# Default cron schedules for workers that should run automatically.
+# These are ensured to exist in the TaskQueue at web startup.
+WORKER_SCHEDULES = {
+    "health_check": "0 */6 * * *",       # every 6 hours
+    "memory_decay": "0 3 * * *",          # daily 3am
+    "memory_consolidate": "0 4 * * 0",    # weekly Sun 4am
+}
+
+
+def ensure_scheduled_workers(task_queue) -> None:
+    """Idempotently create tasks for workers that should run on a schedule."""
+    try:
+        existing_types = {t["task_type"] for t in task_queue.list_tasks()}
+    except Exception:
+        existing_types = set()
+
+    for task_type, cron in WORKER_SCHEDULES.items():
+        if task_type not in existing_types:
+            task_queue.add_task(
+                name=task_type,
+                task_type=task_type,
+                schedule=cron,
+            )
+            logger.info("Created scheduled task: %s (%s)", task_type, cron)
 
 
 class ModelChangeRequest(BaseModel):
@@ -145,7 +170,7 @@ def _build_state(conn: HTTPConnection) -> dict:
     # Workers from registry — enriched with TaskQueue data
     workers = []
     connections = []
-    scheduled_workers = {"health_check", "memory_decay", "memory_consolidation"}
+    scheduled_workers = set(WORKER_SCHEDULES.keys())
 
     # Build lookup of tasks by task_type for schedule/run info
     try:
@@ -393,6 +418,9 @@ async def trigger_worker(worker_id: str, request: Request):
         except Exception as e:
             logger.error("Manual trigger of %s failed: %s", worker_id, e)
             task_queue.finish_run(run_id, "failed", error=str(e))
+        finally:
+            from datetime import datetime
+            task_queue.update_task(task_id, last_run=datetime.now().isoformat())
 
     return StarletteJSONResponse(
         content={"worker_id": worker_id, "task_id": task_id, "run_id": run_id, "status": "running"},

@@ -126,6 +126,10 @@ def _make_lifespan(db_overrides: dict | None = None):
             from merkaba.orchestration.session_pool import SessionPool
             app.state.session_pool = SessionPool()
 
+            # Ensure default scheduled worker tasks exist
+            from merkaba.web.routes.control import ensure_scheduled_workers
+            ensure_scheduled_workers(app.state.task_queue)
+
             # Validate configuration
             try:
                 from merkaba.config.validation import validate_config, Severity
