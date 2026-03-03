@@ -182,10 +182,10 @@ class TestAllowedCommands:
         allowed, reason = is_allowed("which python")
         assert allowed is True, f"which should be allowed: {reason}"
 
-    def test_allows_env(self):
-        """env should be allowed."""
+    def test_blocks_env(self):
+        """env must be blocked — it is a generic launcher that defeats the allowlist (H3)."""
         allowed, reason = is_allowed("env")
-        assert allowed is True, f"env should be allowed: {reason}"
+        assert allowed is False, "env should be blocked as it bypasses the allowlist"
 
 
 class TestBlockedCommands:

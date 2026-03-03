@@ -6,11 +6,13 @@ import shlex
 import subprocess
 from merkaba.tools.base import Tool, PermissionTier
 
-# Allowlist of commands that can be executed
+# Allowlist of commands that can be executed.
+# NOTE: "env" was intentionally removed — it is a generic program launcher
+# (e.g. "env python3 -c ...") that would defeat the entire allowlist (H3).
 ALLOWED_COMMANDS = {
     "git", "pytest", "uv", "pip", "npm",
     "ls", "cat", "head", "tail", "wc", "grep", "find",
-    "mkdir", "cp", "mv", "echo", "pwd", "whoami", "date", "which", "env",
+    "mkdir", "cp", "mv", "echo", "pwd", "whoami", "date", "which",
 }
 
 # Commands that require subcommand validation
@@ -19,6 +21,22 @@ SUBCOMMAND_ALLOWLISTS = {
     "pip": {"install", "list", "show"},
     "npm": {"install", "test", "run", "list"},
 }
+
+# find flags that would allow arbitrary command execution or mass deletion (H2).
+# "-exec"/"-execdir" run an arbitrary command per match, bypassing pipe detection.
+# "-ok"/"-okdir" are interactive variants of -exec.
+# "-delete" can silently wipe large trees.
+_FIND_DANGEROUS_FLAGS = {"-exec", "-execdir", "-ok", "-okdir", "-delete"}
+
+# Paths that cp/mv must never read from or write to (H2).
+# Expanduser is called at module load time so the check is path-based, not
+# pattern-based, and is immune to tilde-expansion tricks.
+_FORBIDDEN_CP_MV_PATHS = [
+    os.path.expanduser("~/.merkaba"),
+    os.path.expanduser("~/.ssh"),
+    os.path.expanduser("~/.aws"),
+    os.path.expanduser("~/.gnupg"),
+]
 
 # Patterns that indicate access to sensitive files/locations
 FORBIDDEN_PATTERNS = [
@@ -178,6 +196,32 @@ def is_allowed(command: str) -> tuple[bool, str]:
 
         if subcommand not in allowed_subcommands:
             return False, f"Subcommand '{subcommand}' is not allowed for '{base_cmd}'. Allowed: {', '.join(sorted(allowed_subcommands))}"
+
+    # Block dangerous find flags that allow arbitrary command execution or mass deletion (H2).
+    if base_cmd == "find":
+        for arg in args:
+            if arg in _FIND_DANGEROUS_FLAGS:
+                return False, (
+                    f"find flag '{arg}' is not allowed — it enables arbitrary command "
+                    f"execution or mass deletion. Dangerous flags: "
+                    f"{', '.join(sorted(_FIND_DANGEROUS_FLAGS))}"
+                )
+
+    # Restrict cp/mv to prevent exfiltration of or tampering with sensitive data (H2).
+    if base_cmd in ("cp", "mv"):
+        for arg in args:
+            # Skip flags (e.g. -r, -f, --recursive)
+            if arg.startswith("-"):
+                continue
+            expanded = os.path.expanduser(arg)
+            # Resolve to absolute so that relative paths containing ~/ tokens are
+            # caught even if the tilde was not in the leading position.
+            for forbidden in _FORBIDDEN_CP_MV_PATHS:
+                if expanded == forbidden or expanded.startswith(forbidden + os.sep):
+                    return False, (
+                        f"Path '{arg}' is under a restricted directory "
+                        f"({forbidden}) and cannot be used with cp/mv"
+                    )
 
     return True, ""
 
