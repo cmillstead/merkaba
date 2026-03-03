@@ -190,6 +190,23 @@ async def change_model(body: ModelChangeRequest):
     return {"agent": body.agent, "model": body.model}
 
 
+@router.post("/worker/{worker_id}/trigger")
+async def trigger_worker(worker_id: str, request: Request):
+    """Manually trigger a worker by creating a pending task."""
+    from merkaba.orchestration.workers import WORKER_REGISTRY
+
+    if worker_id not in WORKER_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found")
+
+    task_queue = request.app.state.task_queue
+    task_id = task_queue.add_task(
+        name=f"Manual: {worker_id}",
+        task_type=worker_id,
+        payload={"triggered_by": "mission-control"},
+    )
+    return {"worker_id": worker_id, "task_id": task_id, "status": "queued"}
+
+
 @ws_router.websocket("/ws/control")
 async def websocket_control(websocket: WebSocket):
     """WebSocket endpoint for live Mission Control state updates.

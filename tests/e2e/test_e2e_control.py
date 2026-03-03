@@ -327,3 +327,53 @@ class TestControlWorkerDetails:
         assert research["schedule"] is None
         assert research["next_run"] is None
         assert research["run_history"] == []
+
+
+@pytest.mark.e2e
+class TestControlWorkerTrigger:
+    """Tests for POST /api/control/worker/{worker_id}/trigger endpoint."""
+
+    def test_trigger_worker(self, app_client):
+        """POST /api/control/worker/{id}/trigger creates a task and returns it."""
+        client, app = app_client
+        resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["worker_id"] == "health_check"
+        assert "task_id" in data
+        assert data["status"] == "queued"
+
+    def test_trigger_unknown_worker(self, app_client):
+        """Triggering a non-existent worker returns 404."""
+        client, app = app_client
+        resp = client.post("/api/control/worker/nonexistent/trigger")
+        assert resp.status_code == 404
+
+    def test_trigger_creates_task_in_queue(self, app_client):
+        """Triggering a worker should create a real task in TaskQueue."""
+        client, app = app_client
+        resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        # Verify the task exists in the queue
+        tq = app.state.task_queue
+        tasks = tq.list_tasks()
+        matching = [t for t in tasks if t["id"] == task_id]
+        assert len(matching) == 1
+        assert matching[0]["task_type"] == "health_check"
+        assert matching[0]["name"] == "Manual: health_check"
+
+    def test_trigger_payload_contains_source(self, app_client):
+        """Triggered task payload should identify mission-control as the source."""
+        client, app = app_client
+        resp = client.post("/api/control/worker/research/trigger")
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        tq = app.state.task_queue
+        task = tq.get_task(task_id)
+        assert task is not None
+        import json
+        payload = json.loads(task["payload"]) if isinstance(task["payload"], str) else task["payload"]
+        assert payload["triggered_by"] == "mission-control"
