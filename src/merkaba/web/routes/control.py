@@ -39,20 +39,38 @@ WORKER_SCHEDULES = {
 
 
 def ensure_scheduled_workers(task_queue) -> None:
-    """Idempotently create tasks for workers that should run on a schedule."""
+    """Idempotently ensure workers have tasks with their default cron schedules.
+
+    If a task exists for the type but has no schedule (e.g. leftover from a
+    manual trigger), it is updated with the default cron.
+    """
+    from croniter import croniter
+
     try:
-        existing_types = {t["task_type"] for t in task_queue.list_tasks()}
+        all_tasks = task_queue.list_tasks()
     except Exception:
-        existing_types = set()
+        all_tasks = []
+
+    existing_by_type: dict[str, dict] = {}
+    for t in all_tasks:
+        if t["task_type"] not in existing_by_type:
+            existing_by_type[t["task_type"]] = t
 
     for task_type, cron in WORKER_SCHEDULES.items():
-        if task_type not in existing_types:
+        existing = existing_by_type.get(task_type)
+        if existing is None:
             task_queue.add_task(
                 name=task_type,
                 task_type=task_type,
                 schedule=cron,
             )
             logger.info("Created scheduled task: %s (%s)", task_type, cron)
+        elif not existing.get("schedule"):
+            next_run = croniter(cron, datetime.now()).get_next(datetime).isoformat()
+            task_queue.update_task(
+                existing["id"], schedule=cron, next_run=next_run,
+            )
+            logger.info("Updated task %s with schedule: %s", task_type, cron)
 
 
 class ModelChangeRequest(BaseModel):

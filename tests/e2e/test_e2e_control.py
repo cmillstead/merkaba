@@ -503,6 +503,22 @@ class TestEnsureScheduledWorkers:
         assert hc["schedule"] is not None
         assert hc["next_run"] is not None
 
+    def test_upgrades_unscheduled_task(self, app_client):
+        """A task with no schedule should get the default cron applied."""
+        from merkaba.web.routes.control import ensure_scheduled_workers, WORKER_SCHEDULES
+
+        client, app = app_client
+        tq = app.state.task_queue
+        # Simulate a zombie task from a manual trigger (no schedule)
+        task_id = tq.add_task("Manual: health_check", "health_check")
+        assert tq.get_task(task_id)["schedule"] is None
+
+        ensure_scheduled_workers(tq)
+
+        task = tq.get_task(task_id)
+        assert task["schedule"] == WORKER_SCHEDULES["health_check"]
+        assert task["next_run"] is not None
+
 
 @pytest.mark.e2e
 class TestControlKanban:
