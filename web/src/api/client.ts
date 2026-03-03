@@ -50,7 +50,14 @@ export const getRecentRuns = (limit = 10) => request<{ runs: TaskRun[] }>(`/api/
 
 // Approvals
 export const getApprovals = (status = 'pending') => request<{ approvals: Approval[] }>(`/api/approvals?status=${status}`);
-export const approveAction = (id: number) => request<{ id: number; status: string }>(`/api/approvals/${id}/approve`, { method: 'POST' });
+export function approveAction(id: number, totpCode?: string): Promise<{ id: number; status: string }> {
+  const body: Record<string, unknown> = {}
+  if (totpCode) body.totp_code = totpCode
+  return request<{ id: number; status: string }>(`/api/approvals/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
 export const denyAction = (id: number, reason?: string) => request<{ id: number; status: string }>(`/api/approvals/${id}/deny`, { method: 'POST', body: JSON.stringify({ reason }) });
 export const getApprovalStats = () => request<{ stats: Record<string, number> }>('/api/approvals/stats');
 
