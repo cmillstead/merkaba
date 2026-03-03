@@ -660,3 +660,41 @@ def test_business_config_put_sanitizes_injection(app_client, tmp_path):
     assert "disregard all previous instructions" not in user_content.lower()
     assert "you are now" not in user_content.lower()
     assert "[redacted]" in user_content
+
+
+# ---------------------------------------------------------------------------
+# 18. No API key configured logs a startup warning (H15)
+# ---------------------------------------------------------------------------
+
+def test_no_api_key_logs_startup_warning(tmp_path, caplog):
+    """create_app() with no API key set emits a WARNING at lifespan startup.
+
+    Verifies finding H15: when no api_key is configured the web server is
+    wide-open to anyone on the network.  A clear warning must be logged so
+    operators are not surprised by the insecure default.
+    """
+    import logging
+    from fastapi.testclient import TestClient
+
+    memory_db = str(tmp_path / "memory.db")
+    tasks_db = str(tmp_path / "tasks.db")
+    actions_db = str(tmp_path / "actions.db")
+
+    overrides = {
+        "memory_store": _make_store(MemoryStore, memory_db),
+        "task_queue": _make_store(TaskQueue, tasks_db),
+        "action_queue": _make_store(ActionQueue, actions_db),
+    }
+
+    app = create_app(db_overrides=overrides)
+
+    with caplog.at_level(logging.WARNING, logger="merkaba.web.app"):
+        with TestClient(app) as _client:
+            pass  # lifespan runs during context-manager entry
+
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "without authentication" in msg for msg in warning_messages
+    ), (
+        f"Expected a 'without authentication' warning in startup logs; got: {warning_messages}"
+    )
