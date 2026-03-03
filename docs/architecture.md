@@ -239,6 +239,17 @@ All data lives in `~/.merkaba/`:
 11. **Plugin Sandboxing** — isolated execution for untrusted plugins
 12. **Conversation Encryption** — optional Fernet encryption for stored conversations
 13. **TOTP 2FA** — optional two-factor authentication for sensitive approvals
+14. **File Permission Enforcement** — SQLite databases and their parent directories receive restrictive OS permissions on creation (`ensure_secure_permissions` in `security/file_permissions.py`)
+
+### Data at Rest
+
+SQLite databases (`memory.db`, `actions.db`, `tasks.db`) are not encrypted at the application level. Protection for data at rest relies on three complementary controls:
+
+1. **File permissions** — `ensure_secure_permissions()` is called after every database directory and file is created. Directories receive mode `0o700` (owner read/write/execute only); database files receive mode `0o600` (owner read/write only). This prevents other local users from reading or modifying the databases. The function is a no-op on Windows, where NTFS ACLs provide equivalent isolation.
+
+2. **Full-disk encryption (recommended)** — FileVault (macOS), BitLocker (Windows), or LUKS (Linux) encrypts the underlying storage volume. If the device is lost or stolen and the user is not logged in, the databases cannot be read even if file permissions are bypassed (e.g., by booting from external media). Full-disk encryption is the primary defense against physical access attacks and is strongly recommended.
+
+3. **Conversation encryption** — Stored conversation logs can be encrypted with Fernet symmetric encryption via `merkaba security enable-encryption`. This adds per-record application-layer encryption on top of the OS-level controls above. See `security/encryption.py`.
 
 ## Session Management
 
