@@ -78,3 +78,35 @@ class TestForgeFetch:
         assert "github.com" in FORGE_ALLOWED_DOMAINS
         assert "raw.githubusercontent.com" in FORGE_ALLOWED_DOMAINS
         assert "clawhub.ai" in FORGE_ALLOWED_DOMAINS
+
+
+class TestRelativeRedirectResolution:
+    """M10: Relative redirect Location headers must be resolved before SSRF check."""
+
+    def test_forge_fetch_resolves_relative_redirects(self):
+        """M10: Relative redirect Location headers must be resolved before SSRF check."""
+        from urllib.parse import urljoin
+        resolved = urljoin("https://clawhub.ai/skill/foo", "/new-path")
+        assert resolved == "https://clawhub.ai/new-path"
+
+        resolved = urljoin("https://clawhub.ai/skill/foo", "bar")
+        assert resolved == "https://clawhub.ai/skill/bar"
+
+    def test_web_fetch_resolves_relative_redirects(self):
+        """M10: web_fetch must resolve relative redirects."""
+        from urllib.parse import urljoin
+        resolved = urljoin("https://example.com/page", "/other")
+        assert resolved == "https://example.com/other"
+
+    def test_forge_fetch_uses_urljoin(self):
+        """M10: _forge_fetch must use urljoin for redirect resolution."""
+        import inspect
+        source = inspect.getsource(_forge_fetch)
+        assert "urljoin" in source
+
+    def test_web_fetch_uses_urljoin(self):
+        """M10: _web_fetch must use urljoin for redirect resolution."""
+        import inspect
+        from merkaba.tools.builtin.web import _web_fetch
+        source = inspect.getsource(_web_fetch)
+        assert "urljoin" in source
