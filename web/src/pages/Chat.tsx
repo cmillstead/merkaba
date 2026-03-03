@@ -33,6 +33,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<DisplayMsg[]>(loadStoredMessages)
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{ path: string; name: string } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -72,8 +73,8 @@ export default function Chat() {
   useEffect(() => {
     const ws = connectChat({
       onMessage: handleChatMessage,
-      onConnect: () => setConnected(true),
-      onDisconnect: () => setConnected(false),
+      onConnect: () => { setConnected(true); setReconnecting(false) },
+      onDisconnect: () => { setConnected(false); setReconnecting(true) },
     })
     wsRef.current = ws
     return () => { ws.close() }
@@ -127,8 +128,8 @@ export default function Chat() {
     if (wsRef.current) wsRef.current.close()
     const ws = connectChat({
       onMessage: handleChatMessage,
-      onConnect: () => setConnected(true),
-      onDisconnect: () => setConnected(false),
+      onConnect: () => { setConnected(true); setReconnecting(false) },
+      onDisconnect: () => { setConnected(false); setReconnecting(true) },
     })
     wsRef.current = ws
   }
@@ -217,6 +218,11 @@ export default function Chat() {
         </div>
       )}
 
+      {reconnecting && (
+        <div style={{background: '#b91c1c', color: 'white', textAlign: 'center', padding: '0.5rem', fontSize: '0.875rem'}}>
+          Reconnecting to server...
+        </div>
+      )}
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="empty">Send a message to start a conversation</div>
