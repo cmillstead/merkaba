@@ -1669,6 +1669,124 @@ input:focus, textarea:focus {
 }
 
 /* ========================================
+   Dashboard View
+   ======================================== */
+
+.dashboard-view {
+  padding: 8px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 0 20px;
+}
+
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.kpi-attention {
+  color: var(--yellow);
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.dashboard-panels {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  padding: 0 20px;
+}
+
+.dashboard-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.dashboard-panel h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.agent-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-row:last-child {
+  border-bottom: none;
+}
+
+.agent-row-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.agent-row-meta {
+  display: flex;
+  gap: 6px;
+}
+
+.agent-row-task {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.activity-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.activity-time {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.empty-state {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ========================================
    Error Boundary
    ======================================== */
 
