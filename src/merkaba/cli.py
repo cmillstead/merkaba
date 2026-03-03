@@ -1858,6 +1858,106 @@ def backup_restore(
         raise typer.Exit(1)
 
 
+# --- Data Command Group ---
+
+data_app = typer.Typer(help="Data management (export, delete)")
+app.add_typer(data_app, name="data")
+
+
+@data_app.command("export")
+def data_export(
+    output: str = typer.Option(..., "--output", "-o", help="Output JSON file path"),
+    business_id: int = typer.Option(None, "--business-id", "-b", help="Filter to a specific business"),
+):
+    """Export memory data (facts, decisions, learnings, episodes, relationships) to JSON."""
+    from merkaba.memory.store import MemoryStore
+
+    store = MemoryStore()
+    try:
+        if business_id is not None:
+            biz = store.get_business(business_id)
+            if not biz:
+                console.print(f"[red]Business {business_id} not found[/red]")
+                raise typer.Exit(1)
+            facts = store.get_facts(business_id, include_archived=True)
+            decisions = store.get_decisions(business_id, include_archived=True)
+            relationships = store.get_relationships(business_id)
+            episodes = store.get_episodes(business_id=business_id, limit=100_000)
+            learnings = [
+                l for l in store.get_learnings(include_archived=True)
+                if l.get("source_business_id") == business_id
+            ]
+        else:
+            # Export all data across all businesses
+            businesses = store.list_businesses()
+            facts: list = []
+            decisions: list = []
+            relationships: list = []
+            episodes: list = []
+            for biz in businesses:
+                biz_id = biz["id"]
+                facts.extend(store.get_facts(biz_id, include_archived=True))
+                decisions.extend(store.get_decisions(biz_id, include_archived=True))
+                relationships.extend(store.get_relationships(biz_id))
+                episodes.extend(store.get_episodes(business_id=biz_id, limit=100_000))
+            learnings = store.get_learnings(include_archived=True)
+    finally:
+        store.close()
+
+    exported_at = datetime.utcnow().isoformat() + "Z"
+    payload = {
+        "exported_at": exported_at,
+        "business_id": business_id,
+        "facts": facts,
+        "decisions": decisions,
+        "learnings": learnings,
+        "episodes": episodes,
+        "relationships": relationships,
+    }
+
+    with open(output, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+    console.print(
+        f"[green]Exported[/green] "
+        f"{len(facts)} facts, {len(decisions)} decisions, "
+        f"{len(learnings)} learnings, {len(episodes)} episodes, "
+        f"{len(relationships)} relationships "
+        f"to [bold]{output}[/bold]"
+    )
+
+
+@data_app.command("delete-all")
+def data_delete_all(
+    business_id: int = typer.Option(..., "--business-id", "-b", help="Business ID whose data to delete"),
+    confirm: bool = typer.Option(False, "--confirm", help="Skip interactive confirmation prompt"),
+):
+    """Permanently delete all data for a business (facts, decisions, episodes, etc.)."""
+    from merkaba.memory.store import MemoryStore
+
+    if not confirm:
+        confirmed = typer.confirm(
+            f"This will permanently delete all data for business {business_id}. Continue?"
+        )
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit(0)
+
+    store = MemoryStore()
+    try:
+        biz = store.get_business(business_id)
+        if not biz:
+            console.print(f"[red]Business {business_id} not found[/red]")
+            raise typer.Exit(1)
+        counts = store.hard_delete_business(business_id, cascade=True)
+    finally:
+        store.close()
+
+    console.print(f"[green]Deleted all data for business {business_id}:[/green]")
+    for table, count in counts.items():
+        console.print(f"  {table}: {count} row(s) deleted")
+
+
 # --- Code agent commands ---
 
 code_app = typer.Typer(help="Coding agent commands")
@@ -2312,6 +2412,58 @@ def security_scan(
         console.print(table)
 
     raise typer.Exit(1)
+
+
+@security_app.command("migrate-keys")
+def security_migrate_keys():
+    """Migrate API keys from config.json to the OS keychain."""
+    try:
+        import keyring as _keyring
+    except ImportError:
+        console.print("[red]Error:[/red] keyring package is not installed.")
+        console.print("Install it with: pip install keyring")
+        raise typer.Exit(1)
+
+    config_path = os.path.expanduser("~/.merkaba/config.json")
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        console.print("[dim]No config.json found at ~/.merkaba/config.json[/dim]")
+        return
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] Could not parse config.json: {exc}")
+        raise typer.Exit(1)
+
+    cloud_providers = config.get("cloud_providers", {})
+    if not cloud_providers:
+        console.print("[dim]No cloud_providers section in config.json.[/dim]")
+        return
+
+    migrated = []
+    for name, provider_cfg in cloud_providers.items():
+        key = provider_cfg.get("api_key")
+        if not key:
+            continue
+
+        _keyring.set_password("merkaba", f"{name}_api_key", key)
+        console.print(f"[green]Stored[/green] {name} API key in keychain.")
+        migrated.append(name)
+
+    if not migrated:
+        console.print("[dim]No API keys found in config.json to migrate.[/dim]")
+        return
+
+    remove = typer.confirm("Remove keys from config.json?", default=False)
+    if remove:
+        for name in migrated:
+            config["cloud_providers"][name].pop("api_key", None)
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        console.print("[green]API keys removed from config.json.[/green]")
+    else:
+        console.print("[dim]Keys left in config.json. Run 'merkaba security migrate-keys' again to remove them later.[/dim]")
 
 
 # -- Pair commands --

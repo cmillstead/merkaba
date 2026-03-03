@@ -28,12 +28,33 @@ def _load_cloud_config(config_path: str = CONFIG_PATH) -> dict[str, dict[str, st
 
 
 def _get_api_key(provider_name: str, provider_config: dict[str, str]) -> str | None:
-    """Get API key from config or environment variable."""
-    key = provider_config.get("api_key")
+    """Get API key with resolution order: keychain → env var → config.json (deprecated)."""
+    # 1. Try OS keychain first (most secure)
+    try:
+        import keyring as _keyring
+        key = _keyring.get_password("merkaba", f"{provider_name}_api_key")
+        if key:
+            return key
+    except ImportError:
+        pass
+
+    # 2. Try environment variable
+    env_var = f"{provider_name.upper()}_API_KEY"
+    key = os.environ.get(env_var)
     if key:
         return key
-    env_var = f"{provider_name.upper()}_API_KEY"
-    return os.environ.get(env_var)
+
+    # 3. Fall back to config.json (deprecated — warn user)
+    key = provider_config.get("api_key")
+    if key:
+        logger.warning(
+            "API key for %s found in config.json — consider running "
+            "'merkaba security migrate-keys' to move to keychain",
+            provider_name,
+        )
+        return key
+
+    return None
 
 
 def _get_provider(prefix: str, config_path: str = CONFIG_PATH) -> LLMProvider | None:
