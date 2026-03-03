@@ -811,3 +811,84 @@ def test_no_api_key_logs_startup_warning(tmp_path, caplog):
     ), (
         f"Expected a 'without authentication' warning in startup logs; got: {warning_messages}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 19. GET /api/system/config
+# ---------------------------------------------------------------------------
+
+def test_web_get_config(app_client):
+    """GET /api/system/config returns config with masked API key."""
+    client, app = app_client
+    merkaba_dir = app.state.merkaba_base_dir
+    config = {
+        "models": {"complex": "qwen3.5:122b", "simple": "qwen3:8b", "classifier": "qwen3:4b"},
+        "auto_approve_level": "MODERATE",
+        "api_key": "secret-key-123",
+    }
+    with open(os.path.join(merkaba_dir, "config.json"), "w") as f:
+        json.dump(config, f)
+
+    resp = client.get("/api/system/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["api_key"] != "secret-key-123"
+    assert "***" in data["api_key"]
+    assert data["models"]["complex"] == "qwen3.5:122b"
+
+
+def test_web_get_config_no_file(app_client):
+    """GET /api/system/config returns empty dict when no config exists."""
+    client, _ = app_client
+    resp = client.get("/api/system/config")
+    assert resp.status_code == 200
+    assert resp.json() == {} or isinstance(resp.json(), dict)
+
+
+# ---------------------------------------------------------------------------
+# 20. PUT /api/system/config
+# ---------------------------------------------------------------------------
+
+def test_web_put_config(app_client):
+    """PUT /api/system/config updates config on disk."""
+    client, app = app_client
+    merkaba_dir = app.state.merkaba_base_dir
+    config = {"models": {"complex": "qwen3.5:122b", "simple": "qwen3:8b"}}
+    with open(os.path.join(merkaba_dir, "config.json"), "w") as f:
+        json.dump(config, f)
+
+    resp = client.put("/api/system/config", json={
+        "models": {"complex": "llama3:70b", "simple": "qwen3:8b"}
+    })
+    assert resp.status_code == 200
+
+    with open(os.path.join(merkaba_dir, "config.json")) as f:
+        saved = json.load(f)
+    assert saved["models"]["complex"] == "llama3:70b"
+
+
+def test_web_put_config_rejects_invalid(app_client):
+    """PUT /api/system/config rejects invalid models field."""
+    client, app = app_client
+    merkaba_dir = app.state.merkaba_base_dir
+    with open(os.path.join(merkaba_dir, "config.json"), "w") as f:
+        json.dump({}, f)
+
+    resp = client.put("/api/system/config", json={"models": "not-a-dict"})
+    assert resp.status_code == 422
+
+
+def test_web_put_config_ignores_api_key(app_client):
+    """PUT /api/system/config cannot set api_key."""
+    client, app = app_client
+    merkaba_dir = app.state.merkaba_base_dir
+    config = {"api_key": "original-key"}
+    with open(os.path.join(merkaba_dir, "config.json"), "w") as f:
+        json.dump(config, f)
+
+    resp = client.put("/api/system/config", json={"api_key": "hacked"})
+    assert resp.status_code == 200
+
+    with open(os.path.join(merkaba_dir, "config.json")) as f:
+        saved = json.load(f)
+    assert saved["api_key"] == "original-key"

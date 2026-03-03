@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -123,3 +124,77 @@ async def list_models():
             status_code=503,
             content={"models": [], "error": "Unable to connect to model provider"},
         )
+
+
+def _config_path(request: Request) -> str:
+    """Resolve the config.json path from app state or default."""
+    base_dir = getattr(request.app.state, "merkaba_base_dir", None)
+    if base_dir is None:
+        base_dir = os.path.expanduser("~/.merkaba")
+    return os.path.join(base_dir, "config.json")
+
+
+def _mask_api_key(config: dict) -> dict:
+    """Return a copy of config with the api_key field masked."""
+    result = dict(config)
+    key = result.get("api_key")
+    if key is not None:
+        if len(key) > 8:
+            result["api_key"] = key[:4] + "***" + key[-4:]
+        else:
+            result["api_key"] = "***"
+    return result
+
+
+@router.get("/config")
+async def get_config(request: Request):
+    """Read config from disk, masking sensitive fields."""
+    path = _config_path(request)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return _mask_api_key(config)
+
+
+@router.put("/config")
+async def put_config(request: Request):
+    """Update config on disk. Merges dict-valued keys; skips api_key."""
+    body = await request.json()
+
+    # Validate: if "models" is present, it must be a dict
+    if "models" in body and not isinstance(body["models"], dict):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "'models' must be a JSON object"},
+        )
+
+    path = _config_path(request)
+
+    # Read existing config
+    existing: dict = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+    # Merge: dict-valued keys get update(), others get replaced; skip api_key
+    for key, value in body.items():
+        if key == "api_key":
+            continue
+        if isinstance(value, dict) and isinstance(existing.get(key), dict):
+            existing[key].update(value)
+        else:
+            existing[key] = value
+
+    # Write back
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2)
+
+    return _mask_api_key(existing)
