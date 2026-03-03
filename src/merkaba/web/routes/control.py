@@ -425,20 +425,24 @@ async def trigger_worker(worker_id: str, request: Request):
     task = task_queue.get_task(task_id)
     run_id = task_queue.start_run(task_id)
 
+    db_path = task_queue.db_path
+
     def _execute_worker():
+        from merkaba.orchestration.queue import TaskQueue
+        tq = TaskQueue(db_path=db_path)
         worker_cls = WORKER_REGISTRY[worker_id]
         worker = worker_cls()
         try:
             result = worker.execute(task)
-            task_queue.finish_run(
+            tq.finish_run(
                 run_id, "success", result=result.output if result else None,
             )
         except Exception as e:
             logger.error("Manual trigger of %s failed: %s", worker_id, e)
-            task_queue.finish_run(run_id, "failed", error=str(e))
+            tq.finish_run(run_id, "failed", error=str(e))
         finally:
-            from datetime import datetime
-            task_queue.update_task(task_id, last_run=datetime.now().isoformat())
+            tq.update_task(task_id, last_run=datetime.now().isoformat())
+            tq.close()
 
     return StarletteJSONResponse(
         content={"worker_id": worker_id, "task_id": task_id, "run_id": run_id, "status": "running"},
