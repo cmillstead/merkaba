@@ -79,7 +79,11 @@ class Agent:
             if encryptor is not None:
                 self.memory.encryptor = encryptor
         except Exception as e:
-            logger.debug("Encryption key not available: %s", e)
+            logger.warning(
+                "Conversation encryption unavailable: %s. "
+                "Conversations will be stored in plaintext.",
+                e,
+            )
 
         self.permission_manager = PermissionManager()
         self.input_classifier = InputClassifier()

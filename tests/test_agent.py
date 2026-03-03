@@ -213,3 +213,16 @@ def test_agent_encryption_exception_is_non_fatal(temp_memory_dir):
         agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
 
     assert agent.memory is not None
+
+
+def test_agent_warns_on_encryption_failure(temp_memory_dir, caplog):
+    """H17: Agent must warn when conversation encryption fails to initialize."""
+    import logging
+    caplog.set_level(logging.WARNING)
+    with patch("merkaba.security.encryption.ConversationEncryptor.from_keychain",
+               side_effect=Exception("keychain error")):
+        agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
+    assert any(
+        "encryption unavailable" in r.message.lower() or "plaintext" in r.message.lower()
+        for r in caplog.records
+    )
