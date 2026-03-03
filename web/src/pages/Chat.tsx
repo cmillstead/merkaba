@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Send, Paperclip, History, Plus } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { connectChat } from '../api/client'
 import type { ChatMessage, ChatConnection } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 interface DisplayMsg {
   role: 'user' | 'assistant' | 'thinking'
@@ -16,8 +19,18 @@ interface Session {
   preview: string
 }
 
+function loadStoredMessages(): DisplayMsg[] {
+  try {
+    const stored = sessionStorage.getItem('chat-messages')
+    if (stored) return JSON.parse(stored) as DisplayMsg[]
+  } catch {
+    // ignore parse errors
+  }
+  return []
+}
+
 export default function Chat() {
-  const [messages, setMessages] = useState<DisplayMsg[]>([])
+  const [messages, setMessages] = useState<DisplayMsg[]>(loadStoredMessages)
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{ path: string; name: string } | null>(null)
@@ -28,6 +41,7 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const { showToast } = useToast()
 
   function handleChatMessage(msg: ChatMessage) {
     if (msg.type === 'thinking') {
@@ -60,12 +74,18 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    sessionStorage.setItem('chat-messages', JSON.stringify(messages))
+  }, [messages])
+
   async function loadSessions() {
     try {
       const resp = await fetch('/api/chat/sessions')
       const data = await resp.json()
       setSessions(data.sessions)
-    } catch { /* ignore */ }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+    }
   }
 
   async function loadSession(id: string) {
@@ -80,7 +100,9 @@ export default function Chat() {
         }))
       setMessages(loaded)
       setShowHistory(false)
-    } catch { /* ignore */ }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+    }
   }
 
   function toggleHistory() {
@@ -113,8 +135,9 @@ export default function Chat() {
       if (!resp.ok) throw new Error('Upload failed')
       const data = await resp.json()
       setAttachedFile({ path: data.path, name: file.name })
-    } catch { /* ignore */ }
-    finally {
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+    } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
     }
@@ -190,13 +213,17 @@ export default function Chat() {
           <div className="empty">Send a message to start a conversation</div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`chat-msg ${m.role}`}>
+          <div key={i} className={`chat-msg ${m.role} ${m.role === 'assistant' ? 'chat-message-assistant' : ''}`}>
             {m.attachment && (
               <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>
                 Attached: {m.attachment}
               </div>
             )}
-            {m.content}
+            {m.role === 'assistant' ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+            ) : (
+              m.content
+            )}
           </div>
         ))}
         <div ref={bottomRef} />
@@ -236,6 +263,7 @@ export default function Chat() {
           placeholder={connected ? 'Message Merkaba...' : 'Connecting...'}
           disabled={!connected}
           rows={1}
+          aria-label="Chat message"
         />
         <button className="btn btn-primary" onClick={send} disabled={!connected}>
           <Send size={16} />

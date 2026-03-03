@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { getBusinesses } from '../api/client'
 import type { Business } from '../api/client'
+import { useToast } from './ToastContext'
 
 interface BusinessContextType {
   businesses: Business[]
@@ -25,11 +26,12 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('merkaba_business')
     return stored ? Number(stored) : null
   })
+  const { showToast } = useToast()
 
   useEffect(() => {
     getBusinesses()
       .then(d => setBusinesses(d.businesses))
-      .catch(() => {})
+      .catch(err => showToast(err.message || 'An error occurred', 'error'))
       .finally(() => setLoading(false))
   }, [])
 
