@@ -101,10 +101,56 @@ const initialState: ControlState = {
   diagnostics: null,
 }
 
+// Shallow equality check for SystemState — avoids re-render when heartbeat
+// delivers identical system stats (the most frequent update path).
+function systemEqual(a: SystemState, b: SystemState): boolean {
+  return (
+    a.status === b.status &&
+    a.memory_facts === b.memory_facts &&
+    a.pending_approvals === b.pending_approvals &&
+    a.active_tasks === b.active_tasks
+  )
+}
+
+// JSON.stringify comparison for arrays/objects where deep equality matters.
+// Used on agents/workers/connections which change infrequently.
+function jsonEqual<T>(a: T, b: T): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+// Returns the incoming snapshot if it differs meaningfully from current state,
+// otherwise returns the current state reference — preventing unnecessary re-renders
+// when the backend sends the same data on every heartbeat.
+//
+// NOTE: Components that consume useControlSocket output should be wrapped in
+// React.memo to further prevent re-renders from parent updates. Example:
+//   export default React.memo(ConstellationMap)
+//   export default React.memo(HarnessView)
+function deduplicateSnapshot(current: ControlState, next: ControlState): ControlState {
+  const sameSystem = systemEqual(current.system, next.system)
+  const sameAgents = jsonEqual(current.agents, next.agents)
+  const sameWorkers = jsonEqual(current.workers, next.workers)
+  const sameConnections = jsonEqual(current.connections, next.connections)
+  const sameDiagnostics = jsonEqual(current.diagnostics, next.diagnostics)
+
+  if (sameSystem && sameAgents && sameWorkers && sameConnections && sameDiagnostics) {
+    return current // Same reference → React skips re-render
+  }
+
+  // Return partial new object reusing unchanged slice references
+  return {
+    system: sameSystem ? current.system : next.system,
+    agents: sameAgents ? current.agents : next.agents,
+    workers: sameWorkers ? current.workers : next.workers,
+    connections: sameConnections ? current.connections : next.connections,
+    diagnostics: sameDiagnostics ? current.diagnostics : next.diagnostics,
+  }
+}
+
 function controlReducer(state: ControlState, action: Action): ControlState {
   switch (action.type) {
     case 'STATE_SNAPSHOT':
-      return action.payload
+      return deduplicateSnapshot(state, action.payload)
     case 'TOOL_INVOKED':
       return state // Visual flash handled by component, not state
     case 'WORKER_STARTED':

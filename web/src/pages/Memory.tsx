@@ -23,19 +23,31 @@ export default function Memory() {
   const [learnings, setLearnings] = useState<Learning[]>([])
   const [mode, setMode] = useState<'search' | 'browse'>('search')
   const [searched, setSearched] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [browseLoading, setBrowseLoading] = useState(false)
 
   async function doSearch() {
     if (!query.trim()) return
+    setSearchLoading(true)
     setSearched(true)
-    const data = await searchMemory(query.trim())
-    setResults(data.results)
+    try {
+      const data = await searchMemory(query.trim())
+      setResults(data.results)
+    } finally {
+      setSearchLoading(false)
+    }
   }
 
   async function loadBrowse() {
     setMode('browse')
-    const [f, l] = await Promise.all([getFacts(), getLearnings()])
-    setFacts(f.facts)
-    setLearnings(l.learnings)
+    setBrowseLoading(true)
+    try {
+      const [f, l] = await Promise.all([getFacts(), getLearnings()])
+      setFacts(f.facts)
+      setLearnings(l.learnings)
+    } finally {
+      setBrowseLoading(false)
+    }
   }
 
   return (
@@ -71,13 +83,14 @@ export default function Memory() {
             </button>
           </div>
 
-          {!searched && results.length === 0 && (
+          {searchLoading && <div className="empty">Loading...</div>}
+          {!searchLoading && !searched && results.length === 0 && (
             <div className="empty">Enter a query to search Merkaba's memory</div>
           )}
-          {searched && results.length === 0 && (
+          {!searchLoading && searched && results.length === 0 && (
             <div className="empty">No results found</div>
           )}
-          {results.map((r, i) => (
+          {!searchLoading && results.map((r, i) => (
             <div className="memory-card" key={i}>
               <div className="type-label" style={{ color: typeColor(r.type) }}>
                 {r.type}
@@ -113,7 +126,8 @@ export default function Memory() {
 
       {mode === 'browse' && (
         <>
-          {facts.length > 0 && (
+          {browseLoading && <div className="empty">Loading...</div>}
+          {!browseLoading && facts.length > 0 && (
             <>
               <h2 style={{ fontSize: 16, margin: '16px 0 8px' }}>Facts ({facts.length})</h2>
               {facts.slice(0, 50).map(f => (
@@ -126,7 +140,7 @@ export default function Memory() {
               ))}
             </>
           )}
-          {learnings.length > 0 && (
+          {!browseLoading && learnings.length > 0 && (
             <>
               <h2 style={{ fontSize: 16, margin: '16px 0 8px' }}>Learnings ({learnings.length})</h2>
               {learnings.map(l => (
@@ -142,7 +156,7 @@ export default function Memory() {
               ))}
             </>
           )}
-          {facts.length === 0 && learnings.length === 0 && (
+          {!browseLoading && facts.length === 0 && learnings.length === 0 && (
             <div className="empty">No memory entries yet</div>
           )}
         </>
