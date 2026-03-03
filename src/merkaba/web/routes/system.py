@@ -2,6 +2,7 @@ import os
 
 import httpx
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from starlette.routing import Mount
 
 router = APIRouter(tags=["system"])
@@ -68,7 +69,10 @@ async def diagnostics_state(request: Request):
     """Current diagnostics snapshot — ring buffer contents, active connections, summary."""
     store = getattr(request.app.state, "diagnostics_store", None)
     if store is None:
-        return {"error": "Diagnostics store not initialized"}
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Diagnostics store not initialized"},
+        )
     return store.to_dict()
 
 
@@ -81,14 +85,20 @@ async def token_usage(
     try:
         from merkaba.observability.tokens import TokenUsageStore
     except ImportError as e:
-        return {"usage": [], "error": f"TokenUsageStore not available: {e}"}
+        return JSONResponse(
+            status_code=503,
+            content={"usage": [], "error": f"TokenUsageStore not available: {e}"},
+        )
     store = None
     try:
         store = TokenUsageStore()
         usage = store.get_summary(group_by=group_by, days=days)
         return {"usage": usage}
     except Exception as e:
-        return {"usage": [], "error": str(e)}
+        return JSONResponse(
+            status_code=500,
+            content={"usage": [], "error": str(e)},
+        )
     finally:
         if store is not None:
             store.close()
@@ -104,4 +114,7 @@ async def list_models():
             data = resp.json()
             return {"models": data.get("models", [])}
     except Exception as e:
-        return {"models": [], "error": str(e)}
+        return JSONResponse(
+            status_code=503,
+            content={"models": [], "error": str(e)},
+        )
