@@ -33,50 +33,71 @@ a:hover { color: var(--accent-hover); }
 
 /* Sidebar */
 .sidebar {
-  width: 220px;
+  width: 230px;
   background: var(--bg-card);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 16px 0;
+  padding: 20px 0;
   flex-shrink: 0;
 }
 
 .sidebar-brand {
-  padding: 0 20px 20px;
-  font-size: 18px;
+  padding: 0 20px 24px;
+  font-size: 17px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  letter-spacing: 0.02em;
+}
+
+.sidebar-brand svg {
+  flex-shrink: 0;
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 0 10px;
 }
 
 .sidebar nav a {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 20px;
+  padding: 9px 12px;
   color: var(--text-dim);
-  transition: all 0.15s;
-  font-size: 14px;
+  transition: all 0.2s ease;
+  font-size: 13.5px;
+  font-weight: 500;
+  border-radius: 8px;
+  position: relative;
 }
 
-.sidebar nav a:hover,
-.sidebar nav a.active {
+.sidebar nav a svg {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar nav a:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
 
+.sidebar nav a:hover svg {
+  opacity: 0.8;
+}
+
 .sidebar nav a.active {
-  border-right: 2px solid var(--accent);
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.15), rgba(108, 99, 255, 0.08));
   color: var(--accent);
+}
+
+.sidebar nav a.active svg {
+  opacity: 1;
 }
 
 /* Main content */
@@ -882,6 +903,145 @@ input:focus, textarea:focus {
   color: #6c63ff;
 }
 
+/* Worker Detail View */
+.worker-detail-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.worker-detail-content {
+  max-width: 520px;
+  width: 100%;
+  margin-top: 48px;
+}
+
+.worker-detail-name {
+  color: #00f0ff;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.worker-detail-description {
+  color: #a0a0b8;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.worker-detail-section {
+  margin-bottom: 28px;
+}
+
+.worker-detail-heading {
+  color: #8080a0;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+
+.worker-detail-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.worker-detail-fields dt {
+  color: #8080a0;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.worker-detail-fields dd {
+  color: #e0e0ff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.worker-detail-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.worker-detail-empty {
+  color: #3a3a5c;
+  font-family: monospace;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.worker-detail-timeline {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.worker-detail-run-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.15s;
+}
+
+.worker-detail-run-dot:hover {
+  transform: scale(1.3);
+}
+
+.worker-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.worker-detail-trigger-btn {
+  background: #12121a;
+  color: #00f0ff;
+  border: 1px solid #00f0ff;
+  font-family: monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  padding: 8px 20px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.worker-detail-trigger-btn:hover:not(:disabled) {
+  background: rgba(0, 240, 255, 0.1);
+}
+
+.worker-detail-trigger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.worker-detail-trigger-feedback {
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
 /* ========================================
    Error Boundary
    ======================================== */
@@ -1043,7 +1203,9 @@ input:focus, textarea:focus {
   .sidebar-brand { padding: 0 16px; white-space: nowrap; }
   .sidebar nav { flex-direction: row; gap: 0; }
   .sidebar nav a { padding: 0.75rem 1rem; white-space: nowrap; }
-  .sidebar nav a.active { border-right: none; border-bottom: 2px solid var(--accent); }
+  .sidebar nav { padding: 0 4px; }
+  .sidebar nav a { border-radius: 6px; }
+  .sidebar nav a.active { border-bottom: 2px solid var(--accent); }
   .main { padding: 16px; }
 }
 

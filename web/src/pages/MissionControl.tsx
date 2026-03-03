@@ -4,10 +4,12 @@ import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
 import HarnessView from '../components/HarnessView'
 import DiagnosticsView from '../components/DiagnosticsView'
+import WorkerDetailView from '../components/WorkerDetailView'
 
 type View =
   | { mode: 'constellation' }
   | { mode: 'harness'; nodeId: string; nodeType: 'agent' | 'worker' }
+  | { mode: 'worker'; workerId: string }
   | { mode: 'diagnostics' }
 
 export default function MissionControl() {
@@ -15,7 +17,11 @@ export default function MissionControl() {
   const [view, setView] = useState<View>({ mode: 'constellation' })
 
   const handleSelectNode = useCallback((nodeId: string, nodeType: 'agent' | 'worker') => {
-    setView({ mode: 'harness', nodeId, nodeType })
+    if (nodeType === 'worker') {
+      setView({ mode: 'worker', workerId: nodeId })
+    } else {
+      setView({ mode: 'harness', nodeId, nodeType })
+    }
   }, [])
 
   const handleBack = useCallback(() => {
@@ -82,6 +88,12 @@ export default function MissionControl() {
           onModelChange={handleModelChange}
         />
       )}
+
+      {view.mode === 'worker' && (() => {
+        const worker = state.workers.find(w => w.id === view.workerId)
+        if (!worker) return null
+        return <WorkerDetailView worker={worker} onBack={handleBack} />
+      })()}
 
       {view.mode === 'diagnostics' && (
         <DiagnosticsView
