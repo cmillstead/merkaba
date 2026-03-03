@@ -287,6 +287,23 @@ class Agent:
         except Exception as e:
             logger.debug("Session extraction failed: %s", e)
 
+    def _get_hook_manager(self):
+        """Return the HookManager from the plugin registry, or None."""
+        if self.plugin_registry is not None:
+            return self.plugin_registry.hooks
+        return None
+
+    def _fire_hooks(self, event: str, context: dict | None = None) -> list[str]:
+        """Fire all hooks for *event* and return rendered content strings.
+
+        Returns an empty list if no plugin registry is configured or no hooks
+        match.  Errors inside individual hooks are swallowed by HookManager.
+        """
+        manager = self._get_hook_manager()
+        if manager is None:
+            return []
+        return manager.fire(event, context or {})
+
     def run(self, user_message: str, on_tool_call=None) -> str:
         """Process a user message and return a response.
 
@@ -301,6 +318,14 @@ class Agent:
             new_trace_id("agent")
         except Exception:
             pass
+
+        # Fire SESSION_START the first time this run() is called for a session.
+        # We detect "first call" by checking whether the conversation is empty.
+        if not self._tree.get_active_branch():
+            session_ctx = {"session_id": self.session_id or ""}
+            hook_outputs = self._fire_hooks("SESSION_START", session_ctx)
+            for output in hook_outputs:
+                logger.debug("SESSION_START hook output: %s", output[:200])
 
         # Sync active business into memory tool
         set_active_business(self.active_business_id)
@@ -327,6 +352,13 @@ class Agent:
             self.memory.append("assistant", refusal, {"blocked": True, "reason": reason})
             self.memory.save()
             return refusal
+
+        # PRE_MESSAGE: fire before appending to conversation tree
+        pre_msg_outputs = self._fire_hooks(
+            "PRE_MESSAGE", {"user_message": user_message, "session_id": self.session_id or ""}
+        )
+        for output in pre_msg_outputs:
+            logger.debug("PRE_MESSAGE hook output: %s", output[:200])
 
         self._tree.append("user", user_message)
         self.memory.append("user", user_message)
@@ -420,6 +452,17 @@ class Agent:
                 self.memory.append("assistant", response.content)
                 self.memory.save()
                 self._extract_session_memories()
+                # POST_MESSAGE: fire after response is finalised
+                post_msg_outputs = self._fire_hooks(
+                    "POST_MESSAGE",
+                    {
+                        "user_message": user_message,
+                        "response": response.content or "",
+                        "session_id": self.session_id or "",
+                    },
+                )
+                for output in post_msg_outputs:
+                    logger.debug("POST_MESSAGE hook output: %s", output[:200])
                 return response.content
 
         self.memory.save()
@@ -515,6 +558,15 @@ class Agent:
 
                     # Check permission before executing
                     self.permission_manager.check(tc.name, tool.permission_tier)
+
+                    # PRE_TOOL hook
+                    pre_tool_outputs = self._fire_hooks(
+                        "PRE_TOOL",
+                        {"tool_name": tc.name, "arguments": tc.arguments, "session_id": self.session_id or ""},
+                    )
+                    for output in pre_tool_outputs:
+                        logger.debug("PRE_TOOL hook output (%s): %s", tc.name, output[:200])
+
                     result = tool.execute(**tc.arguments)
                     if result.success:
                         result_text = f"[{tc.name}] Success:\n{result.output}"
@@ -527,6 +579,21 @@ class Agent:
                                 logger.warning("Verification error for %s: %s", tc.arguments.get("path", ""), ve)
                     else:
                         result_text = f"[{tc.name}] Error:\n{result.error}"
+
+                    # POST_TOOL hook
+                    post_tool_outputs = self._fire_hooks(
+                        "POST_TOOL",
+                        {
+                            "tool_name": tc.name,
+                            "arguments": tc.arguments,
+                            "result": result_text,
+                            "success": result.success,
+                            "session_id": self.session_id or "",
+                        },
+                    )
+                    for output in post_tool_outputs:
+                        logger.debug("POST_TOOL hook output (%s): %s", tc.name, output[:200])
+
                     results.append(result_text)
                     if on_tool_call:
                         on_tool_call(tc.name, tc.arguments, result_text)
