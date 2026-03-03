@@ -698,3 +698,106 @@ def test_context_manager_closes_on_exception():
                 store.add_business("Test", "ecommerce")
                 raise RuntimeError("boom")
         assert store._conn is None
+
+
+# --- Hard Delete ---
+
+
+def test_hard_delete_removes_row(store):
+    """hard_delete returns True and the row is gone afterwards."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    result = store.hard_delete("facts", fact_id)
+
+    assert result is True
+    assert store.get_fact(fact_id) is None
+
+
+def test_hard_delete_invalid_table(store):
+    """hard_delete raises ValueError for a table not in the allowlist."""
+    with pytest.raises(ValueError, match="Invalid table: users"):
+        store.hard_delete("users", 1)
+
+
+def test_hard_delete_nonexistent_id(store):
+    """hard_delete returns False when the row does not exist."""
+    result = store.hard_delete("facts", 9999)
+    assert result is False
+
+
+def test_hard_delete_business_cascade(store):
+    """hard_delete_business removes the business and all child rows."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+    store.add_fact(biz_id, "pricing", "max_price", "9.99")
+    store.add_decision(biz_id, "pricing", "Lower price", "Competition")
+    store.add_learning("pricing", "Insight", source_business_id=biz_id)
+    store.add_episode(biz_id, "listing", 1, "A task", "success")
+    store.add_relationship(biz_id, "product", "A", "related", "B")
+    store.set_state(biz_id, "listing", "L-1", "status", "active")
+
+    counts = store.hard_delete_business(biz_id, cascade=True)
+
+    assert counts["businesses"] == 1
+    assert counts["facts"] == 2
+    assert counts["decisions"] == 1
+    assert counts["learnings"] == 1
+    assert counts["episodes"] == 1
+    assert counts["relationships"] == 1
+    assert counts["state"] == 1
+
+    # Business itself is gone
+    assert store.get_business(biz_id) is None
+    # No orphaned child rows remain
+    assert store.get_facts(biz_id, include_archived=True) == []
+    assert store.get_decisions(biz_id, include_archived=True) == []
+
+
+def test_purge_archived(store):
+    """purge_archived deletes all archived rows and returns the count."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    f1 = store.add_fact(biz_id, "pricing", "k1", "v1")
+    f2 = store.add_fact(biz_id, "pricing", "k2", "v2")
+    f3 = store.add_fact(biz_id, "pricing", "k3", "v3")
+
+    store.archive("facts", f1)
+    store.archive("facts", f2)
+    # f3 stays active
+
+    deleted = store.purge_archived("facts")
+
+    assert deleted == 2
+    # Only the active fact remains
+    remaining = store.get_facts(biz_id)
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == f3
+
+
+def test_purge_archived_with_age_filter(store):
+    """purge_archived with older_than_days only removes sufficiently old rows."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    f_old = store.add_fact(biz_id, "pricing", "old_key", "old_val")
+    f_new = store.add_fact(biz_id, "pricing", "new_key", "new_val")
+
+    # Archive both facts
+    store.archive("facts", f_old)
+    store.archive("facts", f_new)
+
+    # Back-date the old fact's updated_at so it appears stale
+    old_ts = (datetime.now() - timedelta(days=60)).isoformat()
+    store._conn.execute(
+        "UPDATE facts SET updated_at = ? WHERE id = ?", (old_ts, f_old)
+    )
+    store._conn.commit()
+
+    # Purge only rows archived more than 30 days ago
+    deleted = store.purge_archived("facts", older_than_days=30)
+
+    assert deleted == 1
+    # The recently-archived fact still exists (as archived)
+    remaining = store.list_archived("facts", business_id=biz_id)
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == f_new

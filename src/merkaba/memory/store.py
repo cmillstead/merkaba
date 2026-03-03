@@ -19,10 +19,13 @@ class MemoryStore:
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        from merkaba.security.file_permissions import ensure_secure_permissions
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
+            ensure_secure_permissions(db_dir)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        ensure_secure_permissions(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -645,6 +648,95 @@ class MemoryStore:
         if deleted:
             logger.info("Archived %d episodes older than %d days", deleted, max_age_days)
         return deleted
+
+    # --- Hard Delete ---
+
+    _VALID_TABLES = frozenset(
+        {"businesses", "facts", "decisions", "relationships", "state", "learnings", "episodes"}
+    )
+
+    def hard_delete(self, table: str, item_id: int) -> bool:
+        """Permanently delete a single row by id.
+
+        Returns True if a row was deleted, False if no row matched.
+        Raises ValueError for invalid table names.
+        If a VectorMemory backend is attached, removes the vector too.
+        """
+        if table not in self._VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        cursor = self._conn.execute(
+            f"DELETE FROM {table} WHERE id = ?", (item_id,)
+        )
+        self._conn.commit()
+        deleted = cursor.rowcount > 0
+        if deleted and hasattr(self, "_vectors") and self._vectors:
+            try:
+                self._vectors.delete_vectors(table, [item_id])
+            except Exception as e:
+                logger.warning(
+                    "Vector delete failed for %s/%d: %s", table, item_id, e
+                )
+        return deleted
+
+    def hard_delete_business(self, business_id: int, cascade: bool = True) -> dict[str, int]:
+        """Permanently delete a business and optionally all of its children.
+
+        Returns a dict mapping table names to the number of rows deleted.
+        """
+        counts: dict[str, int] = {}
+        self._conn.execute("BEGIN")
+        try:
+            if cascade:
+                child_tables = (
+                    "facts",
+                    "decisions",
+                    "learnings",
+                    "episodes",
+                    "relationships",
+                    "state",
+                )
+                for child in child_tables:
+                    # learnings uses source_business_id; all others use business_id
+                    col = "source_business_id" if child == "learnings" else "business_id"
+                    cursor = self._conn.execute(
+                        f"DELETE FROM {child} WHERE {col} = ?", (business_id,)
+                    )
+                    counts[child] = cursor.rowcount
+
+            cursor = self._conn.execute(
+                "DELETE FROM businesses WHERE id = ?", (business_id,)
+            )
+            counts["businesses"] = cursor.rowcount
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        return counts
+
+    def purge_archived(self, table: str, older_than_days: int | None = None) -> int:
+        """Permanently delete all archived rows in a table.
+
+        If *older_than_days* is given, only rows whose ``updated_at`` is older
+        than that many days are removed.  Returns the count of deleted rows.
+        Raises ValueError for invalid table names or tables without an
+        ``archived`` column (businesses, relationships, state, episodes).
+        """
+        if table not in self._VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Table {table!r} does not have an archived column")
+        if older_than_days is not None:
+            cursor = self._conn.execute(
+                f"DELETE FROM {table} WHERE archived = 1 "
+                f"AND updated_at < datetime('now', ? || ' days')",
+                (f"-{older_than_days}",),
+            )
+        else:
+            cursor = self._conn.execute(
+                f"DELETE FROM {table} WHERE archived = 1"
+            )
+        self._conn.commit()
+        return cursor.rowcount
 
     # --- Lifecycle ---
 
