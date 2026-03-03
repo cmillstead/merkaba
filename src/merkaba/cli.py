@@ -2173,14 +2173,19 @@ app.add_typer(backup_app, name="backup", rich_help_panel="System")
 
 
 @backup_app.command("run")
-def backup_run():
+def backup_run(
+    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt backup files using keychain key"),
+):
     """Create a backup of all databases and config."""
     from merkaba.orchestration.backup import BackupManager
 
     mgr = BackupManager()
     with console.status("[bold]Creating backup...[/bold]"):
-        path = mgr.run_backup()
-    console.print(f"[green]Backup created:[/green] {path}")
+        path = mgr.run_backup(encrypt=encrypt)
+    if encrypt:
+        console.print(f"[green]Backup created:[/green] {path} [dim]\[encrypted][/dim]")
+    else:
+        console.print(f"[green]Backup created:[/green] {path}")
     files = [f.name for f in path.iterdir() if f.is_file()]
     for f in files:
         console.print(f"  - {f}")
@@ -2245,7 +2250,7 @@ def data_export(
     output: str = typer.Option(..., "--output", "-o", help="Output JSON file path"),
     business_id: int = typer.Option(None, "--business-id", "-b", help="Filter to a specific business"),
 ):
-    """Export memory data (facts, decisions, learnings, episodes, relationships) to JSON."""
+    """Export memory data (facts, decisions, learnings, episodes, relationships, state) to JSON."""
     from merkaba.memory.store import MemoryStore
 
     store = MemoryStore()
@@ -2263,6 +2268,7 @@ def data_export(
                 l for l in store.get_learnings(include_archived=True)
                 if l.get("source_business_id") == business_id
             ]
+            state = store.get_all_state(business_id)
         else:
             # Export all data across all businesses
             businesses = store.list_businesses()
@@ -2270,12 +2276,14 @@ def data_export(
             decisions: list = []
             relationships: list = []
             episodes: list = []
+            state: list = []
             for biz in businesses:
                 biz_id = biz["id"]
                 facts.extend(store.get_facts(biz_id, include_archived=True))
                 decisions.extend(store.get_decisions(biz_id, include_archived=True))
                 relationships.extend(store.get_relationships(biz_id))
                 episodes.extend(store.get_episodes(business_id=biz_id, limit=100_000))
+                state.extend(store.get_all_state(biz_id))
             learnings = store.get_learnings(include_archived=True)
     finally:
         store.close()
@@ -2289,6 +2297,7 @@ def data_export(
         "learnings": learnings,
         "episodes": episodes,
         "relationships": relationships,
+        "state": state,
     }
 
     with open(output, "w") as f:
@@ -2298,7 +2307,7 @@ def data_export(
         f"[green]Exported[/green] "
         f"{len(facts)} facts, {len(decisions)} decisions, "
         f"{len(learnings)} learnings, {len(episodes)} episodes, "
-        f"{len(relationships)} relationships "
+        f"{len(relationships)} relationships, {len(state)} state entries "
         f"to [bold]{output}[/bold]"
     )
 
@@ -2328,6 +2337,16 @@ def data_delete_all(
         counts = store.hard_delete_business(business_id, cascade=True)
     finally:
         store.close()
+
+    # Also remove conversation and upload files
+    import shutil as _shutil
+    convos_dir = os.path.join(MERKABA_DIR, "conversations")
+    uploads_dir = os.path.join(MERKABA_DIR, "uploads")
+    for dir_path, label in [(convos_dir, "conversations"), (uploads_dir, "uploads")]:
+        if os.path.isdir(dir_path):
+            count = len(os.listdir(dir_path))
+            _shutil.rmtree(dir_path)
+            counts[label] = count
 
     console.print(f"[green]Deleted all data for business {business_id}:[/green]")
     for table, count in counts.items():

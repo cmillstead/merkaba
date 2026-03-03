@@ -234,3 +234,63 @@ def test_backup_restore_aborts_on_no(tmp_path):
         result = runner.invoke(app, ["backup", "restore", ts, "memory.db"], input="n\n")
 
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# CLI --encrypt flag
+# ---------------------------------------------------------------------------
+
+def test_backup_run_encrypt_flag_in_help():
+    """--encrypt flag appears in `backup run --help` output."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["backup", "run", "--help"])
+    assert result.exit_code == 0
+    assert "--encrypt" in result.output
+
+
+def test_backup_run_encrypt_short_flag_in_help():
+    """-e short flag appears in `backup run --help` output."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["backup", "run", "--help"])
+    assert result.exit_code == 0
+    assert "-e" in result.output
+
+
+def test_backup_run_encrypt_passes_to_manager(tmp_path):
+    """backup run --encrypt passes encrypt=True to BackupManager.run_backup()."""
+    merkaba_dir = tmp_path / "merkaba"
+    merkaba_dir.mkdir()
+    _create_db(merkaba_dir / "memory.db")
+
+    mgr = BackupManager(merkaba_dir=merkaba_dir)
+    backup_path = merkaba_dir / "backups" / "20260302_120000"
+    backup_path.mkdir(parents=True)
+    (backup_path / "memory.db").write_bytes(b"fake")
+
+    runner = CliRunner()
+    with patch("merkaba.orchestration.backup.BackupManager") as MockMgr:
+        MockMgr.return_value.run_backup.return_value = backup_path
+        result = runner.invoke(app, ["backup", "run", "--encrypt"])
+
+    assert result.exit_code == 0
+    MockMgr.return_value.run_backup.assert_called_once_with(encrypt=True)
+    assert "encrypted" in result.output
+
+
+def test_backup_run_no_encrypt_by_default(tmp_path):
+    """backup run without --encrypt passes encrypt=False to BackupManager.run_backup()."""
+    merkaba_dir = tmp_path / "merkaba"
+    merkaba_dir.mkdir()
+
+    backup_path = merkaba_dir / "backups" / "20260302_120000"
+    backup_path.mkdir(parents=True)
+    (backup_path / "memory.db").write_bytes(b"fake")
+
+    runner = CliRunner()
+    with patch("merkaba.orchestration.backup.BackupManager") as MockMgr:
+        MockMgr.return_value.run_backup.return_value = backup_path
+        result = runner.invoke(app, ["backup", "run"])
+
+    assert result.exit_code == 0
+    MockMgr.return_value.run_backup.assert_called_once_with(encrypt=False)
+    assert "encrypted" not in result.output
