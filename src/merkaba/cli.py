@@ -3051,6 +3051,17 @@ def config_validate():
         raise typer.Exit(1)
 
 
+KNOWN_CONFIG_KEYS = frozenset({
+    "model", "models", "business_id", "auto_approve_level",
+    "security", "api_key", "cors_origins", "log_level",
+    "permissions", "permission_tiers", "path_restrictions",
+    "shell_allowlist", "encryption_key", "classifier_fail_mode",
+    "host", "port", "debug", "telegram", "slack", "plugins",
+    "tools", "workers", "memory", "scheduler", "backup",
+    "cloud_providers",
+})
+
+
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(help="Dotted config key (e.g. security.classifier_fail_mode)"),
@@ -3095,6 +3106,10 @@ def config_set(
             d[part] = {}
         d = d[part]
     d[parts[-1]] = coerced
+
+    top_key = parts[0]
+    if top_key not in KNOWN_CONFIG_KEYS:
+        console.print(f"[yellow]Warning:[/yellow] '{top_key}' is not a recognized config key. Check for typos.")
 
     os.makedirs(MERKABA_DIR, exist_ok=True)
     _atomic_write_json(config_path, config)
