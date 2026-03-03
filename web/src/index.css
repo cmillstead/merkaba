@@ -100,6 +100,43 @@ a:hover { color: var(--accent-hover); }
   opacity: 1;
 }
 
+/* Sidebar groups */
+.sidebar-group { margin-bottom: 2px; }
+.sidebar-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.sidebar-group-header:hover { opacity: 1; }
+.sidebar-group-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.sidebar-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.sidebar-chevron-expanded { transform: rotate(90deg); }
+.sidebar-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px;
+}
+
 /* Main content */
 .main {
   flex: 1;
