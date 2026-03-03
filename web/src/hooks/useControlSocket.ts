@@ -172,7 +172,7 @@ function jsonEqual<T>(a: T, b: T): boolean {
 // NOTE: Components that consume useControlSocket output should be wrapped in
 // React.memo to further prevent re-renders from parent updates. Example:
 //   export default React.memo(ConstellationMap)
-//   export default React.memo(HarnessView)
+//   export default React.memo(AgentDetailView)
 function deduplicateSnapshot(current: ControlState, next: ControlState): ControlState {
   const sameSystem = systemEqual(current.system, next.system)
   const sameAgents = jsonEqual(current.agents, next.agents)
