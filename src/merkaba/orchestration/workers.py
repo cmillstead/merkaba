@@ -4,6 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from merkaba.security import PermissionManager, PermissionDenied
+
 logger = logging.getLogger(__name__)
 
 # --- Worker registry ---
@@ -46,6 +48,7 @@ class Worker:
     max_iterations: int = 5
     memory: Any = None  # MemoryRetrieval, imported lazily
     tools: Any = None  # ToolRegistry, imported lazily
+    permission_manager: PermissionManager = field(default_factory=PermissionManager)
     _llm: Any = field(default=None, init=False, repr=False)
 
     def execute(self, task: dict) -> WorkerResult:
@@ -77,6 +80,11 @@ class Worker:
                 for tc in response.tool_calls:
                     tool = self.tools.get(tc.name) if self.tools else None
                     if tool:
+                        try:
+                            self.permission_manager.check(tc.name, tool.permission_tier)
+                        except PermissionDenied as pd:
+                            results.append(f"[{tc.name}] Permission denied: {pd}")
+                            continue
                         result = tool.execute(**tc.arguments)
                         results.append(f"[{tc.name}] {result.output if result.success else result.error}")
                     else:
