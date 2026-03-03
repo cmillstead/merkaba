@@ -5,7 +5,7 @@ import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ class MemoryStore:
 
     db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
     contradiction_detector: Any = field(default=None, repr=False)
+    on_event: Callable[[str, dict], None] | None = field(default=None, repr=False)
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -30,6 +31,18 @@ class MemoryStore:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._create_tables()
+
+    def _emit(self, event_name: str, data: dict) -> None:
+        """Fire the on_event callback with the given event name and data.
+
+        Errors in the callback are caught and logged so they never crash the caller.
+        """
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event_name, data)
+        except Exception as e:
+            logger.warning("on_event callback raised for %r: %s", event_name, e)
 
     def _create_tables(self):
         cursor = self._conn.cursor()
@@ -236,11 +249,20 @@ class MemoryStore:
                     business_id, category, key, value
                 )
                 if contradicted:
-                    self.contradiction_detector.resolve([c["id"] for c in contradicted])
+                    contradicted_ids = [c["id"] for c in contradicted]
+                    self.contradiction_detector.resolve(contradicted_ids)
                     logger.info(
                         "Archived %d contradicted facts for business %d",
                         len(contradicted), business_id,
                     )
+                    self._emit("contradiction_resolved", {
+                        "business_id": business_id,
+                        "category": category,
+                        "key": key,
+                        "new_value": value,
+                        "resolved_ids": contradicted_ids,
+                        "resolved_count": len(contradicted_ids),
+                    })
             except Exception as e:
                 logger.warning("Contradiction check failed: %s", e)
 
@@ -252,7 +274,13 @@ class MemoryStore:
             (business_id, category, key, value, confidence, source, now, now),
         )
         self._conn.commit()
-        return cursor.lastrowid
+        fact_id = cursor.lastrowid
+        self._emit("facts_extracted", {
+            "fact_id": fact_id,
+            "business_id": business_id,
+            "content": value,
+        })
+        return fact_id
 
     def get_fact(self, fact_id: int) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
@@ -287,6 +315,10 @@ class MemoryStore:
         values = list(updates.values()) + [fact_id]
         self._conn.execute(f"UPDATE facts SET {set_clause} WHERE id = ?", values)
         self._conn.commit()
+        emit_data: dict = {"fact_id": fact_id}
+        if "value" in updates:
+            emit_data["content"] = updates["value"]
+        self._emit("fact_updated", emit_data)
 
     # --- Decisions CRUD ---
 
@@ -565,6 +597,28 @@ class MemoryStore:
         duration_seconds: int | None = None,
         tags: list[str] | None = None,
     ) -> int:
+        from datetime import timedelta
+
+        # Deduplication: skip insert if an identical episode exists within the last hour.
+        window_start = (datetime.now() - timedelta(hours=1)).isoformat()
+        dup_cursor = self._conn.cursor()
+        dup_cursor.execute(
+            """SELECT id FROM episodes
+               WHERE business_id = ? AND task_type = ? AND summary = ?
+                 AND created_at >= ?
+               LIMIT 1""",
+            (business_id, task_type, summary, window_start),
+        )
+        existing = dup_cursor.fetchone()
+        if existing:
+            existing_id = existing[0]
+            logger.debug(
+                "Episode dedup triggered: business_id=%s task_type=%s summary=%r — "
+                "returning existing id=%s",
+                business_id, task_type, summary, existing_id,
+            )
+            return existing_id
+
         cursor = self._conn.cursor()
         cursor.execute(
             """INSERT INTO episodes
@@ -676,6 +730,8 @@ class MemoryStore:
                 logger.warning(
                     "Vector delete failed for %s/%d: %s", table, item_id, e
                 )
+        if deleted:
+            self._emit("item_deleted", {"table": table, "item_id": item_id})
         return deleted
 
     def hard_delete_business(self, business_id: int, cascade: bool = True) -> dict[str, int]:
@@ -751,6 +807,7 @@ class MemoryStore:
                 vectors.delete_vectors(table, [str(item_id)])
             except Exception as e:
                 logger.warning("Vector delete failed for %s/%d: %s", table, item_id, e)
+        self._emit("items_archived", {"table": table, "ids": [item_id]})
 
     def unarchive(self, table: str, item_id: int) -> None:
         """Restore an archived item."""

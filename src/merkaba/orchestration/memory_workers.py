@@ -23,6 +23,7 @@ class MemoryDecayWorker(Worker):
         try:
             job = MemoryDecayJob(store=store)
             stats = job.run()
+            store._emit("items_decayed", {"count": stats.get("archived", 0), "stats": stats})
             return WorkerResult(success=True, output=stats)
         except Exception as e:
             logger.error("Memory decay failed: %s", e)
@@ -52,6 +53,7 @@ class MemoryConsolidationWorker(Worker):
                 llm = LLMClient()
             job = MemoryConsolidationJob(store=store, llm=llm)
             stats = job.run()
+            store._emit("items_consolidated", {"count": stats.get("archived", 0), "stats": stats})
             return WorkerResult(success=True, output=stats)
         except Exception as e:
             logger.error("Memory consolidation failed: %s", e)
