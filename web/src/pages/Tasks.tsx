@@ -32,15 +32,23 @@ export default function Tasks() {
 
   async function toggle(task: Task) {
     const newStatus = task.status === 'paused' ? 'pending' : 'paused'
-    await updateTask(task.id, { status: newStatus })
-    load()
+    try {
+      await updateTask(task.id, { status: newStatus })
+      load()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update task', 'error')
+    }
   }
 
   async function expand(id: number) {
     if (expanded === id) { setExpanded(null); return }
     setExpanded(id)
-    const data = await fetchTask(id)
-    setRuns(data.runs)
+    try {
+      const data = await fetchTask(id)
+      setRuns(data.runs)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to load task runs', 'error')
+    }
   }
 
   if (loading) {

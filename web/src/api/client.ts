@@ -264,7 +264,7 @@ export interface Approval {
 }
 
 export interface ChatMessage {
-  type: 'response' | 'thinking';
+  type: 'response' | 'thinking' | 'error';
   content?: string;
   tool?: string | null;
   status?: string;

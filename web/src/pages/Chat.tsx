@@ -57,6 +57,15 @@ export default function Chat() {
         const cleaned = prev.filter((m, i) => !(m.role === 'thinking' && i === prev.length - 1))
         return [...cleaned, { role: 'assistant', content: msg.content! }]
       })
+    } else if (msg.type === 'error') {
+      setMessages(prev => {
+        const cleaned = prev.filter((m, i) => !(m.role === 'thinking' && i === prev.length - 1))
+        return [...cleaned, {
+          role: 'assistant',
+          content: msg.content || 'An error occurred while processing your request.',
+        }]
+      })
+      showToast(msg.content || 'Agent error occurred', 'error')
     }
   }
 
