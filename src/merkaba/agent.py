@@ -225,7 +225,9 @@ class Agent:
             prompt = f"{prompt}\n\n{self.extra_context}"
 
         if self.active_skill:
-            prompt = f"{self.active_skill.content}\n\n---\n\n{prompt}"
+            from merkaba.security.sanitizer import sanitize_skill_content
+            safe_content = sanitize_skill_content(self.active_skill.content)
+            prompt = f"{safe_content}\n\n---\n\n{prompt}"
 
         # Add global skill context
         if self.plugin_registry and self.plugin_registry.skill_context:
