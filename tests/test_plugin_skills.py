@@ -102,6 +102,87 @@ class TestSkillMatching:
         result = manager.match("What is the weather?")
         assert result is None
 
+    def test_skill_match_requires_multiple_keywords(self):
+        """Description-based fallback should not match on a single common word."""
+        manager = SkillManager()
+        # Skill with a description containing the word "process"
+        manager.skills["workflow-skill"] = Skill(
+            name="workflow-skill",
+            description="process workflow automation steps",
+            content="Workflow instructions",
+        )
+
+        # Message contains only one meaningful word from the description ("process")
+        result = manager.match("How do I process something?")
+        # Single word match should NOT trigger the description fallback
+        assert result is None
+
+    def test_skill_match_stop_words_filtered(self):
+        """Stop words in skill description should not count as meaningful matches."""
+        manager = SkillManager()
+        # Description is almost entirely stop words plus one real word
+        manager.skills["stop-word-skill"] = Skill(
+            name="stop-word-skill",
+            description="the and or is a process",
+            content="Stop word skill instructions",
+        )
+
+        # Message contains many of the same stop words, plus the one real word
+        result = manager.match("the and or is a process for my task")
+        # Stop words should not count; only "process" is meaningful — not enough for 2+ match
+        assert result is None
+
+    def test_skill_match_multiple_keywords_works(self):
+        """Description-based fallback should match when 2+ meaningful words appear in message."""
+        manager = SkillManager()
+        manager.skills["refactoring-skill"] = Skill(
+            name="refactoring-skill",
+            description="refactor restructure codebase cleanup",
+            content="Refactoring instructions",
+        )
+
+        # Message contains 2 meaningful words from the description
+        result = manager.match("I need to refactor and restructure this module")
+        assert result is not None
+        assert result.name == "refactoring-skill"
+
+
+class TestSkillManagerResilience:
+    """Tests for SkillManager resilient loading."""
+
+    def test_skills_loader_continues_on_bad_file(self):
+        """SkillManager should skip corrupt skill files and load the rest."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a valid skill
+            valid_dir = os.path.join(tmpdir, "test-plugin", "skills", "good-skill")
+            os.makedirs(valid_dir)
+            with open(os.path.join(valid_dir, "SKILL.md"), "w") as f:
+                f.write("""---
+name: good-skill
+description: A valid skill
+---
+
+# Good Skill
+
+Works fine.
+""")
+
+            # Create a skill dir whose SKILL.md is unreadable/corrupt by patching from_file
+            bad_dir = os.path.join(tmpdir, "test-plugin", "skills", "bad-skill")
+            os.makedirs(bad_dir)
+            # Write bytes that will cause a decode error
+            with open(os.path.join(bad_dir, "SKILL.md"), "wb") as f:
+                f.write(b"\xff\xfe invalid utf-8 \x80\x81")
+
+            manager = SkillManager()
+            # Should not raise even though one file is bad
+            manager.load_from_directory(tmpdir)
+
+            # The valid skill was still loaded
+            assert "good-skill" in manager.list_skills()
+            # The bad skill did not crash the loader
+            assert manager.get("bad-skill") is None
+
 
 class TestSkillSecurityWarnings:
     """Tests for skill security scanning during loading."""

@@ -13,6 +13,8 @@ from rich.table import Table
 
 from merkaba import __version__
 
+logger = logging.getLogger(__name__)
+
 # Heavy modules imported lazily inside commands to avoid import-time failures
 # (e.g., ollama SOCKS proxy error) and speed up CLI startup.
 
@@ -58,12 +60,12 @@ console = Console()
 
 # Load CLI extensions from installed packages
 def _load_cli_extensions():
-    try:
-        from merkaba.extensions import discover_cli_apps
-        for name, ext_app in discover_cli_apps().items():
+    from merkaba.extensions import discover_cli_apps
+    for name, ext_app in discover_cli_apps().items():
+        try:
             app.add_typer(ext_app, name=name)
-    except Exception:
-        pass
+        except Exception as e:
+            logger.warning("Failed to load CLI extension %s: %s", name, e)
 
 _load_cli_extensions()
 

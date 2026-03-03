@@ -1,11 +1,14 @@
 # src/merkaba/plugins/hooks.py
 """Hook loading and management."""
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 import frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 class HookEvent(Enum):
@@ -73,9 +76,72 @@ class HookManager:
 
             plugin_name = plugin_dir.name
             for hook_file in hooks_dir.glob("*.md"):
-                hook = Hook.from_file(hook_file, plugin_name)
-                self.hooks.append(hook)
+                try:
+                    hook = Hook.from_file(hook_file, plugin_name)
+                    self.hooks.append(hook)
+                except Exception as e:
+                    logger.warning("Failed to load hook %s: %s", hook_file, e)
 
     def get_hooks_for_event(self, event: HookEvent) -> list[Hook]:
         """Get all hooks subscribed to an event."""
         return [h for h in self.hooks if h.event == event]
+
+    def fire(self, event: str, context: dict | None = None) -> list[str]:
+        """Fire all hooks matching the given event and return rendered content.
+
+        Args:
+            event: Event name string (e.g. "SESSION_START", "PRE_MESSAGE").
+                   Accepts both enum value strings ("session-start") and
+                   uppercase constant names ("SESSION_START").
+            context: Optional dict used for ``{{var}}`` template substitution
+                     in hook content.
+
+        Returns:
+            List of rendered content strings from all matching hooks.
+            Hooks that raise exceptions are silently skipped.
+        """
+        if context is None:
+            context = {}
+
+        # Normalise the event string — accept "SESSION_START" or "session-start"
+        normalised = event.lower().replace("_", "-")
+
+        results: list[str] = []
+        for hook in self.hooks:
+            if hook.event.value != normalised:
+                continue
+            try:
+                rendered = _render_template(hook.content, context)
+                results.append(rendered)
+            except Exception as e:
+                logger.warning(
+                    "Hook '%s' (plugin=%s) raised an error on event '%s': %s",
+                    hook.name, hook.plugin_name, event, e,
+                )
+        return results
+
+
+def _render_template(content: str, context: dict) -> str:
+    """Replace ``{{key}}`` placeholders in *content* with values from *context*.
+
+    Unresolved placeholders are left unchanged so callers can always inspect
+    the raw template variable name.
+    """
+    import re
+
+    def replacer(match: re.Match) -> str:
+        key = match.group(1).strip()
+        # Support simple dot-path lookup (e.g. ``{{tool.name}}``)
+        value = context
+        for part in key.split("."):
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                value = None
+            if value is None:
+                break
+        if value is None:
+            return match.group(0)  # leave placeholder intact
+        return str(value)
+
+    return re.sub(r"\{\{(.+?)\}\}", replacer, content)
