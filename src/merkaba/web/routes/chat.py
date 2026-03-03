@@ -101,6 +101,8 @@ async def upload_file(file: UploadFile):
     content = b"".join(chunks)
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    from merkaba.security.file_permissions import ensure_secure_permissions
+    ensure_secure_permissions(UPLOAD_DIR)
     # Prefix with timestamp + uuid to avoid collisions
     stem = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     dest = os.path.join(UPLOAD_DIR, f"{stem}{ext}")

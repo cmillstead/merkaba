@@ -71,6 +71,38 @@ class TestEnsureSecurePermissionsNonexistent:
         # If we get here without an exception the test passes.
 
 
+class TestLogAndUploadDirPermissions:
+    """M18, M19: Log and upload directories must have secure permissions."""
+
+    def test_log_dir_has_secure_permissions(self, tmp_path):
+        """M18: Log directory must have 0o700 permissions."""
+        log_dir = str(tmp_path / "logs")
+        os.makedirs(log_dir)
+        ensure_secure_permissions(log_dir)
+        assert _mode(log_dir) == 0o700
+
+    def test_upload_dir_has_secure_permissions(self, tmp_path):
+        """M19: Upload directory must have 0o700 permissions."""
+        upload_dir = str(tmp_path / "uploads")
+        os.makedirs(upload_dir)
+        ensure_secure_permissions(upload_dir)
+        assert _mode(upload_dir) == 0o700
+
+    def test_tracing_setup_calls_ensure_secure_permissions(self):
+        """M18: setup_logging must call ensure_secure_permissions on log_dir."""
+        import inspect
+        from merkaba.observability.tracing import setup_logging
+        source = inspect.getsource(setup_logging)
+        assert "ensure_secure_permissions" in source
+
+    def test_chat_upload_calls_ensure_secure_permissions(self):
+        """M19: upload_file must call ensure_secure_permissions on UPLOAD_DIR."""
+        import inspect
+        from merkaba.web.routes.chat import upload_file
+        source = inspect.getsource(upload_file)
+        assert "ensure_secure_permissions" in source
+
+
 class TestEnsureSecurePermissionsWindows:
     def test_windows_skips_chmod(self):
         """On Windows, ensure_secure_permissions should be a no-op (no chmod called)."""
