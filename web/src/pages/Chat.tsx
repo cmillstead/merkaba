@@ -88,6 +88,36 @@ export default function Chat() {
     sessionStorage.setItem('chat-messages', JSON.stringify(messages))
   }, [messages])
 
+  // Auto-load the most recent conversation on mount (if no active session)
+  useEffect(() => {
+    // Don't auto-load if we already have messages from sessionStorage
+    if (messages.length > 0) return
+
+    async function loadLastChat() {
+      try {
+        const resp = await fetch('/api/chat/sessions')
+        const data = await resp.json()
+        if (data.sessions?.length > 0) {
+          const latest = data.sessions[0]
+          const sessionResp = await fetch(`/api/chat/sessions/${latest.id}`)
+          const sessionData = await sessionResp.json()
+          const loaded: DisplayMsg[] = sessionData.messages
+            .filter((m: { role: string }) => m.role === 'user' || m.role === 'assistant')
+            .map((m: { role: string; content: string }) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content || '',
+            }))
+          if (loaded.length > 0) {
+            setMessages(loaded)
+          }
+        }
+      } catch {
+        // Silently fail — just start blank
+      }
+    }
+    loadLastChat()
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadSessions() {
     try {
       const resp = await fetch('/api/chat/sessions')
