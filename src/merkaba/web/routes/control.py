@@ -350,19 +350,54 @@ async def change_model(body: ModelChangeRequest):
 
 @router.post("/worker/{worker_id}/trigger")
 async def trigger_worker(worker_id: str, request: Request):
-    """Manually trigger a worker by creating a pending task."""
+    """Manually trigger a worker — executes it and records the run."""
+    from starlette.background import BackgroundTask
+    from starlette.responses import JSONResponse as StarletteJSONResponse
+
     from merkaba.orchestration.workers import WORKER_REGISTRY
 
     if worker_id not in WORKER_REGISTRY:
         raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found")
 
     task_queue = request.app.state.task_queue
-    task_id = task_queue.add_task(
-        name=f"Manual: {worker_id}",
-        task_type=worker_id,
-        payload={"triggered_by": "mission-control"},
+
+    # Find existing task for this worker type (avoid creating duplicates)
+    task_id = None
+    try:
+        for t in task_queue.list_tasks():
+            if t["task_type"] == worker_id:
+                task_id = t["id"]
+                break
+    except Exception:
+        pass
+
+    # Create one only if no existing task found
+    if task_id is None:
+        task_id = task_queue.add_task(
+            name=f"Manual: {worker_id}",
+            task_type=worker_id,
+            payload={"triggered_by": "mission-control"},
+        )
+
+    task = task_queue.get_task(task_id)
+    run_id = task_queue.start_run(task_id)
+
+    def _execute_worker():
+        worker_cls = WORKER_REGISTRY[worker_id]
+        worker = worker_cls()
+        try:
+            result = worker.execute(task)
+            task_queue.finish_run(
+                run_id, "success", result=result.output if result else None,
+            )
+        except Exception as e:
+            logger.error("Manual trigger of %s failed: %s", worker_id, e)
+            task_queue.finish_run(run_id, "failed", error=str(e))
+
+    return StarletteJSONResponse(
+        content={"worker_id": worker_id, "task_id": task_id, "run_id": run_id, "status": "running"},
+        background=BackgroundTask(_execute_worker),
     )
-    return {"worker_id": worker_id, "task_id": task_id, "status": "queued"}
 
 
 @ws_router.websocket("/ws/control")

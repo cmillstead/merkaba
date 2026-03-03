@@ -333,15 +333,24 @@ class TestControlWorkerDetails:
 class TestControlWorkerTrigger:
     """Tests for POST /api/control/worker/{worker_id}/trigger endpoint."""
 
+    def _mock_execute(self, _task):
+        from merkaba.orchestration.workers import WorkerResult
+        return WorkerResult(success=True, output={"status": "healthy"})
+
     def test_trigger_worker(self, app_client):
-        """POST /api/control/worker/{id}/trigger creates a task and returns it."""
+        """POST /api/control/worker/{id}/trigger executes worker and records run."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
         client, app = app_client
-        resp = client.post("/api/control/worker/health_check/trigger")
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
         assert resp.status_code == 200
         data = resp.json()
         assert data["worker_id"] == "health_check"
         assert "task_id" in data
-        assert data["status"] == "queued"
+        assert "run_id" in data
+        assert data["status"] == "running"
 
     def test_trigger_unknown_worker(self, app_client):
         """Triggering a non-existent worker returns 404."""
@@ -351,8 +360,12 @@ class TestControlWorkerTrigger:
 
     def test_trigger_creates_task_in_queue(self, app_client):
         """Triggering a worker should create a real task in TaskQueue."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
         client, app = app_client
-        resp = client.post("/api/control/worker/health_check/trigger")
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
         assert resp.status_code == 200
         task_id = resp.json()["task_id"]
 
@@ -362,12 +375,46 @@ class TestControlWorkerTrigger:
         matching = [t for t in tasks if t["id"] == task_id]
         assert len(matching) == 1
         assert matching[0]["task_type"] == "health_check"
-        assert matching[0]["name"] == "Manual: health_check"
+
+    def test_trigger_records_run_history(self, app_client):
+        """Triggering a worker should record a completed run in task_runs."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        tq = app.state.task_queue
+        runs = tq.get_runs(task_id)
+        assert len(runs) >= 1
+        assert runs[0]["status"] == "success"
+        assert runs[0]["finished_at"] is not None
+
+    def test_trigger_reuses_existing_task(self, app_client):
+        """Triggering should reuse an existing task, not create a duplicate."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        tq = app.state.task_queue
+        existing_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == existing_id
 
     def test_trigger_payload_contains_source(self, app_client):
         """Triggered task payload should identify mission-control as the source."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import ResearchWorker
+
         client, app = app_client
-        resp = client.post("/api/control/worker/research/trigger")
+        with patch.object(ResearchWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/research/trigger")
         assert resp.status_code == 200
         task_id = resp.json()["task_id"]
 
@@ -377,6 +424,23 @@ class TestControlWorkerTrigger:
         import json
         payload = json.loads(task["payload"]) if isinstance(task["payload"], str) else task["payload"]
         assert payload["triggered_by"] == "mission-control"
+
+    def test_trigger_records_failure(self, app_client):
+        """If worker.execute raises, the run should be recorded as failed."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        with patch.object(HealthCheckWorker, "execute", side_effect=RuntimeError("boom")):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+
+        tq = app.state.task_queue
+        task_id = resp.json()["task_id"]
+        runs = tq.get_runs(task_id)
+        assert len(runs) >= 1
+        assert runs[0]["status"] == "failed"
+        assert "boom" in (runs[0].get("error") or "")
 
 
 @pytest.mark.e2e
