@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 import threading
+import urllib.parse
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 if "ollama" not in sys.modules:
     sys.modules["ollama"] = MagicMock()
 
-from merkaba.web.diagnostics import DiagnosticsStore, TraceDepth
+from merkaba.web.diagnostics import DiagnosticsMiddleware, DiagnosticsStore, TraceDepth
 
 
 pytestmark = pytest.mark.e2e
@@ -350,3 +351,66 @@ class TestDiagnosticsIntegration:
         store = app.state.diagnostics_store
         paths = [r["path"] for r in store.get_recent(20)]
         assert "/api/system/diagnostics" in paths
+
+
+class TestRedactQueryString:
+    """Unit tests for DiagnosticsMiddleware._redact_query_string (C2)."""
+
+    def test_redacts_token_param(self):
+        result = DiagnosticsMiddleware._redact_query_string(
+            b"token=secret_api_key_12345&other=safe"
+        )
+        result_str = result.decode("utf-8")
+        assert "secret_api_key_12345" not in result_str
+        assert "token=%5BREDACTED%5D" in result_str or "token=[REDACTED]" in result_str
+        assert "other=safe" in result_str
+
+    def test_redacts_key_param(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"key=my-secret-key")
+        result_str = result.decode("utf-8")
+        assert "my-secret-key" not in result_str
+        assert "key=" in result_str
+
+    def test_redacts_secret_param(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"secret=topsecret")
+        result_str = result.decode("utf-8")
+        assert "topsecret" not in result_str
+
+    def test_redacts_api_key_param(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"api_key=abc123&q=hello")
+        result_str = result.decode("utf-8")
+        assert "abc123" not in result_str
+        assert "q=hello" in result_str
+
+    def test_redacts_apikey_param(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"apikey=xyz789")
+        result_str = result.decode("utf-8")
+        assert "xyz789" not in result_str
+
+    def test_preserves_safe_params(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"foo=bar&baz=qux")
+        result_str = result.decode("utf-8")
+        assert "foo=bar" in result_str
+        assert "baz=qux" in result_str
+
+    def test_empty_query_string(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"")
+        assert result == b""
+
+    def test_case_insensitive_redaction(self):
+        result = DiagnosticsMiddleware._redact_query_string(b"TOKEN=abc&Key=xyz")
+        result_str = result.decode("utf-8")
+        assert "abc" not in result_str
+        assert "xyz" not in result_str
+
+    def test_token_value_redacted_and_safe_param_preserved(self):
+        """Canonical test from task spec."""
+        result = DiagnosticsMiddleware._redact_query_string(
+            b"token=secret_api_key_12345&other=safe"
+        )
+        result_str = result.decode("utf-8")
+        assert "secret_api_key_12345" not in result_str
+        # token param should have [REDACTED] as value (URL-encoded or raw)
+        assert "token=" in result_str
+        assert "[REDACTED]" in urllib.parse.unquote(result_str)
+        assert "other=safe" in result_str
