@@ -214,6 +214,51 @@ class TestNewProtectedPaths:
         assert sandbox.is_path_allowed(target) is False
 
 
+# --- Business isolation ---
+
+
+class TestBusinessIsolation:
+    def _make_sandbox(self, allowed_business_ids=None):
+        manifest = PluginManifest(name="biz-plugin", required_tools=["file_read"])
+        return PluginSandbox(manifest=manifest, allowed_business_ids=allowed_business_ids)
+
+    def test_sandbox_business_isolation(self):
+        """check_business_access raises when business_id is not in the allowed list."""
+        sandbox = self._make_sandbox(allowed_business_ids=[1, 2])
+        # Allowed IDs should pass
+        sandbox.check_business_access(1)  # no raise
+        sandbox.check_business_access(2)  # no raise
+        # Disallowed ID should raise
+        with pytest.raises(PluginPermissionError, match="does not have access to business"):
+            sandbox.check_business_access(3)
+
+    def test_sandbox_business_isolation_none_allows_all(self):
+        """When allowed_business_ids is None, every business id is accessible."""
+        sandbox = self._make_sandbox(allowed_business_ids=None)
+        # These should never raise
+        sandbox.check_business_access(0)
+        sandbox.check_business_access(1)
+        sandbox.check_business_access(999)
+
+    def test_sandbox_business_isolation_empty_list_blocks_all(self):
+        """An empty allowed_business_ids list blocks every business id."""
+        sandbox = self._make_sandbox(allowed_business_ids=[])
+        with pytest.raises(PluginPermissionError):
+            sandbox.check_business_access(1)
+
+    def test_sandbox_business_isolation_error_message_includes_id(self):
+        """Error message includes the rejected business id."""
+        sandbox = self._make_sandbox(allowed_business_ids=[10, 20])
+        with pytest.raises(PluginPermissionError, match="42"):
+            sandbox.check_business_access(42)
+
+    def test_sandbox_default_allowed_business_ids_is_none(self):
+        """PluginSandbox.allowed_business_ids defaults to None."""
+        manifest = PluginManifest(name="default-plugin")
+        sandbox = PluginSandbox(manifest=manifest)
+        assert sandbox.allowed_business_ids is None
+
+
 # --- Agent integration ---
 
 

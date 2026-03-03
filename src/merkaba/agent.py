@@ -71,6 +71,16 @@ class Agent:
             self.memory = ConversationLog(storage_dir=self.memory_storage_dir)
         else:
             self.memory = ConversationLog()
+
+        # Wire encryption key from keychain if available
+        try:
+            from merkaba.security.encryption import ConversationEncryptor
+            encryptor = ConversationEncryptor.from_keychain()
+            if encryptor is not None:
+                self.memory.encryptor = encryptor
+        except Exception as e:
+            logger.debug("Encryption key not available: %s", e)
+
         self.permission_manager = PermissionManager()
         self.input_classifier = InputClassifier()
         self._verifier = DeterministicVerifier()

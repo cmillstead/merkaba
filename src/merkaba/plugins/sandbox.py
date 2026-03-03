@@ -60,6 +60,21 @@ class PluginSandbox:
     """Wraps tool execution with manifest-based restrictions."""
 
     manifest: PluginManifest
+    allowed_business_ids: list[int] | None = None
+
+    def check_business_access(self, business_id: int) -> None:
+        """Raise PluginPermissionError if business_id is not in the allowed list.
+
+        When ``allowed_business_ids`` is None, all businesses are accessible
+        (backward-compatible default).
+        """
+        if self.allowed_business_ids is None:
+            return
+        if business_id not in self.allowed_business_ids:
+            raise PluginPermissionError(
+                f"Plugin '{self.manifest.name}' does not have access to business "
+                f"id {business_id!r}. Allowed business ids: {self.allowed_business_ids}"
+            )
 
     def check_tool_access(self, tool_name: str) -> None:
         """Raise PluginPermissionError if tool not declared in manifest."""

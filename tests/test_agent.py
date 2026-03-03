@@ -175,3 +175,41 @@ def test_agent_runs_security_check_on_init():
         agent = Agent(plugins_enabled=False)
 
         mock_scanner.quick_scan.assert_called_once()
+
+
+def test_agent_encryption_key_from_keychain(temp_memory_dir):
+    """Encryption key from keychain is wired into ConversationLog.encryptor."""
+    import sys
+    from merkaba.security.encryption import ConversationEncryptor
+
+    mock_encryptor = MagicMock(spec=ConversationEncryptor)
+
+    with patch("merkaba.security.encryption.ConversationEncryptor.from_keychain",
+               return_value=mock_encryptor):
+        agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
+
+    assert agent.memory.encryptor is mock_encryptor
+
+
+def test_agent_encryption_no_keyring(temp_memory_dir):
+    """Agent initializes without error when keyring is not installed."""
+    import sys
+
+    # Simulate ImportError raised inside from_keychain by having it return None
+    # (the actual from_keychain already swallows ImportError and returns None)
+    with patch("merkaba.security.encryption.ConversationEncryptor.from_keychain",
+               return_value=None):
+        agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
+
+    # No encryptor set — should default to None
+    assert agent.memory.encryptor is None
+
+
+def test_agent_encryption_exception_is_non_fatal(temp_memory_dir):
+    """Agent continues initialization even if encryption wiring raises."""
+    with patch("merkaba.security.encryption.ConversationEncryptor.from_keychain",
+               side_effect=RuntimeError("keychain unavailable")):
+        # Should not raise
+        agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
+
+    assert agent.memory is not None
