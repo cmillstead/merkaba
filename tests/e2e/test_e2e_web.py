@@ -522,3 +522,89 @@ def test_rate_limit_returns_retry_after(app_client):
     assert resp.json()["detail"] == "Rate limit exceeded"
     assert "retry-after" in resp.headers
     assert resp.headers["retry-after"] == "60"
+
+
+# ---------------------------------------------------------------------------
+# 15. Token-usage endpoint error is sanitized (H2)
+# ---------------------------------------------------------------------------
+
+def test_token_usage_error_is_sanitized(app_client):
+    """GET /api/system/token-usage returns a generic error message on failure.
+
+    Verifies finding H2: str(e) must not appear in the response. The error
+    field must be a fixed generic string, not any internal exception detail.
+    """
+    client, app = app_client
+
+    internal_error = RuntimeError(
+        "sqlite3.OperationalError: database is locked:"
+        " /home/user/.merkaba/token_usage.db"
+    )
+
+    # Patch the TokenUsageStore constructor to raise so the except block fires.
+    # We need to patch it in the observability module AND inject it into
+    # the system route module's namespace via the import machinery.
+    with patch.dict("sys.modules", {"merkaba.observability.tokens": MagicMock()}):
+        import sys as _sys
+        tokens_mod = _sys.modules["merkaba.observability.tokens"]
+        tokens_mod.TokenUsageStore = MagicMock(side_effect=internal_error)
+
+        resp = client.get("/api/system/token-usage")
+
+    # Must be a server error (500 or 503)
+    assert resp.status_code in (500, 503)
+    data = resp.json()
+    assert "error" in data
+
+    error_msg = data["error"]
+    # Must not contain any internal exception detail
+    assert "sqlite3" not in error_msg
+    assert "/home/" not in error_msg
+    assert ".db" not in error_msg
+    assert "Traceback" not in error_msg
+    # Must be one of the two acceptable generic messages
+    assert (
+        "Failed to retrieve token usage data" in error_msg
+        or "TokenUsageStore not available" in error_msg
+    )
+
+
+# ---------------------------------------------------------------------------
+# 16. List-models endpoint error is sanitized (H2)
+# ---------------------------------------------------------------------------
+
+def test_list_models_error_is_sanitized(app_client):
+    """GET /api/system/models returns a generic error message when Ollama is unreachable.
+
+    Verifies finding H2: the error field must be a fixed generic string, not
+    raw exception text (e.g., connection refused with socket paths).
+    """
+    client, app = app_client
+
+    import httpx as _httpx
+
+    internal_error = _httpx.ConnectError(
+        "[Errno 111] Connection refused — socket /var/run/ollama/ollama.sock"
+    )
+
+    with patch("httpx.AsyncClient") as MockClient:
+        mock_instance = MagicMock()
+        mock_instance.__aenter__ = MagicMock(return_value=mock_instance)
+        mock_instance.__aexit__ = MagicMock(return_value=False)
+        mock_instance.get = MagicMock(side_effect=internal_error)
+        MockClient.return_value = mock_instance
+
+        resp = client.get("/api/system/models")
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert "error" in data
+
+    error_msg = data["error"]
+    # Must not leak internal socket path or raw exception text
+    assert "ollama.sock" not in error_msg
+    assert "Connection refused" not in error_msg
+    assert "Errno" not in error_msg
+    assert "Traceback" not in error_msg
+    # Must be the exact expected generic message
+    assert error_msg == "Unable to connect to model provider"

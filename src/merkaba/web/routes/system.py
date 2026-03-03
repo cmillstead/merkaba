@@ -1,9 +1,12 @@
+import logging
 import os
 
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.routing import Mount
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["system"])
 
@@ -94,10 +97,11 @@ async def token_usage(
         store = TokenUsageStore()
         usage = store.get_summary(group_by=group_by, days=days)
         return {"usage": usage}
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to retrieve token usage data")
         return JSONResponse(
             status_code=500,
-            content={"usage": [], "error": str(e)},
+            content={"usage": [], "error": "Failed to retrieve token usage data"},
         )
     finally:
         if store is not None:
@@ -113,8 +117,9 @@ async def list_models():
             resp.raise_for_status()
             data = resp.json()
             return {"models": data.get("models", [])}
-    except Exception as e:
+    except Exception:
+        logger.exception("Unable to connect to model provider")
         return JSONResponse(
             status_code=503,
-            content={"models": [], "error": str(e)},
+            content={"models": [], "error": "Unable to connect to model provider"},
         )
