@@ -18,6 +18,14 @@ type View =
 export default function MissionControl() {
   const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
   const [view, setView] = useState<View>({ mode: 'constellation' })
+  const [viewReady, setViewReady] = useState(false)
+
+  useEffect(() => {
+    setViewReady(false)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setViewReady(true))
+    })
+  }, [view.mode])
 
   const handleSelectNode = useCallback((nodeId: string, nodeType: 'agent' | 'worker') => {
     if (nodeType === 'worker') {
@@ -80,53 +88,55 @@ export default function MissionControl() {
     <div className="mission-control">
       <HudStatusBar system={state.system} connected={connected} />
 
-      {view.mode === 'constellation' && (
-        <ConstellationMap
-          agents={state.agents}
-          workers={state.workers}
-          connections={state.connections}
-          system={state.system}
-          onSelectNode={handleSelectNode}
-        />
-      )}
-
-      {view.mode === 'agent' && (() => {
-        const agent = state.agents.find(a => a.id === view.nodeId)
-        if (!agent) return null
-        const approvals = state.kanban?.awaiting_approval ?? []
-        return (
-          <AgentDetailView
-            agent={agent}
+      <div className={`mc-view-wrapper ${viewReady ? 'mc-view-active' : 'mc-view-enter'}`}>
+        {view.mode === 'constellation' && (
+          <ConstellationMap
+            agents={state.agents}
+            workers={state.workers}
+            connections={state.connections}
             system={state.system}
-            pendingApprovals={approvals}
-            onBack={handleBack}
-            onModelChange={handleModelChange}
+            onSelectNode={handleSelectNode}
           />
-        )
-      })()}
+        )}
 
-      {view.mode === 'worker' && (() => {
-        const worker = state.workers.find(w => w.id === view.workerId)
-        if (!worker) return null
-        return <WorkerDetailView worker={worker} onBack={handleBack} />
-      })()}
+        {view.mode === 'agent' && (() => {
+          const agent = state.agents.find(a => a.id === view.nodeId)
+          if (!agent) return null
+          const approvals = state.kanban?.awaiting_approval ?? []
+          return (
+            <AgentDetailView
+              agent={agent}
+              system={state.system}
+              pendingApprovals={approvals}
+              onBack={handleBack}
+              onModelChange={handleModelChange}
+            />
+          )
+        })()}
 
-      {view.mode === 'kanban' && (
-        <KanbanBoard
-          kanban={state.kanban}
-          onSubscribe={subscribeKanban}
-          onUnsubscribe={unsubscribeKanban}
-        />
-      )}
+        {view.mode === 'worker' && (() => {
+          const worker = state.workers.find(w => w.id === view.workerId)
+          if (!worker) return null
+          return <WorkerDetailView worker={worker} onBack={handleBack} />
+        })()}
 
-      {view.mode === 'diagnostics' && (
-        <DiagnosticsView
-          diagnostics={state.diagnostics}
-          onSubscribe={subscribeDiagnostics}
-          onUnsubscribe={unsubscribeDiagnostics}
-          onSetTraceDepth={setTraceDepth}
-        />
-      )}
+        {view.mode === 'kanban' && (
+          <KanbanBoard
+            kanban={state.kanban}
+            onSubscribe={subscribeKanban}
+            onUnsubscribe={unsubscribeKanban}
+          />
+        )}
+
+        {view.mode === 'diagnostics' && (
+          <DiagnosticsView
+            diagnostics={state.diagnostics}
+            onSubscribe={subscribeDiagnostics}
+            onUnsubscribe={unsubscribeDiagnostics}
+            onSetTraceDepth={setTraceDepth}
+          />
+        )}
+      </div>
 
       <CommandPalette commands={commands} />
 

@@ -437,6 +437,24 @@ input:focus, textarea:focus {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* View transition animations */
+.mc-view-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mc-view-enter {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.mc-view-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
 /* Harness View */
 .harness-view {
   flex: 1;
