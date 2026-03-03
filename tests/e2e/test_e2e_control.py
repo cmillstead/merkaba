@@ -109,6 +109,20 @@ class TestControlState:
                 for c in connections
             ), f"Missing connection for worker {worker['id']}"
 
+    def test_state_empty_dbs_defaults(self, app_client):
+        """All DBs empty should return correct defaults."""
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        assert data["system"]["memory_facts"] == 0
+        assert data["system"]["memory_archived"] == 0
+        assert data["system"]["pending_approvals"] == 0
+        assert data["system"]["active_tasks"] == 0
+        assert data["system"]["status"] == "online"
+        # Workers should have empty run_history
+        for w in data["workers"]:
+            assert w["run_history"] == []
+
 
 @pytest.mark.e2e
 class TestControlWebSocket:
@@ -252,6 +266,23 @@ class TestWebSocketAuthGuard:
         client, app = authed_app_client
         resp = client.get("/api/control/state")
         assert resp.status_code == 401
+
+    def test_ws_token_query_param(self, authed_app_client):
+        """WebSocket connection via ?token= query parameter should succeed."""
+        client, app = authed_app_client
+        with client.websocket_connect("/ws/control?token=test-secret-key") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "state_update"
+
+    def test_ws_bearer_token(self, authed_app_client):
+        """WebSocket connection via Authorization: Bearer header should succeed."""
+        client, app = authed_app_client
+        with client.websocket_connect(
+            "/ws/control",
+            headers={"Authorization": "Bearer test-secret-key"},
+        ) as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "state_update"
 
 
 @pytest.mark.e2e
@@ -459,6 +490,109 @@ class TestControlWorkerTrigger:
         assert runs[0]["status"] == "failed"
         assert "boom" in (runs[0].get("error") or "")
 
+    def test_trigger_concurrent_double_trigger(self, app_client):
+        """Triggering same worker twice should reuse the task, creating two distinct runs."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp1 = client.post("/api/control/worker/health_check/trigger")
+            resp2 = client.post("/api/control/worker/health_check/trigger")
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        assert resp1.json()["task_id"] == resp2.json()["task_id"]
+        assert resp1.json()["run_id"] != resp2.json()["run_id"]
+
+    def test_trigger_worker_failure_preserves_last_run(self, app_client):
+        """Even when worker fails, last_run should be updated (finally block)."""
+        import time
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+        assert tq.get_task(task_id)["last_run"] is None
+
+        with patch.object(HealthCheckWorker, "execute", side_effect=RuntimeError("fail")):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        time.sleep(0.5)  # let background task finish
+
+        # Re-read from DB (background uses separate conn)
+        from merkaba.orchestration.queue import TaskQueue
+        tq2 = TaskQueue(db_path=tq.db_path)
+        task = tq2.get_task(task_id)
+        assert task["last_run"] is not None
+        tq2.close()
+
+    def test_trigger_creates_task_when_none_exist(self, app_client):
+        """Triggering with empty queue creates a new task with correct metadata."""
+        from unittest.mock import patch
+        from merkaba.orchestration.workers import HealthCheckWorker
+
+        client, app = app_client
+        tq = app.state.task_queue
+        assert len(tq.list_tasks()) == 0
+
+        with patch.object(HealthCheckWorker, "execute", self._mock_execute):
+            resp = client.post("/api/control/worker/health_check/trigger")
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        task = tq.get_task(task_id)
+        assert task["task_type"] == "health_check"
+        import json
+        payload = json.loads(task["payload"]) if isinstance(task["payload"], str) else task["payload"]
+        assert payload["triggered_by"] == "mission-control"
+
+
+@pytest.mark.e2e
+class TestBuildStateFallback:
+    """Tests for _build_state last_run fallback from task_runs (commit 94a185c fix)."""
+
+    def test_last_run_derived_from_finished_run(self, app_client):
+        """When task.last_run is NULL but a finished run exists, derive last_run from it."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+
+        # Create a finished run without updating task.last_run directly
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "success", result={"ok": True})
+        # Reset task.last_run to NULL to simulate race condition
+        tq._conn.execute("UPDATE tasks SET last_run = NULL WHERE id = ?", (task_id,))
+        tq._conn.commit()
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert hc["last_run"] is not None
+
+    def test_last_run_null_when_no_runs(self, app_client):
+        """When task.last_run is NULL and no runs exist, last_run stays None."""
+        client, app = app_client
+        tq = app.state.task_queue
+        tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert hc["last_run"] is None
+
+    def test_last_run_null_when_run_still_running(self, app_client):
+        """When task.last_run is NULL and the only run hasn't finished, last_run stays None."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+        tq.start_run(task_id)  # started but not finished
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert hc["last_run"] is None
+
 
 @pytest.mark.e2e
 class TestEnsureScheduledWorkers:
@@ -547,6 +681,17 @@ class TestEnsureScheduledWorkers:
         assert task["status"] == "pending"
         assert task["schedule"] is not None
 
+    def test_ensure_handles_list_tasks_exception(self, app_client):
+        """When list_tasks() raises, function should not crash."""
+        from unittest.mock import patch, MagicMock
+        from merkaba.web.routes.control import ensure_scheduled_workers
+
+        client, app = app_client
+        tq = app.state.task_queue
+        with patch.object(tq, "list_tasks", side_effect=RuntimeError("db locked")):
+            # Should not raise
+            ensure_scheduled_workers(tq)
+
 
 @pytest.mark.e2e
 class TestControlKanban:
@@ -624,6 +769,50 @@ class TestControlKanban:
         data = resp.json()
         assert len(data["completed"]) <= 50
 
+    def test_kanban_mixed_task_states(self, app_client):
+        """Tasks in pending/running/failed should appear in correct columns."""
+        client, app = app_client
+        tq = app.state.task_queue
+        pending_id = tq.add_task("Pending", "health_check")
+        running_id = tq.add_task("Running", "research")
+        tq.start_run(running_id)
+        failed_id = tq.add_task("Fail", "code")
+        run_id = tq.start_run(failed_id)
+        tq.finish_run(run_id, "failed", error="oops")
+
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(c["id"] == pending_id for c in data["queued"])
+        assert any(c["id"] == running_id for c in data["running"])
+        assert any(r["error"] == "oops" for r in data["failed"])
+
+    def test_kanban_failed_run_includes_error(self, app_client):
+        """Failed run card should include the error message."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Fail task", "health_check")
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "failed", error="connection timeout")
+
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        failed_card = next(r for r in data["failed"] if r["task_id"] == task_id)
+        assert failed_card["error"] == "connection timeout"
+
+    def test_kanban_completed_card_includes_task_fields(self, app_client):
+        """Completed run card should include name and task_type from JOIN."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("My Health Check", "health_check")
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "success", result={"ok": True})
+
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        card = next(r for r in data["completed"] if r["task_id"] == task_id)
+        assert card["name"] == "My Health Check"
+        assert card["task_type"] == "health_check"
+
 
 @pytest.mark.e2e
 class TestControlKanbanWebSocket:
@@ -658,6 +847,27 @@ class TestControlKanbanWebSocket:
             ws.send_json({"type": "unsubscribe", "channel": "kanban"})
             msg = ws.receive_json()
             assert "kanban" not in msg
+
+    def test_subscribe_both_kanban_and_diagnostics(self, app_client):
+        """Subscribing to both channels should include both in heartbeat."""
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state
+            ws.send_json({"type": "subscribe", "channel": "kanban"})
+            ws.send_json({"type": "subscribe", "channel": "diagnostics"})
+            msg = ws.receive_json()
+            assert "kanban" in msg
+            assert "diagnostics" in msg
+
+    def test_subscribe_unknown_channel_ignored(self, app_client):
+        """Subscribing to an unknown channel should not crash."""
+        client, app = app_client
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # initial state
+            ws.send_json({"type": "subscribe", "channel": "nonexistent"})
+            msg = ws.receive_json()
+            # Only known channels appear in heartbeat
+            assert "nonexistent" not in msg
 
 
 @pytest.mark.e2e
@@ -768,3 +978,76 @@ class TestControlAgentActivity:
         assert data["system"]["memory_archived"] == 2
         # Only non-archived facts counted
         assert data["system"]["memory_facts"] == 1
+
+    def test_recent_activity_malformed_json(self, app_client):
+        """Malformed JSON files should be silently skipped."""
+        client, app = app_client
+        import os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        with open(os.path.join(conv_dir, "20260302-140000.json"), "w") as f:
+            f.write("{invalid json!!!}")
+
+        resp = client.get("/api/control/state")
+        assert resp.status_code == 200
+        data = resp.json()
+        agent = data["agents"][0]
+        assert agent["recent_activity"] == []
+
+    def test_recent_activity_no_user_messages(self, app_client):
+        """Conversation with only assistant messages should have empty preview."""
+        client, app = app_client
+        import json, os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        conv = {
+            "session_id": "20260302-150000",
+            "messages": [
+                {"role": "assistant", "content": "Hello!", "timestamp": "2026-03-02T15:00:00"},
+            ],
+            "saved_at": "2026-03-02T15:00:00",
+        }
+        with open(os.path.join(conv_dir, "20260302-150000.json"), "w") as f:
+            json.dump(conv, f)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert len(agent["recent_activity"]) == 1
+        assert agent["recent_activity"][0]["preview"] == ""
+
+    def test_recent_activity_empty_conversations_dir(self, app_client):
+        """Empty conversations directory should return empty activity list."""
+        client, app = app_client
+        import os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert agent["recent_activity"] == []
+
+    def test_recent_activity_non_json_files_ignored(self, app_client):
+        """Non-.json files in conversations/ should be skipped."""
+        client, app = app_client
+        import json, os
+        conv_dir = os.path.join(app.state.merkaba_base_dir, "conversations")
+        os.makedirs(conv_dir, exist_ok=True)
+        # Create a .txt file that should be ignored
+        with open(os.path.join(conv_dir, "notes.txt"), "w") as f:
+            f.write("not a conversation")
+        # Create a valid .json file
+        conv = {
+            "session_id": "20260302-160000",
+            "messages": [{"role": "user", "content": "Hi", "timestamp": "2026-03-02T16:00:00"}],
+            "saved_at": "2026-03-02T16:00:00",
+        }
+        with open(os.path.join(conv_dir, "20260302-160000.json"), "w") as f:
+            json.dump(conv, f)
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        agent = data["agents"][0]
+        assert len(agent["recent_activity"]) == 1
+        assert agent["recent_activity"][0]["session_id"] == "20260302-160000"
