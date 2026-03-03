@@ -53,3 +53,22 @@ def test_atomic_write_json_with_kwargs(tmp_path):
     _atomic_write_json(config_path, {"ts": datetime(2026, 1, 1)}, default=str)
     data = json.loads((tmp_path / "test.json").read_text())
     assert data["ts"] == "2026-01-01 00:00:00"
+
+
+def test_data_delete_all_single_close():
+    """Bug: store.close() should only appear once (in finally block)."""
+    import inspect
+    from merkaba.cli import data_delete_all
+
+    source = inspect.getsource(data_delete_all)
+    # The close should be in the finally block only
+    assert source.count("store.close()") == 1
+
+
+def test_load_cli_extensions_has_outer_try():
+    """Extension loading should not crash CLI on import failure."""
+    import inspect
+    from merkaba.cli import _load_cli_extensions
+
+    source = inspect.getsource(_load_cli_extensions)
+    assert "Failed to discover CLI extensions" in source

@@ -60,12 +60,15 @@ console = Console()
 
 # Load CLI extensions from installed packages
 def _load_cli_extensions():
-    from merkaba.extensions import discover_cli_apps
-    for name, ext_app in discover_cli_apps().items():
-        try:
-            app.add_typer(ext_app, name=name)
-        except Exception as e:
-            logger.warning("Failed to load CLI extension %s: %s", name, e)
+    try:
+        from merkaba.extensions import discover_cli_apps
+        for name, ext_app in discover_cli_apps().items():
+            try:
+                app.add_typer(ext_app, name=name)
+            except Exception as e:
+                logger.warning("Failed to load CLI extension %s: %s", name, e)
+    except Exception as e:
+        logger.warning("Failed to discover CLI extensions: %s", e)
 
 _load_cli_extensions()
 
