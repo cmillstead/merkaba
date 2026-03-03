@@ -2318,8 +2318,7 @@ def data_export(
         "state": state,
     }
 
-    with open(output, "w") as f:
-        json.dump(payload, f, indent=2, default=str)
+    _atomic_write_json(output, payload, default=str)
 
     console.print(
         f"[green]Exported[/green] "
@@ -2333,12 +2332,12 @@ def data_export(
 @data_app.command("delete-all")
 def data_delete_all(
     business_id: int = typer.Option(..., "--business-id", "-b", help="Business ID whose data to delete"),
-    confirm: bool = typer.Option(False, "--confirm", help="Skip interactive confirmation prompt"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive confirmation prompt"),
 ):
     """Permanently delete all data for a business (facts, decisions, episodes, etc.)."""
     from merkaba.memory.store import MemoryStore
 
-    if not confirm:
+    if not yes:
         confirmed = typer.confirm(
             f"This will permanently delete all data for business {business_id}. Continue?"
         )

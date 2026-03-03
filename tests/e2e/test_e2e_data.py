@@ -105,7 +105,7 @@ def test_data_export_by_business(cli_runner, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. data delete-all --confirm — seeds data, deletes, verifies gone
+# 3. data delete-all --yes — seeds data, deletes, verifies gone
 # ---------------------------------------------------------------------------
 
 def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
@@ -125,10 +125,10 @@ def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
 
     # Patch MERKABA_DIR so file cleanup targets the temp dir, not ~/.merkaba
     with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
-        # Delete with --confirm flag (no interactive prompt)
+        # Delete with --yes flag (no interactive prompt)
         result = runner.invoke(
             app,
-            ["data", "delete-all", "--business-id", str(business_id), "--confirm"],
+            ["data", "delete-all", "--business-id", str(business_id), "--yes"],
         )
     assert result.exit_code == 0, result.output
     assert "Deleted all data" in result.output
@@ -149,14 +149,14 @@ def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
 
 
 # ---------------------------------------------------------------------------
-# 4. data delete-all — no --confirm prompts; data survives if not confirmed
+# 4. data delete-all — no --yes prompts; data survives if not confirmed
 # ---------------------------------------------------------------------------
 
 def test_data_delete_all_no_confirm_aborts(cli_runner, seeded_memory):
     runner, app = cli_runner
     business_id = seeded_memory["business_id"]
 
-    # Invoke without --confirm; answer "n" at the prompt
+    # Invoke without --yes; answer "n" at the prompt
     result = runner.invoke(
         app,
         ["data", "delete-all", "--business-id", str(business_id)],
@@ -210,7 +210,7 @@ def test_data_delete_all_removes_file_directories(cli_runner, seeded_memory):
     with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
         result = runner.invoke(
             app,
-            ["data", "delete-all", "--business-id", str(business_id), "--confirm"],
+            ["data", "delete-all", "--business-id", str(business_id), "--yes"],
         )
 
     assert result.exit_code == 0, result.output
