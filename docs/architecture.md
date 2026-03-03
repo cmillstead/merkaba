@@ -302,6 +302,76 @@ Agent._execute_tools() loop
       → CANCEL: abort loop, return partial response
 ```
 
+## WebSocket Protocol
+
+Merkaba exposes two WebSocket endpoints for real-time communication.
+
+### Authentication
+
+Both endpoints require the same authentication as HTTP endpoints when an API key is configured:
+
+- **Header**: `Authorization: Bearer <key>` or `X-API-Key: <key>`
+- **Query param**: `?token=<key>` (useful for browser clients that cannot set headers)
+
+When no API key is configured (default), connections are accepted without authentication.
+
+### Message Size Limit
+
+Incoming messages are capped at **64 KB** per frame. Messages exceeding this limit receive an error response and are not processed:
+
+```json
+{"type": "error", "content": "Message too large (max 64KB)"}
+```
+
+### `/ws/chat` — Agent Chat
+
+Real-time chat with the Merkaba agent routed through `SessionPool`.
+
+**Client sends:**
+```json
+{"content": "your message here"}
+```
+The `message` key is also accepted as an alias for `content`.
+
+**Server sends (in order):**
+```json
+{"type": "thinking", "tool": null, "status": "processing"}
+{"type": "thinking", "tool": "tool_name", "status": "completed"}
+{"type": "response", "content": "agent reply text"}
+```
+
+If the agent raises an unhandled exception, the server sends an error frame instead of a response:
+```json
+{"type": "error", "content": "error description"}
+```
+
+The connection stays open after an error — the client can send another message without reconnecting.
+
+### `/ws/control` — Mission Control
+
+Bidirectional channel for the Mission Control dashboard. Uses a subscribe/unsubscribe protocol over a shared connection.
+
+**Subscribe to a channel:**
+```json
+{"action": "subscribe", "channel": "state"}
+{"action": "subscribe", "channel": "diagnostics"}
+```
+
+**Unsubscribe:**
+```json
+{"action": "unsubscribe", "channel": "diagnostics"}
+```
+
+**Server sends (heartbeat, every 2 seconds):**
+```json
+{"type": "heartbeat", "state": { ... }}
+```
+
+**Server sends (diagnostics, when subscribed):**
+```json
+{"type": "diagnostics", "data": { ... }}
+```
+
 ## Protocol Definitions
 
 Four `@runtime_checkable` Protocol classes define the expected interfaces for swappable subsystems:

@@ -159,6 +159,67 @@ class TestWebSocketQueryParamAuth:
 
 
 # ---------------------------------------------------------------------------
+# WebSocket error handling
+# ---------------------------------------------------------------------------
+
+class TestWebSocketErrorHandling:
+    """Verify that agent errors and oversized messages produce error frames."""
+
+    @pytest.fixture
+    def open_client(self, tmp_path):
+        """App client without an API key (open access)."""
+        app = _make_app(tmp_path)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield client, app
+
+    def test_websocket_error_message_type(self, open_client):
+        """When agent.run() raises an exception the client should receive
+        {"type": "error"} rather than a hard disconnect."""
+        client, app = open_client
+
+        mock_agent = MagicMock()
+        mock_agent.run.side_effect = RuntimeError("agent exploded")
+        mock_agent.permission_manager = MagicMock()
+
+        with patch("merkaba.agent.Agent", return_value=mock_agent):
+            with client.websocket_connect("/ws/chat") as ws:
+                ws.send_json({"message": "trigger error"})
+
+                # First message: thinking indicator
+                msg1 = ws.receive_json()
+                assert msg1["type"] == "thinking"
+
+                # Second message: error frame — not a crash
+                msg2 = ws.receive_json()
+                assert msg2["type"] == "error"
+                assert "agent exploded" in msg2["content"]
+
+    def test_websocket_message_size_limit(self, open_client):
+        """Sending a message larger than MAX_WS_MESSAGE_SIZE (64 KB) should
+        return {"type": "error"} without invoking the agent."""
+        client, app = open_client
+
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = "should not reach here"
+        mock_agent.permission_manager = MagicMock()
+
+        # Build a JSON payload whose string representation exceeds 64 KB
+        oversized_message = "x" * (64 * 1024 + 1)
+        payload = json.dumps({"message": oversized_message})
+
+        with patch("merkaba.agent.Agent", return_value=mock_agent):
+            with client.websocket_connect("/ws/chat") as ws:
+                ws.send_text(payload)
+
+                msg = ws.receive_json()
+                assert msg["type"] == "error"
+                assert "too large" in msg["content"].lower()
+
+                # Agent should not have been called
+                mock_agent.run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # CORS origin configuration
 # ---------------------------------------------------------------------------
 
