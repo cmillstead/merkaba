@@ -4,16 +4,18 @@ import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
 import AgentDetailView from '../components/AgentDetailView'
 import DiagnosticsView from '../components/DiagnosticsView'
+import KanbanBoard from '../components/KanbanBoard'
 import WorkerDetailView from '../components/WorkerDetailView'
 
 type View =
   | { mode: 'constellation' }
   | { mode: 'agent'; nodeId: string }
   | { mode: 'worker'; workerId: string }
+  | { mode: 'kanban' }
   | { mode: 'diagnostics' }
 
 export default function MissionControl() {
-  const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, setTraceDepth } = useControlSocket()
+  const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
   const [view, setView] = useState<View>({ mode: 'constellation' })
 
   const handleSelectNode = useCallback((nodeId: string, nodeType: 'agent' | 'worker') => {
@@ -42,6 +44,10 @@ export default function MissionControl() {
       if (e.key === 'd' || e.key === 'D') {
         if (view.mode !== 'diagnostics') {
           setView({ mode: 'diagnostics' })
+        }
+      } else if (e.key === 'k' || e.key === 'K') {
+        if (view.mode !== 'kanban') {
+          setView({ mode: 'kanban' })
         }
       } else if (e.key === 'c' || e.key === 'C') {
         if (view.mode !== 'constellation') {
@@ -87,6 +93,14 @@ export default function MissionControl() {
         return <WorkerDetailView worker={worker} onBack={handleBack} />
       })()}
 
+      {view.mode === 'kanban' && (
+        <KanbanBoard
+          kanban={state.kanban}
+          onSubscribe={subscribeKanban}
+          onUnsubscribe={unsubscribeKanban}
+        />
+      )}
+
       {view.mode === 'diagnostics' && (
         <DiagnosticsView
           diagnostics={state.diagnostics}
@@ -99,6 +113,7 @@ export default function MissionControl() {
       <div className="command-bar">
         <span className="command-hint">Ctrl+/ Command Palette</span>
         <span className="command-hint">D Diagnostics</span>
+        <span className="command-hint">K Kanban</span>
         <span className="command-hint">C Constellation</span>
         <span className="command-hint">Esc Back</span>
       </div>
