@@ -1009,6 +1009,24 @@ def test_episode_dedup_different_content(store):
     assert len(eps) == 2
 
 
+def test_memory_store_has_public_emit(store):
+    """M8: MemoryStore should expose emit() as a public API."""
+    assert hasattr(store, 'emit')
+    assert callable(store.emit)
+
+    # Test it actually fires
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+    store.emit("test_event", {"key": "value"})
+    assert events == [("test_event", {"key": "value"})]
+
+
+def test_memory_store_emit_without_callback(store):
+    """M8: emit() does not crash when on_event is None."""
+    store.on_event = None
+    store.emit("test_event", {"key": "value"})  # should not raise
+
+
 def test_episode_dedup_after_window(store):
     """An episode whose identical twin is older than one hour is stored as a new row."""
     from datetime import datetime, timedelta

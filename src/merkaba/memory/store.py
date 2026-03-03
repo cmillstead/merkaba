@@ -44,6 +44,10 @@ class MemoryStore:
         except Exception as e:
             logger.warning("on_event callback raised for %r: %s", event_name, e)
 
+    def emit(self, event_name: str, data: dict) -> None:
+        """Public event emission -- same as _emit but part of the public API."""
+        self._emit(event_name, data)
+
     def _create_tables(self):
         cursor = self._conn.cursor()
 
