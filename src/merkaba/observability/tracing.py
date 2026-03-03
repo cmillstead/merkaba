@@ -63,6 +63,8 @@ def setup_logging(
     if log_dir is None:
         log_dir = os.path.expanduser("~/.merkaba/logs")
     os.makedirs(log_dir, exist_ok=True)
+    from merkaba.security.file_permissions import ensure_secure_permissions
+    ensure_secure_permissions(log_dir)
 
     logger = logging.getLogger("merkaba")
     logger.setLevel(level)

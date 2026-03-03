@@ -668,6 +668,54 @@ def test_archive_old_episodes_multiple_deletions(store):
     assert eps[0]["summary"] == "Keep this"
 
 
+def test_delete_old_episodes_raises_on_zero(store):
+    """delete_old_episodes raises ValueError when max_age_days=0."""
+    with pytest.raises(ValueError, match="max_age_days must be at least 1"):
+        store.delete_old_episodes(max_age_days=0)
+
+
+def test_delete_old_episodes_raises_on_negative(store):
+    """delete_old_episodes raises ValueError when max_age_days is negative."""
+    with pytest.raises(ValueError, match="max_age_days must be at least 1"):
+        store.delete_old_episodes(max_age_days=-1)
+
+
+def test_delete_old_episodes_one_day_allowed(store):
+    """delete_old_episodes(max_age_days=1) is a valid call and does not raise."""
+    # No rows to delete — just verify no exception is raised.
+    deleted = store.delete_old_episodes(max_age_days=1)
+    assert deleted == 0
+
+
+def test_archive_old_episodes_alias_works(store):
+    """archive_old_episodes is a backward-compat alias for delete_old_episodes."""
+    # Bound methods wrap fresh objects each access, so compare the underlying
+    # functions (via __func__) instead of the bound-method objects.
+    assert store.archive_old_episodes.__func__ is store.delete_old_episodes.__func__
+
+    # Functional: alias should also raise on zero.
+    with pytest.raises(ValueError, match="max_age_days must be at least 1"):
+        store.archive_old_episodes(max_age_days=0)
+
+
+def test_archive_old_episodes_alias_deletes(store):
+    """archive_old_episodes alias correctly deletes old episodes."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    old_ts = (datetime.now() - timedelta(days=400)).isoformat()
+    store._conn.execute(
+        "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (biz_id, "listing", 1, "Old episode via alias", "success", old_ts),
+    )
+    store._conn.commit()
+
+    deleted = store.archive_old_episodes(max_age_days=365)
+    assert deleted == 1
+    assert store.get_episodes(business_id=biz_id) == []
+
+
 # --- Context manager ---
 
 
@@ -959,6 +1007,24 @@ def test_episode_dedup_different_content(store):
 
     eps = store.get_episodes(business_id=biz_id, limit=100)
     assert len(eps) == 2
+
+
+def test_memory_store_has_public_emit(store):
+    """M8: MemoryStore should expose emit() as a public API."""
+    assert hasattr(store, 'emit')
+    assert callable(store.emit)
+
+    # Test it actually fires
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+    store.emit("test_event", {"key": "value"})
+    assert events == [("test_event", {"key": "value"})]
+
+
+def test_memory_store_emit_without_callback(store):
+    """M8: emit() does not crash when on_event is None."""
+    store.on_event = None
+    store.emit("test_event", {"key": "value"})  # should not raise
 
 
 def test_episode_dedup_after_window(store):

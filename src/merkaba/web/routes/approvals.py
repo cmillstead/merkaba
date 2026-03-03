@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["approvals"])
 
@@ -18,7 +18,7 @@ class ApproveBody(BaseModel):
 
 
 class PurgeBody(BaseModel):
-    older_than_days: int = 30
+    older_than_days: int = Field(default=30, ge=1, le=3650)
 
 
 @router.get("")

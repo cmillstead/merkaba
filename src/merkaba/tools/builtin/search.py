@@ -5,6 +5,36 @@ from pathlib import Path
 from merkaba.tools.base import Tool, PermissionTier
 
 
+# Denied directory/file paths — any path under these is blocked for searching
+DENIED_SEARCH_PATHS = [
+    os.path.expanduser("~/.ssh"),
+    os.path.expanduser("~/.aws"),
+    os.path.expanduser("~/.gnupg"),
+    os.path.expanduser("~/.config/gcloud"),
+    os.path.expanduser("~/.kube"),
+    os.path.expanduser("~/.azure"),
+    os.path.expanduser("~/.merkaba/config.json"),
+    "/etc/shadow",
+]
+
+
+def _is_search_path_allowed(path: str) -> tuple[bool, str]:
+    """Check if a search path is allowed.
+
+    Args:
+        path: The path to validate.
+
+    Returns:
+        Tuple of (is_allowed, reason). If not allowed, reason explains why.
+    """
+    resolved = os.path.realpath(os.path.expanduser(path))
+    for denied in DENIED_SEARCH_PATHS:
+        denied_resolved = os.path.realpath(denied)
+        if resolved == denied_resolved or resolved.startswith(denied_resolved + os.sep):
+            return False, f"Search blocked: {path} is in a restricted location"
+    return True, ""
+
+
 def _grep(pattern: str, path: str) -> str:
     """Search for regex pattern in file(s).
 
@@ -17,6 +47,10 @@ def _grep(pattern: str, path: str) -> str:
         - Single file: "line_num:line_content"
         - Multiple files/directory: "filepath:line_num:line_content"
     """
+    allowed, reason = _is_search_path_allowed(path)
+    if not allowed:
+        raise PermissionError(reason)
+
     if not os.path.exists(path):
         raise FileNotFoundError(f"Path does not exist: {path}")
 
@@ -101,6 +135,10 @@ def _glob(pattern: str, path: str) -> str:
     Returns:
         Newline-separated list of matching file paths, or "No matches found"
     """
+    allowed, reason = _is_search_path_allowed(path)
+    if not allowed:
+        raise PermissionError(reason)
+
     base_path = Path(path)
     try:
         matches = list(base_path.glob(pattern))

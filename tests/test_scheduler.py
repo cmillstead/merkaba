@@ -115,6 +115,68 @@ def test_tick_handles_dispatch_error(queue):
     assert task["status"] == "failed"
 
 
+def test_scheduler_pauses_task_after_max_failures(queue):
+    """M25: Scheduler must pause tasks that fail repeatedly."""
+    from merkaba.orchestration.scheduler import MAX_CONSECUTIVE_FAILURES
+
+    scheduler = Scheduler(queue=queue, merkaba_home="/tmp/merkaba_test_nonexistent")
+
+    task_id = queue.add_task(name="flaky", task_type="research", schedule="* * * * *")
+
+    # Simulate consecutive failures
+    for _ in range(MAX_CONSECUTIVE_FAILURES):
+        run_id = queue.start_run(task_id)
+        queue.finish_run(run_id, "failed", error="test error")
+
+    scheduler._check_circuit_breaker(task_id)
+    task = queue.get_task(task_id)
+    assert task["status"] == "paused"
+
+
+def test_scheduler_does_not_pause_under_threshold(queue):
+    """M25: Scheduler should not pause task with fewer than MAX_CONSECUTIVE_FAILURES failures."""
+    from merkaba.orchestration.scheduler import MAX_CONSECUTIVE_FAILURES
+
+    scheduler = Scheduler(queue=queue, merkaba_home="/tmp/merkaba_test_nonexistent")
+
+    task_id = queue.add_task(name="flaky", task_type="research", schedule="* * * * *")
+
+    # Simulate fewer failures than the threshold
+    for _ in range(MAX_CONSECUTIVE_FAILURES - 1):
+        run_id = queue.start_run(task_id)
+        queue.finish_run(run_id, "failed", error="test error")
+
+    scheduler._check_circuit_breaker(task_id)
+    task = queue.get_task(task_id)
+    assert task["status"] != "paused"
+
+
+def test_scheduler_does_not_pause_with_success_in_between(queue):
+    """M25: A success in the run history resets the circuit breaker."""
+    from merkaba.orchestration.scheduler import MAX_CONSECUTIVE_FAILURES
+
+    scheduler = Scheduler(queue=queue, merkaba_home="/tmp/merkaba_test_nonexistent")
+
+    task_id = queue.add_task(name="flaky", task_type="research", schedule="* * * * *")
+
+    # Fail some, succeed, fail some more
+    for _ in range(MAX_CONSECUTIVE_FAILURES - 1):
+        run_id = queue.start_run(task_id)
+        queue.finish_run(run_id, "failed", error="test error")
+
+    # One success breaks the streak
+    run_id = queue.start_run(task_id)
+    queue.finish_run(run_id, "success", result={"ok": True})
+
+    for _ in range(MAX_CONSECUTIVE_FAILURES - 1):
+        run_id = queue.start_run(task_id)
+        queue.finish_run(run_id, "failed", error="test error")
+
+    scheduler._check_circuit_breaker(task_id)
+    task = queue.get_task(task_id)
+    assert task["status"] != "paused"
+
+
 def test_tick_continues_after_error(queue):
     """If one task fails, the rest still run."""
     call_count = {"n": 0}

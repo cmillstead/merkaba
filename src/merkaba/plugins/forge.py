@@ -71,6 +71,10 @@ def _forge_fetch(url: str) -> httpx.Response:
         if not location:
             raise ValueError("Redirect with no Location header")
 
+        # Resolve relative redirects against current URL
+        from urllib.parse import urljoin
+        location = urljoin(current_url, location)
+
         _check(location)
         current_url = location
 

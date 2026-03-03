@@ -307,12 +307,17 @@ class SlackAdapter(IntegrationAdapter):
                 logger.error("Error in approval callback: %s", e)
             return
 
-        # Default: use ActionQueue directly
+        # Default: route through SecureApprovalManager for rate limiting and 2FA
         try:
             from merkaba.approval.queue import ActionQueue
+            from merkaba.approval.secure import SecureApprovalManager
             queue = ActionQueue()
             try:
-                queue.decide(action_id, approved=approved, decided_by=f"slack:{user_id}")
+                manager = SecureApprovalManager.from_config(queue)
+                if approved:
+                    manager.approve(action_id, decided_by=f"slack:{user_id}")
+                else:
+                    manager.deny(action_id, decided_by=f"slack:{user_id}")
             finally:
                 queue.close()
         except Exception as e:

@@ -91,6 +91,12 @@ def _make_lifespan(db_overrides: dict | None = None):
         # Startup — use overrides if provided (for testing)
         if db_overrides:
             app.state.api_key = None
+            if app.state.api_key is None:
+                logger.warning(
+                    "Web server running without authentication. "
+                    "Set 'api_key' in ~/.merkaba/config.json to require API key authentication. "
+                    "All endpoints are currently accessible without credentials."
+                )
             app.state.memory_store = db_overrides["memory_store"]
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = db_overrides["task_queue"]
@@ -105,6 +111,12 @@ def _make_lifespan(db_overrides: dict | None = None):
             except Exception:
                 pass
             app.state.api_key = _load_api_key()
+            if app.state.api_key is None:
+                logger.warning(
+                    "Web server running without authentication. "
+                    "Set 'api_key' in ~/.merkaba/config.json to require API key authentication. "
+                    "All endpoints are currently accessible without credentials."
+                )
             app.state.merkaba_base_dir = None  # use ~/.merkaba default
             app.state.memory_store = MemoryStore()
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)

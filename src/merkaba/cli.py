@@ -60,14 +60,36 @@ console = Console()
 
 # Load CLI extensions from installed packages
 def _load_cli_extensions():
-    from merkaba.extensions import discover_cli_apps
-    for name, ext_app in discover_cli_apps().items():
-        try:
-            app.add_typer(ext_app, name=name)
-        except Exception as e:
-            logger.warning("Failed to load CLI extension %s: %s", name, e)
+    try:
+        from merkaba.extensions import discover_cli_apps
+        for name, ext_app in discover_cli_apps().items():
+            try:
+                app.add_typer(ext_app, name=name)
+            except Exception as e:
+                logger.warning("Failed to load CLI extension %s: %s", name, e)
+    except Exception as e:
+        logger.warning("Failed to discover CLI extensions: %s", e)
 
 _load_cli_extensions()
+
+
+def _atomic_write_json(path: str, data: dict, **kwargs) -> None:
+    """Write JSON to a file atomically via tmp+rename."""
+    import tempfile
+    dir_ = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, **kwargs)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def version_callback(value: bool):
@@ -2128,8 +2150,7 @@ def models_set(
         data["models"]["task_types"] = {}
 
     data["models"]["task_types"][task_type] = model
-    with open(config_path, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_write_json(config_path, data)
 
     console.print(f"[green]Set {task_type} -> {model}[/green]")
 
@@ -2173,14 +2194,19 @@ app.add_typer(backup_app, name="backup", rich_help_panel="System")
 
 
 @backup_app.command("run")
-def backup_run():
+def backup_run(
+    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt backup files using keychain key"),
+):
     """Create a backup of all databases and config."""
     from merkaba.orchestration.backup import BackupManager
 
     mgr = BackupManager()
     with console.status("[bold]Creating backup...[/bold]"):
-        path = mgr.run_backup()
-    console.print(f"[green]Backup created:[/green] {path}")
+        path = mgr.run_backup(encrypt=encrypt)
+    if encrypt:
+        console.print(f"[green]Backup created:[/green] {path} [dim]\[encrypted][/dim]")
+    else:
+        console.print(f"[green]Backup created:[/green] {path}")
     files = [f.name for f in path.iterdir() if f.is_file()]
     for f in files:
         console.print(f"  - {f}")
@@ -2245,7 +2271,7 @@ def data_export(
     output: str = typer.Option(..., "--output", "-o", help="Output JSON file path"),
     business_id: int = typer.Option(None, "--business-id", "-b", help="Filter to a specific business"),
 ):
-    """Export memory data (facts, decisions, learnings, episodes, relationships) to JSON."""
+    """Export memory data (facts, decisions, learnings, episodes, relationships, state) to JSON."""
     from merkaba.memory.store import MemoryStore
 
     store = MemoryStore()
@@ -2263,6 +2289,7 @@ def data_export(
                 l for l in store.get_learnings(include_archived=True)
                 if l.get("source_business_id") == business_id
             ]
+            state = store.get_all_state(business_id)
         else:
             # Export all data across all businesses
             businesses = store.list_businesses()
@@ -2270,12 +2297,14 @@ def data_export(
             decisions: list = []
             relationships: list = []
             episodes: list = []
+            state: list = []
             for biz in businesses:
                 biz_id = biz["id"]
                 facts.extend(store.get_facts(biz_id, include_archived=True))
                 decisions.extend(store.get_decisions(biz_id, include_archived=True))
                 relationships.extend(store.get_relationships(biz_id))
                 episodes.extend(store.get_episodes(business_id=biz_id, limit=100_000))
+                state.extend(store.get_all_state(biz_id))
             learnings = store.get_learnings(include_archived=True)
     finally:
         store.close()
@@ -2289,16 +2318,16 @@ def data_export(
         "learnings": learnings,
         "episodes": episodes,
         "relationships": relationships,
+        "state": state,
     }
 
-    with open(output, "w") as f:
-        json.dump(payload, f, indent=2, default=str)
+    _atomic_write_json(output, payload, default=str)
 
     console.print(
         f"[green]Exported[/green] "
         f"{len(facts)} facts, {len(decisions)} decisions, "
         f"{len(learnings)} learnings, {len(episodes)} episodes, "
-        f"{len(relationships)} relationships "
+        f"{len(relationships)} relationships, {len(state)} state entries "
         f"to [bold]{output}[/bold]"
     )
 
@@ -2306,12 +2335,12 @@ def data_export(
 @data_app.command("delete-all")
 def data_delete_all(
     business_id: int = typer.Option(..., "--business-id", "-b", help="Business ID whose data to delete"),
-    confirm: bool = typer.Option(False, "--confirm", help="Skip interactive confirmation prompt"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive confirmation prompt"),
 ):
     """Permanently delete all data for a business (facts, decisions, episodes, etc.)."""
     from merkaba.memory.store import MemoryStore
 
-    if not confirm:
+    if not yes:
         confirmed = typer.confirm(
             f"This will permanently delete all data for business {business_id}. Continue?"
         )
@@ -2328,6 +2357,16 @@ def data_delete_all(
         counts = store.hard_delete_business(business_id, cascade=True)
     finally:
         store.close()
+
+    # Also remove conversation and upload files
+    import shutil as _shutil
+    convos_dir = os.path.join(MERKABA_DIR, "conversations")
+    uploads_dir = os.path.join(MERKABA_DIR, "uploads")
+    for dir_path, label in [(convos_dir, "conversations"), (uploads_dir, "uploads")]:
+        if os.path.isdir(dir_path):
+            count = len(os.listdir(dir_path))
+            _shutil.rmtree(dir_path)
+            counts[label] = count
 
     console.print(f"[green]Deleted all data for business {business_id}:[/green]")
     for table, count in counts.items():
@@ -2835,8 +2874,7 @@ def security_migrate_keys():
     if remove:
         for name in migrated:
             config["cloud_providers"][name].pop("api_key", None)
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
+        _atomic_write_json(config_path, config)
         console.print("[green]API keys removed from config.json.[/green]")
     else:
         console.print("[dim]Keys left in config.json. Run 'merkaba security migrate-keys' again to remove them later.[/dim]")
@@ -3015,6 +3053,17 @@ def config_validate():
         raise typer.Exit(1)
 
 
+KNOWN_CONFIG_KEYS = frozenset({
+    "model", "models", "business_id", "auto_approve_level",
+    "security", "api_key", "cors_origins", "log_level",
+    "permissions", "permission_tiers", "path_restrictions",
+    "shell_allowlist", "encryption_key", "classifier_fail_mode",
+    "host", "port", "debug", "telegram", "slack", "plugins",
+    "tools", "workers", "memory", "scheduler", "backup",
+    "cloud_providers",
+})
+
+
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(help="Dotted config key (e.g. security.classifier_fail_mode)"),
@@ -3060,9 +3109,12 @@ def config_set(
         d = d[part]
     d[parts[-1]] = coerced
 
+    top_key = parts[0]
+    if top_key not in KNOWN_CONFIG_KEYS:
+        console.print(f"[yellow]Warning:[/yellow] '{top_key}' is not a recognized config key. Check for typos.")
+
     os.makedirs(MERKABA_DIR, exist_ok=True)
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    _atomic_write_json(config_path, config)
 
     console.print(f"[green]Set[/green] [cyan]{key}[/cyan] = [yellow]{coerced!r}[/yellow]")
 

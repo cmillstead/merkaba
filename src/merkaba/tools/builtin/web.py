@@ -111,6 +111,10 @@ def _web_fetch(url: str) -> str:
             if not location:
                 raise ValueError("Redirect with no Location header")
 
+            # Resolve relative redirects against current URL
+            from urllib.parse import urljoin
+            location = urljoin(current_url, location)
+
             allowed, reason = is_url_allowed(location)
             if not allowed:
                 raise ValueError(f"Redirect target blocked: {reason}")

@@ -44,6 +44,10 @@ class MemoryStore:
         except Exception as e:
             logger.warning("on_event callback raised for %r: %s", event_name, e)
 
+    def emit(self, event_name: str, data: dict) -> None:
+        """Public event emission -- same as _emit but part of the public API."""
+        self._emit(event_name, data)
+
     def _create_tables(self):
         cursor = self._conn.cursor()
 
@@ -540,6 +544,16 @@ class MemoryStore:
         cursor.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_all_state(self, business_id: int | None = None) -> list[dict]:
+        """Get all state entries, optionally filtered by business_id."""
+        if business_id is not None:
+            rows = self._conn.execute(
+                "SELECT * FROM state WHERE business_id = ?", (business_id,)
+            ).fetchall()
+        else:
+            rows = self._conn.execute("SELECT * FROM state").fetchall()
+        return [dict(r) for r in rows]
+
     # --- Learnings CRUD ---
 
     def add_learning(
@@ -686,11 +700,14 @@ class MemoryStore:
 
     # --- Episode TTL ---
 
-    def archive_old_episodes(self, max_age_days: int = 365) -> int:
-        """Delete episodes older than *max_age_days*.
+    def delete_old_episodes(self, max_age_days: int = 365) -> int:
+        """Permanently delete episodes older than *max_age_days*.
 
         Returns the number of deleted rows.
+        Raises ValueError if max_age_days < 1 (safety guard).
         """
+        if max_age_days < 1:
+            raise ValueError("max_age_days must be at least 1")
         from datetime import timedelta
 
         cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
@@ -700,8 +717,11 @@ class MemoryStore:
         self._conn.commit()
         deleted = cursor.rowcount
         if deleted:
-            logger.info("Archived %d episodes older than %d days", deleted, max_age_days)
+            logger.info("Deleted %d episodes older than %d days", deleted, max_age_days)
         return deleted
+
+    # Backward-compat alias
+    archive_old_episodes = delete_old_episodes
 
     # --- Hard Delete ---
 

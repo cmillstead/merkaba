@@ -6,6 +6,7 @@ Only the LLM (Ollama) is mocked via the global conftest sys.modules trick.
 """
 
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -39,6 +40,7 @@ def test_data_export_all(cli_runner, seeded_memory, tmp_path):
     assert "learnings" in data
     assert "episodes" in data
     assert "relationships" in data
+    assert "state" in data
 
     # business_id should be null when no filter applied
     assert data["business_id"] is None
@@ -103,12 +105,13 @@ def test_data_export_by_business(cli_runner, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. data delete-all --confirm — seeds data, deletes, verifies gone
+# 3. data delete-all --yes — seeds data, deletes, verifies gone
 # ---------------------------------------------------------------------------
 
 def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
     runner, app = cli_runner
     business_id = seeded_memory["business_id"]
+    merkaba_home = seeded_memory["merkaba_home"]
 
     # Verify data exists before delete
     from merkaba.memory.store import MemoryStore
@@ -120,11 +123,13 @@ def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
         store.close()
     assert len(facts_before) >= 1
 
-    # Delete with --confirm flag (no interactive prompt)
-    result = runner.invoke(
-        app,
-        ["data", "delete-all", "--business-id", str(business_id), "--confirm"],
-    )
+    # Patch MERKABA_DIR so file cleanup targets the temp dir, not ~/.merkaba
+    with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
+        # Delete with --yes flag (no interactive prompt)
+        result = runner.invoke(
+            app,
+            ["data", "delete-all", "--business-id", str(business_id), "--yes"],
+        )
     assert result.exit_code == 0, result.output
     assert "Deleted all data" in result.output
     assert str(business_id) in result.output
@@ -144,14 +149,14 @@ def test_data_delete_all_with_confirm(cli_runner, seeded_memory):
 
 
 # ---------------------------------------------------------------------------
-# 4. data delete-all — no --confirm prompts; data survives if not confirmed
+# 4. data delete-all — no --yes prompts; data survives if not confirmed
 # ---------------------------------------------------------------------------
 
 def test_data_delete_all_no_confirm_aborts(cli_runner, seeded_memory):
     runner, app = cli_runner
     business_id = seeded_memory["business_id"]
 
-    # Invoke without --confirm; answer "n" at the prompt
+    # Invoke without --yes; answer "n" at the prompt
     result = runner.invoke(
         app,
         ["data", "delete-all", "--business-id", str(business_id)],
@@ -174,3 +179,122 @@ def test_data_delete_all_no_confirm_aborts(cli_runner, seeded_memory):
 
     assert biz is not None, "Business should still exist after abort"
     assert len(facts) >= 1, "Facts should survive after abort"
+
+
+# ---------------------------------------------------------------------------
+# 5. data delete-all removes conversations/ and uploads/ directories (H13)
+# ---------------------------------------------------------------------------
+
+def test_data_delete_all_removes_file_directories(cli_runner, seeded_memory):
+    """delete-all should also remove conversations/ and uploads/ from MERKABA_DIR."""
+    runner, app = cli_runner
+    business_id = seeded_memory["business_id"]
+    merkaba_home = seeded_memory["merkaba_home"]
+
+    # Create fake conversation and upload files inside the temp merkaba_home
+    convos_dir = merkaba_home / "conversations"
+    convos_dir.mkdir(exist_ok=True)
+    (convos_dir / "session_abc.json").write_text('{"messages": []}')
+    (convos_dir / "session_def.json").write_text('{"messages": []}')
+
+    uploads_dir = merkaba_home / "uploads"
+    uploads_dir.mkdir(exist_ok=True)
+    (uploads_dir / "photo.png").write_bytes(b"\x89PNG\r\n")
+    (uploads_dir / "doc.pdf").write_bytes(b"%PDF-1.4")
+
+    # Verify the directories exist before the delete
+    assert convos_dir.is_dir()
+    assert uploads_dir.is_dir()
+
+    # Patch MERKABA_DIR so the file-cleanup code targets our temp dir
+    with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
+        result = runner.invoke(
+            app,
+            ["data", "delete-all", "--business-id", str(business_id), "--yes"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Deleted all data" in result.output
+
+    # Both directories must have been removed
+    assert not convos_dir.exists(), "conversations/ should be removed by delete-all"
+    assert not uploads_dir.exists(), "uploads/ should be removed by delete-all"
+
+    # Output should mention the file counts
+    assert "conversations" in result.output
+    assert "uploads" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 6. data export includes state table entries
+# ---------------------------------------------------------------------------
+
+def test_data_export_includes_state(cli_runner, tmp_path):
+    runner, app = cli_runner
+
+    from merkaba.memory.store import MemoryStore
+
+    store = MemoryStore()
+    try:
+        biz_id = store.add_business("State Test Corp", "saas")
+        store.add_fact(biz_id, "product", "name", "StateWidget")
+        store.set_state(biz_id, "worker", "review_worker", "status", "idle")
+        store.set_state(biz_id, "worker", "review_worker", "last_run", "2026-03-01T00:00:00")
+    finally:
+        store.close()
+
+    output_file = str(tmp_path / "state_export.json")
+
+    result = runner.invoke(app, ["data", "export", "--output", output_file])
+    assert result.exit_code == 0, result.output
+
+    with open(output_file) as f:
+        data = json.load(f)
+
+    # state key must be present in the export
+    assert "state" in data, "Export payload must contain a 'state' key"
+    assert isinstance(data["state"], list)
+
+    # The two state entries we inserted should appear
+    state_keys = [(s["entity_type"], s["entity_id"], s["key"]) for s in data["state"]]
+    assert ("worker", "review_worker", "status") in state_keys
+    assert ("worker", "review_worker", "last_run") in state_keys
+
+    # Summary line should mention state entries (strip newlines in case Rich wraps)
+    assert "state entries" in result.output.replace("\n", " ")
+
+
+def test_data_export_includes_state_by_business(cli_runner, tmp_path):
+    runner, app = cli_runner
+
+    from merkaba.memory.store import MemoryStore
+
+    store = MemoryStore()
+    try:
+        biz1 = store.add_business("Alpha Corp", "saas")
+        biz2 = store.add_business("Beta Shop", "ecommerce")
+        store.set_state(biz1, "worker", "task_runner", "status", "running")
+        store.set_state(biz2, "worker", "task_runner", "status", "stopped")
+    finally:
+        store.close()
+
+    output_file = str(tmp_path / "biz1_state_export.json")
+
+    result = runner.invoke(
+        app,
+        ["data", "export", "--output", output_file, "--business-id", str(biz1)],
+    )
+    assert result.exit_code == 0, result.output
+
+    with open(output_file) as f:
+        data = json.load(f)
+
+    assert "state" in data, "Export payload must contain a 'state' key"
+
+    # Only biz1's state should be present
+    for entry in data["state"]:
+        assert entry["business_id"] == biz1
+
+    # biz1 has exactly one state entry
+    assert len(data["state"]) == 1
+    assert data["state"][0]["value"] == "running"

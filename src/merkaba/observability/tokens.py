@@ -5,6 +5,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+_SAFE_COLUMNS = {"model": "model", "worker_type": "worker_type"}
+
 
 @dataclass
 class TokenUsageStore:
@@ -71,11 +73,10 @@ class TokenUsageStore:
             group_by: Column to group by — "model" or "worker_type".
             days: Number of days to look back.
         """
-        if group_by not in ("model", "worker_type"):
-            group_by = "model"
+        col = _SAFE_COLUMNS.get(group_by, "model")
 
         rows = self._conn.execute(
-            f"""SELECT {group_by},
+            f"""SELECT {col},
                        COUNT(*) as call_count,
                        SUM(input_tokens) as total_input,
                        SUM(output_tokens) as total_output,
@@ -83,7 +84,7 @@ class TokenUsageStore:
                        SUM(duration_ms) as total_duration_ms
                 FROM token_usage
                 WHERE timestamp >= datetime('now', ?)
-                GROUP BY {group_by}
+                GROUP BY {col}
                 ORDER BY total_tokens DESC""",
             (f"-{days} days",),
         ).fetchall()

@@ -46,7 +46,6 @@ class PluginRegistry:
         """Create registry with default plugin directories."""
         registry = cls()
         registry.load_plugins([
-            "~/.claude/plugins/cache",
             "~/.merkaba/plugins",
         ])
         registry.load_skill_context("~/.merkaba/skill-context.md")

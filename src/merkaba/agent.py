@@ -79,7 +79,11 @@ class Agent:
             if encryptor is not None:
                 self.memory.encryptor = encryptor
         except Exception as e:
-            logger.debug("Encryption key not available: %s", e)
+            logger.warning(
+                "Conversation encryption unavailable: %s. "
+                "Conversations will be stored in plaintext.",
+                e,
+            )
 
         self.permission_manager = PermissionManager()
         self.input_classifier = InputClassifier()
@@ -225,7 +229,9 @@ class Agent:
             prompt = f"{prompt}\n\n{self.extra_context}"
 
         if self.active_skill:
-            prompt = f"{self.active_skill.content}\n\n---\n\n{prompt}"
+            from merkaba.security.sanitizer import sanitize_skill_content
+            safe_content = sanitize_skill_content(self.active_skill.content)
+            prompt = f"{safe_content}\n\n---\n\n{prompt}"
 
         # Add global skill context
         if self.plugin_registry and self.plugin_registry.skill_context:

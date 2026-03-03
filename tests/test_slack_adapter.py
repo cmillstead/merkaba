@@ -474,35 +474,64 @@ class TestSlackApprovalActions:
     """Tests for handling Block Kit button clicks (approval/deny)."""
 
     def test_handle_approval_approve(self):
-        """Approve button click calls ActionQueue.decide with approved=True."""
+        """Approve button click calls SecureApprovalManager.approve (not raw ActionQueue.decide)."""
         adapter = SlackAdapter(name="slack")
 
         mock_queue = MagicMock()
+        mock_manager = MagicMock()
         body = {
             "actions": [{"value": "42"}],
             "user": {"id": "U_ADMIN"},
         }
 
-        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue):
+        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue), \
+             patch("merkaba.approval.secure.SecureApprovalManager") as mock_sam_class:
+            mock_sam_class.from_config.return_value = mock_manager
             adapter._handle_approval_action(body, approved=True)
 
-        mock_queue.decide.assert_called_once_with(42, approved=True, decided_by="slack:U_ADMIN")
+        mock_sam_class.from_config.assert_called_once_with(mock_queue)
+        mock_manager.approve.assert_called_once_with(42, decided_by="slack:U_ADMIN")
+        mock_manager.deny.assert_not_called()
         mock_queue.close.assert_called_once()
 
     def test_handle_approval_deny(self):
-        """Deny button click calls ActionQueue.decide with approved=False."""
+        """Deny button click calls SecureApprovalManager.deny (not raw ActionQueue.decide)."""
         adapter = SlackAdapter(name="slack")
 
         mock_queue = MagicMock()
+        mock_manager = MagicMock()
         body = {
             "actions": [{"value": "42"}],
             "user": {"id": "U_ADMIN"},
         }
 
-        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue):
+        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue), \
+             patch("merkaba.approval.secure.SecureApprovalManager") as mock_sam_class:
+            mock_sam_class.from_config.return_value = mock_manager
             adapter._handle_approval_action(body, approved=False)
 
-        mock_queue.decide.assert_called_once_with(42, approved=False, decided_by="slack:U_ADMIN")
+        mock_sam_class.from_config.assert_called_once_with(mock_queue)
+        mock_manager.deny.assert_called_once_with(42, decided_by="slack:U_ADMIN")
+        mock_manager.approve.assert_not_called()
+
+    def test_handle_approval_does_not_call_decide_directly(self):
+        """Verify raw ActionQueue.decide is never called directly (security invariant)."""
+        adapter = SlackAdapter(name="slack")
+
+        mock_queue = MagicMock()
+        mock_manager = MagicMock()
+        body = {
+            "actions": [{"value": "99"}],
+            "user": {"id": "U_ADMIN"},
+        }
+
+        with patch("merkaba.approval.queue.ActionQueue", return_value=mock_queue), \
+             patch("merkaba.approval.secure.SecureApprovalManager") as mock_sam_class:
+            mock_sam_class.from_config.return_value = mock_manager
+            adapter._handle_approval_action(body, approved=True)
+
+        # ActionQueue.decide must NOT be called directly
+        mock_queue.decide.assert_not_called()
 
     def test_handle_approval_custom_callback(self):
         """Custom action_callback overrides default ActionQueue behavior."""

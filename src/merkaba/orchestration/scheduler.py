@@ -13,6 +13,9 @@ from merkaba.orchestration.queue import TaskQueue
 
 logger = logging.getLogger(__name__)
 
+# Circuit breaker: pause a task after this many consecutive failures.
+MAX_CONSECUTIVE_FAILURES = 5
+
 # Convert human-readable schedule strings to cron expressions.
 _SCHEDULE_MAP = {
     "hourly": "0 * * * *",
@@ -101,8 +104,22 @@ class Scheduler:
             except Exception as e:
                 logger.error("Task %s failed: %s", task["id"], e)
                 self.queue.finish_run(run_id, "failed", error=str(e))
+                self._check_circuit_breaker(task["id"])
             self.queue.compute_next_run(task["id"])
         return due
+
+    def _check_circuit_breaker(self, task_id: int) -> None:
+        """Pause task if it has too many consecutive failures."""
+        runs = self.queue.get_runs(task_id)
+        # Only consider the most recent MAX_CONSECUTIVE_FAILURES runs
+        recent = runs[:MAX_CONSECUTIVE_FAILURES]
+        if len(recent) >= MAX_CONSECUTIVE_FAILURES:
+            if all(r["status"] == "failed" for r in recent):
+                logger.warning(
+                    "Task %d has %d consecutive failures — pausing",
+                    task_id, MAX_CONSECUTIVE_FAILURES,
+                )
+                self.queue.pause_task(task_id)
 
     def _check_heartbeat(self) -> list[dict[str, Any]]:
         """Check global and per-business HEARTBEAT.md files for due items.

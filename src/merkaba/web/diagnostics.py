@@ -4,6 +4,7 @@ import enum
 import logging
 import threading
 import time
+import urllib.parse
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -183,9 +184,9 @@ class DiagnosticsMiddleware:
                     "request_size": 0,
                     "response_size": response_size,
                     # Full fields
-                    "query_string": scope.get("query_string", b"").decode(
-                        "utf-8", errors="replace"
-                    ),
+                    "query_string": self._redact_query_string(
+                        scope.get("query_string", b"")
+                    ).decode("utf-8", errors="replace"),
                     "headers": self._sanitize_headers(scope.get("headers", [])),
                 }
                 if status_code >= 400:
@@ -256,6 +257,23 @@ class DiagnosticsMiddleware:
                 return name
             return type(endpoint).__name__
         return "unknown"
+
+    _REDACTED_QUERY_PARAMS = frozenset({"token", "key", "secret", "api_key", "apikey"})
+
+    @staticmethod
+    def _redact_query_string(qs: bytes) -> bytes:
+        """Replace values of sensitive query parameters with [REDACTED]."""
+        if not qs:
+            return qs
+        text = qs.decode("utf-8", errors="replace")
+        params = urllib.parse.parse_qsl(text, keep_blank_values=True)
+        redacted = []
+        for name, value in params:
+            if name.lower() in DiagnosticsMiddleware._REDACTED_QUERY_PARAMS:
+                redacted.append((name, "[REDACTED]"))
+            else:
+                redacted.append((name, value))
+        return urllib.parse.urlencode(redacted).encode("utf-8")
 
     @staticmethod
     def _sanitize_headers(raw_headers: list) -> list[list[str]]:

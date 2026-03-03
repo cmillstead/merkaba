@@ -29,7 +29,7 @@ class MemoryDecayJob:
             stale_days=self.stale_days,
             archive_threshold=self.archive_threshold,
         )
-        stats["episodes_deleted"] = self.store.archive_old_episodes(
+        stats["episodes_deleted"] = self.store.delete_old_episodes(
             max_age_days=self.episode_max_age_days,
         )
         logger.info("Decay job complete: %s", stats)

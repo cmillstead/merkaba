@@ -85,6 +85,60 @@ class TestPluginRegistry:
                 assert "skill2" in skills
 
 
+class TestDefaultLoadPaths:
+    """Tests for PluginRegistry.default() load path safety."""
+
+    def test_default_does_not_load_claude_plugin_cache(self):
+        """PluginRegistry.default() must not include ~/.claude/plugins/cache.
+
+        Loading from the Claude Code plugin cache directory is a cross-contamination
+        risk: any Claude Code plugin installed there would be auto-loaded as a
+        Merkaba plugin and could execute hooks on every agent message.
+        """
+        import unittest.mock as mock
+
+        loaded_dirs: list[str] = []
+
+        def capture_load(dirs: list[str]) -> None:
+            loaded_dirs.extend(dirs)
+
+        registry = PluginRegistry()
+        with mock.patch.object(registry, "load_plugins", side_effect=capture_load):
+            with mock.patch.object(registry, "load_skill_context"):
+                with mock.patch.object(PluginRegistry, "__new__", return_value=registry):
+                    PluginRegistry.default()
+
+        for d in loaded_dirs:
+            assert ".claude" not in d, (
+                f"Plugin load path '{d}' references the Claude Code directory — "
+                "this is a cross-contamination risk and must be removed."
+            )
+            assert "claude/plugins/cache" not in d, (
+                f"Plugin load path '{d}' is the Claude Code plugin cache — "
+                "this path must not appear in plugin load directories."
+            )
+
+    def test_default_includes_merkaba_plugins_dir(self):
+        """PluginRegistry.default() must always include ~/.merkaba/plugins."""
+        import unittest.mock as mock
+
+        loaded_dirs: list[str] = []
+
+        def capture_load(dirs: list[str]) -> None:
+            loaded_dirs.extend(dirs)
+
+        registry = PluginRegistry()
+        with mock.patch.object(registry, "load_plugins", side_effect=capture_load):
+            with mock.patch.object(registry, "load_skill_context"):
+                with mock.patch.object(PluginRegistry, "__new__", return_value=registry):
+                    PluginRegistry.default()
+
+        assert any("merkaba/plugins" in d for d in loaded_dirs), (
+            "PluginRegistry.default() must include ~/.merkaba/plugins in load paths; "
+            f"got: {loaded_dirs}"
+        )
+
+
 class TestSkillContext:
     """Tests for global skill context loading."""
 

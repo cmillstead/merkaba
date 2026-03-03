@@ -182,6 +182,7 @@ function controlReducer(state: ControlState, action: Action): ControlState {
 export function useControlSocket() {
   const [state, dispatch] = useReducer(controlReducer, initialState)
   const [connected, setConnected] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>(undefined)
   const retryDelay = useRef(1000)
@@ -192,6 +193,7 @@ export function useControlSocket() {
 
     ws.onopen = () => {
       setConnected(true)
+      setReconnecting(false)
       retryDelay.current = 1000
     }
 
@@ -225,6 +227,7 @@ export function useControlSocket() {
 
     ws.onclose = () => {
       setConnected(false)
+      setReconnecting(true)
       wsRef.current = null
       // Exponential backoff reconnect
       reconnectTimeout.current = setTimeout(() => {
@@ -266,5 +269,5 @@ export function useControlSocket() {
     sendCommand({ type: 'set_trace_depth', level })
   }, [sendCommand])
 
-  return { state, connected, sendCommand, subscribeDiagnostics, unsubscribeDiagnostics, setTraceDepth }
+  return { state, connected, reconnecting, sendCommand, subscribeDiagnostics, unsubscribeDiagnostics, setTraceDepth }
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { searchMemory, getFacts, getLearnings } from '../api/client'
 import type { MemoryResult, Fact, Learning } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 // MemoryResult is a union with [key: string]: unknown, so we access fields via bracket notation
 const field = (r: MemoryResult, key: string) => r[key] as string
@@ -25,6 +26,7 @@ export default function Memory() {
   const [searched, setSearched] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [browseLoading, setBrowseLoading] = useState(false)
+  const { showToast } = useToast()
 
   async function doSearch() {
     if (!query.trim()) return
@@ -33,6 +35,8 @@ export default function Memory() {
     try {
       const data = await searchMemory(query.trim())
       setResults(data.results)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Search failed', 'error')
     } finally {
       setSearchLoading(false)
     }
@@ -45,6 +49,8 @@ export default function Memory() {
       const [f, l] = await Promise.all([getFacts(), getLearnings()])
       setFacts(f.facts)
       setLearnings(l.learnings)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to load memory', 'error')
     } finally {
       setBrowseLoading(false)
     }

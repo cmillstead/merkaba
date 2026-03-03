@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from merkaba.config.prompts import PromptLoader
+from merkaba.security.sanitizer import sanitize_skill_content
 
 router = APIRouter(tags=["businesses"])
 
@@ -63,9 +64,9 @@ async def update_business_config(
     biz_dir.mkdir(parents=True, exist_ok=True)
 
     if body.soul is not None:
-        (biz_dir / "SOUL.md").write_text(body.soul, encoding="utf-8")
+        (biz_dir / "SOUL.md").write_text(sanitize_skill_content(body.soul), encoding="utf-8")
     if body.user is not None:
-        (biz_dir / "USER.md").write_text(body.user, encoding="utf-8")
+        (biz_dir / "USER.md").write_text(sanitize_skill_content(body.user), encoding="utf-8")
 
     # Return updated state
     soul, user = loader.load(business_id=business_id)

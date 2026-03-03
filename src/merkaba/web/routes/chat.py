@@ -101,12 +101,14 @@ async def upload_file(file: UploadFile):
     content = b"".join(chunks)
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    from merkaba.security.file_permissions import ensure_secure_permissions
+    ensure_secure_permissions(UPLOAD_DIR)
     # Prefix with timestamp + uuid to avoid collisions
     stem = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     dest = os.path.join(UPLOAD_DIR, f"{stem}{ext}")
     with open(dest, "wb") as f:
         f.write(content)
-    return {"path": dest, "filename": file.filename, "size": len(content)}
+    return {"filename": os.path.basename(dest), "size": len(content)}
 
 
 @router.websocket("/ws/chat")
@@ -172,7 +174,7 @@ async def websocket_chat(websocket: WebSocket):
                     )
             except Exception as e:
                 logger.exception("Agent error for session %s: %s", session_id, e)
-                await websocket.send_json({"type": "error", "content": str(e)})
+                await websocket.send_json({"type": "error", "content": "An internal error occurred. Please try again."})
                 continue
 
             logger.debug("Agent response: %s", response[:200])

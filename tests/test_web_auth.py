@@ -192,7 +192,8 @@ class TestWebSocketErrorHandling:
                 # Second message: error frame — not a crash
                 msg2 = ws.receive_json()
                 assert msg2["type"] == "error"
-                assert "agent exploded" in msg2["content"]
+                # C1: Error content must be generic, not leak exception details
+                assert "internal error" in msg2["content"].lower()
 
     def test_websocket_message_size_limit(self, open_client):
         """Sending a message larger than MAX_WS_MESSAGE_SIZE (64 KB) should

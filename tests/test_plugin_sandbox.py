@@ -259,6 +259,36 @@ class TestBusinessIsolation:
         assert sandbox.allowed_business_ids is None
 
 
+class TestProtectedUploadsAndLogs:
+    """M24: Plugin sandbox must block access to uploads/ and logs/."""
+
+    def test_sandbox_protects_uploads_and_logs(self):
+        """M24: Plugin sandbox must block access to uploads/ and logs/."""
+        from merkaba.plugins.sandbox import _RESOLVED_PROTECTED_DIRS
+        assert any("uploads" in p for p in PROTECTED_PATHS)
+        assert any("logs" in p for p in PROTECTED_PATHS)
+        assert any("uploads" in d for d in _RESOLVED_PROTECTED_DIRS)
+        assert any("logs" in d for d in _RESOLVED_PROTECTED_DIRS)
+
+    def test_uploads_path_blocked(self):
+        """Plugin sandbox must block access to ~/.merkaba/uploads/."""
+        manifest = PluginManifest(
+            name="test", required_tools=["file_read"], file_access=["**/*"],
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        target = os.path.expanduser("~/.merkaba/uploads/secret.txt")
+        assert sandbox.is_path_allowed(target) is False
+
+    def test_logs_path_blocked(self):
+        """Plugin sandbox must block access to ~/.merkaba/logs/."""
+        manifest = PluginManifest(
+            name="test", required_tools=["file_read"], file_access=["**/*"],
+        )
+        sandbox = PluginSandbox(manifest=manifest)
+        target = os.path.expanduser("~/.merkaba/logs/merkaba.jsonl")
+        assert sandbox.is_path_allowed(target) is False
+
+
 # --- Agent integration ---
 
 
