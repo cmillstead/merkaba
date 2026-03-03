@@ -17,6 +17,8 @@ PROTECTED_PATHS = [
     "**/.merkaba/conversations/*",
     "**/.merkaba/memory_vectors/*",
     "**/.merkaba/backups/*",
+    "**/.merkaba/uploads/*",
+    "**/.merkaba/logs/*",
 ]
 
 # Resolved absolute paths for critical ~/.merkaba sub-directories.
@@ -28,6 +30,8 @@ _RESOLVED_PROTECTED_DIRS: list[str] = [
     str(_MERKABA_HOME / "conversations"),
     str(_MERKABA_HOME / "memory_vectors"),
     str(_MERKABA_HOME / "backups"),
+    str(_MERKABA_HOME / "uploads"),
+    str(_MERKABA_HOME / "logs"),
     # Individual protected files (stored as their parent + full path)
     str(_MERKABA_HOME / "config.json"),
     str(_MERKABA_HOME / "memory.db"),
@@ -120,7 +124,7 @@ class PluginSandbox:
         # --- Layer 2: resolved-path prefix / exact match ---
         for protected in _RESOLVED_PROTECTED_DIRS:
             # Directory entries: block anything inside the directory
-            if protected.endswith(("/conversations", "/memory_vectors", "/backups")):
+            if protected.endswith(("/conversations", "/memory_vectors", "/backups", "/uploads", "/logs")):
                 if resolved.startswith(protected + os.sep) or resolved == protected:
                     return False
             else:
