@@ -70,6 +70,25 @@ def _load_cli_extensions():
 _load_cli_extensions()
 
 
+def _atomic_write_json(path: str, data: dict, **kwargs) -> None:
+    """Write JSON to a file atomically via tmp+rename."""
+    import tempfile
+    dir_ = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, **kwargs)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def version_callback(value: bool):
     if value:
         py = sys.version_info
@@ -2128,8 +2147,7 @@ def models_set(
         data["models"]["task_types"] = {}
 
     data["models"]["task_types"][task_type] = model
-    with open(config_path, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_write_json(config_path, data)
 
     console.print(f"[green]Set {task_type} -> {model}[/green]")
 
@@ -2854,8 +2872,7 @@ def security_migrate_keys():
     if remove:
         for name in migrated:
             config["cloud_providers"][name].pop("api_key", None)
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
+        _atomic_write_json(config_path, config)
         console.print("[green]API keys removed from config.json.[/green]")
     else:
         console.print("[dim]Keys left in config.json. Run 'merkaba security migrate-keys' again to remove them later.[/dim]")
@@ -3080,8 +3097,7 @@ def config_set(
     d[parts[-1]] = coerced
 
     os.makedirs(MERKABA_DIR, exist_ok=True)
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    _atomic_write_json(config_path, config)
 
     console.print(f"[green]Set[/green] [cyan]{key}[/cyan] = [yellow]{coerced!r}[/yellow]")
 
