@@ -81,6 +81,9 @@ class TestClassifyUrl:
             classify_url("http://clawhub.ai/skills/test")
 
 
+_PUBLIC_IP = "140.82.121.3"  # Example public IP for DNS mock
+
+
 class TestScrapeGithub:
     def test_fetches_raw_content(self):
         mock_resp = MagicMock()
@@ -93,9 +96,11 @@ description: A test skill for demos
 Use this to test things.
 """
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp) as mock_get:
-            result = scrape_github("https://github.com/user/repo/blob/main/skills/test/SKILL.md")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp) as mock_get:
+                result = scrape_github("https://github.com/user/repo/blob/main/skills/test/SKILL.md")
 
         assert result.name == "test-skill"
         assert "test skill" in result.description.lower()
@@ -107,9 +112,11 @@ Use this to test things.
         mock_resp = MagicMock()
         mock_resp.text = "---\nname: s\ndescription: d\n---\ncontent"
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp) as mock_get:
-            scrape_github("https://raw.githubusercontent.com/user/repo/main/SKILL.md")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp) as mock_get:
+                scrape_github("https://raw.githubusercontent.com/user/repo/main/SKILL.md")
 
         call_url = mock_get.call_args[0][0]
         assert call_url == "https://raw.githubusercontent.com/user/repo/main/SKILL.md"
@@ -117,10 +124,12 @@ Use this to test things.
     def test_http_error_raises(self):
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = Exception("404")
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with pytest.raises(Exception, match="404"):
-                scrape_github("https://github.com/user/repo/blob/main/SKILL.md")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with pytest.raises(Exception, match="404"):
+                    scrape_github("https://github.com/user/repo/blob/main/SKILL.md")
 
 
 SAMPLE_CLAWHUB_HTML = """
@@ -158,9 +167,11 @@ class TestScrapeClawhub:
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_CLAWHUB_HTML
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
 
         assert result.name == "my-awesome-skill"
         assert "code reviews" in result.description.lower()
@@ -170,9 +181,11 @@ class TestScrapeClawhub:
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_CLAWHUB_HTML
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                result = scrape_clawhub("https://clawhub.ai/skills/my-awesome-skill")
 
         assert result.security_analysis is not None
         assert "No dangerous patterns" in result.security_analysis
@@ -181,14 +194,16 @@ class TestScrapeClawhub:
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_CLAWHUB_JS_PLACEHOLDER
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
-                mock_pw.return_value = ScrapedSkill(
-                    name="my-skill", description="A skill", content="...",
-                    security_verdict="Benign", security_analysis="Clean"
-                )
-                result = scrape_clawhub("https://clawhub.ai/skills/my-skill")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
+                    mock_pw.return_value = ScrapedSkill(
+                        name="my-skill", description="A skill", content="...",
+                        security_verdict="Benign", security_analysis="Clean"
+                    )
+                    result = scrape_clawhub("https://clawhub.ai/skills/my-skill")
 
         mock_pw.assert_called_once()
         assert result.name == "my-skill"
@@ -197,13 +212,15 @@ class TestScrapeClawhub:
         mock_resp = MagicMock()
         mock_resp.text = "<html><body><p>no heading here</p></body></html>"
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
-                mock_pw.return_value = ScrapedSkill(
-                    name="test", description="d", content="c"
-                )
-                scrape_clawhub("https://clawhub.ai/skills/test")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with patch("merkaba.plugins.forge._scrape_clawhub_playwright") as mock_pw:
+                    mock_pw.return_value = ScrapedSkill(
+                        name="test", description="d", content="c"
+                    )
+                    scrape_clawhub("https://clawhub.ai/skills/test")
 
         mock_pw.assert_called_once()
 
@@ -212,12 +229,14 @@ class TestScrapeClawhub:
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_CLAWHUB_JS_PLACEHOLDER
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with patch("merkaba.plugins.forge._scrape_clawhub_playwright",
-                       side_effect=ImportError("pip install merkaba[browser]")):
-                with pytest.raises(ImportError, match="browser"):
-                    scrape_clawhub("https://clawhub.ai/skills/test")
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with patch("merkaba.plugins.forge._scrape_clawhub_playwright",
+                           side_effect=ImportError("pip install merkaba[browser]")):
+                    with pytest.raises(ImportError, match="browser"):
+                        scrape_clawhub("https://clawhub.ai/skills/test")
 
 
 class TestScrapeUrl:
@@ -405,6 +424,7 @@ class TestForgePipeline:
         mock_resp = MagicMock()
         mock_resp.text = "---\nname: helper\ndescription: A helper\n---\n# Helper\nContent"
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
         mock_llm = MagicMock()
         mock_llm.chat_with_fallback.return_value = LLMResponse(
@@ -412,12 +432,13 @@ class TestForgePipeline:
             model="test"
         )
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with patch("merkaba.llm.LLMClient", return_value=mock_llm):
-                result = forge(
-                    url="https://github.com/user/repo/blob/main/SKILL.md",
-                    dest_dir=str(tmp_path),
-                )
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+                    result = forge(
+                        url="https://github.com/user/repo/blob/main/SKILL.md",
+                        dest_dir=str(tmp_path),
+                    )
 
         assert result.success is True
         assert (tmp_path / "helper" / "skills" / "helper" / "SKILL.md").exists()
@@ -428,6 +449,7 @@ class TestForgePipeline:
         mock_resp = MagicMock()
         mock_resp.text = "---\nname: original\ndescription: d\n---\ncontent"
         mock_resp.raise_for_status = MagicMock()
+        mock_resp.status_code = 200
 
         mock_llm = MagicMock()
         mock_llm.chat_with_fallback.return_value = LLMResponse(
@@ -435,24 +457,28 @@ class TestForgePipeline:
             model="test"
         )
 
-        with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
-            with patch("merkaba.llm.LLMClient", return_value=mock_llm):
-                result = forge(
-                    url="https://github.com/user/repo/blob/main/SKILL.md",
-                    name="my-custom-name",
-                    dest_dir=str(tmp_path),
-                )
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", return_value=mock_resp):
+                with patch("merkaba.llm.LLMClient", return_value=mock_llm):
+                    result = forge(
+                        url="https://github.com/user/repo/blob/main/SKILL.md",
+                        name="my-custom-name",
+                        dest_dir=str(tmp_path),
+                    )
 
         assert result.success is True
         assert result.name == "my-custom-name"
         assert (tmp_path / "my-custom-name" / "skills" / "my-custom-name" / "SKILL.md").exists()
 
     def test_pipeline_error_returns_result(self, tmp_path):
-        with patch("merkaba.plugins.forge.httpx.get", side_effect=Exception("Connection failed")):
-            result = forge(
-                url="https://github.com/user/repo/blob/main/SKILL.md",
-                dest_dir=str(tmp_path),
-            )
+        # The error is raised inside _forge_fetch before httpx.get is even called;
+        # we trigger it by making is_url_allowed pass but httpx.get raise.
+        with patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP):
+            with patch("merkaba.plugins.forge.httpx.get", side_effect=Exception("Connection failed")):
+                result = forge(
+                    url="https://github.com/user/repo/blob/main/SKILL.md",
+                    dest_dir=str(tmp_path),
+                )
 
         assert result.success is False
         assert "Connection failed" in result.error

@@ -56,10 +56,14 @@ def forge_dest(tmp_path):
     return dest
 
 
+_PUBLIC_IP = "140.82.121.3"
+
+
 @pytest.fixture
 def mock_httpx_github():
     mock_resp = MagicMock()
     mock_resp.text = MOCK_GITHUB_SKILL
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     return mock_resp
 
@@ -68,6 +72,7 @@ def mock_httpx_github():
 def mock_httpx_clawhub():
     mock_resp = MagicMock()
     mock_resp.text = MOCK_CLAWHUB_HTML
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     return mock_resp
 
@@ -99,6 +104,7 @@ class TestForgeE2E:
         runner = CliRunner()
         with patch("merkaba.plugins.forge.httpx.get", return_value=mock_httpx_github), \
              patch("merkaba.llm.LLMClient", return_value=mock_llm), \
+             patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP), \
              patch("os.path.expanduser", _make_expanduser(tmp_path)):
             result = runner.invoke(app, [
                 "skills", "forge",
@@ -112,6 +118,7 @@ class TestForgeE2E:
         runner = CliRunner()
         with patch("merkaba.plugins.forge.httpx.get", return_value=mock_httpx_github), \
              patch("merkaba.llm.LLMClient", return_value=mock_llm), \
+             patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP), \
              patch("os.path.expanduser", _make_expanduser(tmp_path)):
             result = runner.invoke(app, [
                 "skills", "forge",
@@ -126,6 +133,7 @@ class TestForgeE2E:
         runner = CliRunner()
         with patch("merkaba.plugins.forge.httpx.get", return_value=mock_httpx_clawhub), \
              patch("merkaba.llm.LLMClient", return_value=mock_llm), \
+             patch("merkaba.tools.builtin.web.socket.gethostbyname", return_value=_PUBLIC_IP), \
              patch("os.path.expanduser", _make_expanduser(tmp_path)):
             result = runner.invoke(app, [
                 "skills", "forge",
