@@ -7,6 +7,12 @@ export interface ToolInfo {
   active: boolean
 }
 
+export interface AgentActivity {
+  session_id: string
+  preview: string
+  timestamp: string
+}
+
 export interface AgentState {
   id: string
   name: string
@@ -17,6 +23,15 @@ export interface AgentState {
   workers: string[]
   active_skill: string | null
   current_task: string | null
+  // v2 addition
+  recent_activity: AgentActivity[]
+}
+
+export interface WorkerRun {
+  id: number
+  started_at: string
+  finished_at: string | null
+  status: string
 }
 
 export interface WorkerState {
@@ -26,6 +41,11 @@ export interface WorkerState {
   scheduled: boolean
   last_run: string | null
   parent: string
+  // v2 additions
+  description: string
+  schedule: string | null
+  next_run: string | null
+  run_history: WorkerRun[]
 }
 
 export interface Connection {
@@ -76,6 +96,30 @@ export interface SystemState {
   memory_facts: number
   pending_approvals: number
   active_tasks: number
+  // v2 addition
+  memory_archived: number
+}
+
+export interface KanbanCard {
+  id: number
+  task_id?: number
+  name?: string
+  task_type?: string
+  description?: string
+  action_type?: string
+  status: string
+  created_at?: string
+  started_at?: string
+  finished_at?: string
+  error?: string
+}
+
+export interface KanbanState {
+  queued: KanbanCard[]
+  awaiting_approval: KanbanCard[]
+  running: KanbanCard[]
+  completed: KanbanCard[]
+  failed: KanbanCard[]
 }
 
 export interface ControlState {
@@ -84,6 +128,7 @@ export interface ControlState {
   workers: WorkerState[]
   connections: Connection[]
   diagnostics: DiagnosticsState | null
+  kanban: KanbanState | null
 }
 
 type Action =
@@ -94,11 +139,12 @@ type Action =
   | { type: 'MODEL_CHANGED'; agent: string; model: string }
 
 const initialState: ControlState = {
-  system: { status: 'offline', memory_facts: 0, pending_approvals: 0, active_tasks: 0 },
+  system: { status: 'offline', memory_facts: 0, pending_approvals: 0, active_tasks: 0, memory_archived: 0 },
   agents: [],
   workers: [],
   connections: [],
   diagnostics: null,
+  kanban: null,
 }
 
 // Shallow equality check for SystemState — avoids re-render when heartbeat
@@ -108,7 +154,8 @@ function systemEqual(a: SystemState, b: SystemState): boolean {
     a.status === b.status &&
     a.memory_facts === b.memory_facts &&
     a.pending_approvals === b.pending_approvals &&
-    a.active_tasks === b.active_tasks
+    a.active_tasks === b.active_tasks &&
+    a.memory_archived === b.memory_archived
   )
 }
 
@@ -132,8 +179,9 @@ function deduplicateSnapshot(current: ControlState, next: ControlState): Control
   const sameWorkers = jsonEqual(current.workers, next.workers)
   const sameConnections = jsonEqual(current.connections, next.connections)
   const sameDiagnostics = jsonEqual(current.diagnostics, next.diagnostics)
+  const sameKanban = jsonEqual(current.kanban, next.kanban)
 
-  if (sameSystem && sameAgents && sameWorkers && sameConnections && sameDiagnostics) {
+  if (sameSystem && sameAgents && sameWorkers && sameConnections && sameDiagnostics && sameKanban) {
     return current // Same reference → React skips re-render
   }
 
@@ -144,6 +192,7 @@ function deduplicateSnapshot(current: ControlState, next: ControlState): Control
     workers: sameWorkers ? current.workers : next.workers,
     connections: sameConnections ? current.connections : next.connections,
     diagnostics: sameDiagnostics ? current.diagnostics : next.diagnostics,
+    kanban: sameKanban ? current.kanban : next.kanban,
   }
 }
 
@@ -209,6 +258,7 @@ export function useControlSocket() {
               workers: msg.workers,
               connections: msg.connections,
               diagnostics: msg.diagnostics ?? null,
+              kanban: msg.kanban ?? null,
             },
           })
         } else if (msg.type === 'tool_invoked') {
@@ -265,9 +315,17 @@ export function useControlSocket() {
     sendCommand({ type: 'unsubscribe', channel: 'diagnostics' })
   }, [sendCommand])
 
+  const subscribeKanban = useCallback(() => {
+    sendCommand({ type: 'subscribe', channel: 'kanban' })
+  }, [sendCommand])
+
+  const unsubscribeKanban = useCallback(() => {
+    sendCommand({ type: 'unsubscribe', channel: 'kanban' })
+  }, [sendCommand])
+
   const setTraceDepth = useCallback((level: 'lightweight' | 'moderate' | 'full') => {
     sendCommand({ type: 'set_trace_depth', level })
   }, [sendCommand])
 
-  return { state, connected, reconnecting, sendCommand, subscribeDiagnostics, unsubscribeDiagnostics, setTraceDepth }
+  return { state, connected, reconnecting, sendCommand, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth }
 }
