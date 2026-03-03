@@ -162,6 +162,20 @@ class ActionQueue:
         )
         self._conn.commit()
 
+    def purge_decided(self, older_than_days: int = 30) -> int:
+        """Delete decided actions (approved/denied/executed/failed) older than N days.
+
+        Returns the number of rows deleted.
+        """
+        cursor = self._conn.execute(
+            """DELETE FROM actions
+               WHERE status IN ('approved', 'denied', 'executed', 'failed')
+                 AND decided_at < datetime('now', ? || ' days')""",
+            (f"-{older_than_days}",),
+        )
+        self._conn.commit()
+        return cursor.rowcount
+
     def get_pending_count(self, business_id: int | None = None) -> int:
         query = "SELECT COUNT(*) FROM actions WHERE status = 'pending'"
         params: list[Any] = []

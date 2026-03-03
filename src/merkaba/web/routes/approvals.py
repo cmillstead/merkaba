@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter(tags=["approvals"])
@@ -8,8 +9,16 @@ class DecisionBody(BaseModel):
     reason: str | None = None
 
 
+# Alias used by the deny endpoint (backward-compatible with DecisionBody)
+DenyBody = DecisionBody
+
+
 class ApproveBody(BaseModel):
     totp_code: str | None = None
+
+
+class PurgeBody(BaseModel):
+    older_than_days: int = 30
 
 
 @router.get("")
@@ -45,8 +54,12 @@ async def approve_action(action_id: int, body: ApproveBody, request: Request):
             decided_by="web",
             totp_code=body.totp_code,
         )
-    except RateLimitExceeded:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    except RateLimitExceeded as exc:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={"Retry-After": str(exc.window_seconds)},
+        )
     except TotpRequired:
         raise HTTPException(status_code=403, detail="TOTP code required")
     except TotpInvalid:
@@ -60,10 +73,18 @@ async def approve_action(action_id: int, body: ApproveBody, request: Request):
 async def deny_action(action_id: int, body: DecisionBody, request: Request):
     """Deny a pending action with optional reason."""
     queue = request.app.state.action_queue
-    result = queue.decide(action_id, approved=False, decided_by="web")
+    result = queue.decide(action_id, approved=False, decided_by="web", reason=body.reason)
     if not result:
         raise HTTPException(status_code=404, detail="Action not found")
     return {"id": action_id, "status": "denied", "reason": body.reason}
+
+
+@router.post("/purge")
+async def purge_approvals(body: PurgeBody, request: Request):
+    """Purge decided actions (approved/denied/executed/failed) older than N days."""
+    queue = request.app.state.action_queue
+    purged = queue.purge_decided(older_than_days=body.older_than_days)
+    return {"purged": purged}
 
 
 @router.get("/stats")

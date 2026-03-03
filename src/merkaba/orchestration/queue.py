@@ -179,6 +179,20 @@ class TaskQueue:
         self._conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
         self._conn.commit()
 
+    def delete_task(self, task_id: int) -> bool:
+        """Permanently delete a task and its runs.
+
+        Returns True if the task existed and was deleted, False if not found.
+        """
+        task = self.get_task(task_id)
+        if not task:
+            return False
+        self._conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
+        self._conn.execute("DELETE FROM dead_letter_queue WHERE task_id = ?", (task_id,))
+        cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
+
     def pause_task(self, task_id: int) -> None:
         self.update_task(task_id, status="paused")
 
