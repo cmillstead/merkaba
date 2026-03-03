@@ -140,7 +140,7 @@ def test_web_task_crud(app_client):
     # GET list — should contain the new task
     resp = client.get("/api/tasks")
     assert resp.status_code == 200
-    tasks = resp.json()["tasks"]
+    tasks = resp.json()["items"]
     assert len(tasks) == 1
     assert tasks[0]["name"] == "E2E health check"
 
@@ -338,3 +338,100 @@ def test_web_upload_oversized(app_client):
 
     assert resp.status_code == 413
     assert "exceeds maximum" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# 12. Deny action with reason
+# ---------------------------------------------------------------------------
+
+def test_deny_with_reason(app_client):
+    """POST /api/approvals/{id}/deny with a reason stores the reason in the DB."""
+    client, app = app_client
+    queue = app.state.action_queue
+
+    action_id = queue.add_action(
+        business_id=1,
+        action_type="delete_record",
+        description="Delete a customer record",
+    )
+
+    resp = client.post(
+        f"/api/approvals/{action_id}/deny",
+        json={"reason": "violates retention policy"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "denied"
+    assert data["reason"] == "violates retention policy"
+
+    # Verify reason persisted in DB
+    action = queue.get_action(action_id)
+    assert action["status"] == "denied"
+    assert action["reason"] == "violates retention policy"
+
+
+# ---------------------------------------------------------------------------
+# 13. Deny action without reason (backward-compat)
+# ---------------------------------------------------------------------------
+
+def test_deny_without_reason(app_client):
+    """POST /api/approvals/{id}/deny with empty body still works (reason is None)."""
+    client, app = app_client
+    queue = app.state.action_queue
+
+    action_id = queue.add_action(
+        business_id=1,
+        action_type="send_email",
+        description="Send marketing email",
+    )
+
+    # No JSON body at all — FastAPI should use the default (reason=None)
+    resp = client.post(f"/api/approvals/{action_id}/deny", json={})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "denied"
+    assert data["reason"] is None
+
+    action = queue.get_action(action_id)
+    assert action["status"] == "denied"
+    assert action["reason"] is None
+
+
+# ---------------------------------------------------------------------------
+# 14. Rate limit returns Retry-After header
+# ---------------------------------------------------------------------------
+
+def test_rate_limit_returns_retry_after(app_client):
+    """When the approval rate limit is exceeded, the response is 429 with Retry-After."""
+    client, app = app_client
+    queue = app.state.action_queue
+
+    from merkaba.approval.secure import RateLimitConfig, SecureApprovalManager
+    from unittest.mock import patch
+
+    # Set a tight rate limit: max 1 approval per 60-second window
+    tight_config = RateLimitConfig(max_approvals=1, window_seconds=60)
+    tight_manager = SecureApprovalManager(action_queue=queue, rate_limit=tight_config)
+
+    # Approve one action directly via the manager to fill the bucket
+    fill_id = queue.add_action(
+        business_id=1, action_type="test", description="Fill bucket", autonomy_level=1
+    )
+    tight_manager.approve(fill_id, decided_by="test")
+
+    # Patch SecureApprovalManager.from_config to return our tight manager.
+    # The approve endpoint imports SecureApprovalManager lazily from
+    # merkaba.approval.secure, so we patch it there.
+    with patch(
+        "merkaba.approval.secure.SecureApprovalManager.from_config",
+        return_value=tight_manager,
+    ):
+        blocked_id = queue.add_action(
+            business_id=1, action_type="test", description="Blocked", autonomy_level=1
+        )
+        resp = client.post(f"/api/approvals/{blocked_id}/approve", json={})
+
+    assert resp.status_code == 429
+    assert resp.json()["detail"] == "Rate limit exceeded"
+    assert "retry-after" in resp.headers
+    assert resp.headers["retry-after"] == "60"
