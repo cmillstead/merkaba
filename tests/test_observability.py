@@ -70,6 +70,36 @@ class TestTracing:
         assert data["msg"] == "hello world"
         assert data["trace_id"].startswith("fmt-")
 
+    def test_log_rotation_configured(self):
+        """setup_logging uses RotatingFileHandler with 10MB maxBytes and 5 backups."""
+        import merkaba.observability.tracing as tracing_mod
+        from logging.handlers import RotatingFileHandler
+
+        original = tracing_mod._setup_done
+        tracing_mod._setup_done = False
+        merkaba_logger = logging.getLogger("merkaba")
+        # Remove any existing handlers so we can inspect fresh ones
+        original_handlers = list(merkaba_logger.handlers)
+        for h in original_handlers:
+            merkaba_logger.removeHandler(h)
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tracing_mod.setup_logging(log_dir=tmpdir)
+                handlers = merkaba_logger.handlers
+                rotating = [h for h in handlers if isinstance(h, RotatingFileHandler)]
+                assert len(rotating) >= 1, "Expected at least one RotatingFileHandler"
+                rh = rotating[0]
+                assert rh.maxBytes == 10 * 1024 * 1024, f"Expected 10MB, got {rh.maxBytes}"
+                assert rh.backupCount == 5, f"Expected 5 backups, got {rh.backupCount}"
+        finally:
+            # Restore original state
+            for h in list(merkaba_logger.handlers):
+                merkaba_logger.removeHandler(h)
+            for h in original_handlers:
+                merkaba_logger.addHandler(h)
+            tracing_mod._setup_done = original
+
 
 # ── Token Usage ──────────────────────────────────────────────────────────
 

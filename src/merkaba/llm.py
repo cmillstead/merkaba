@@ -217,6 +217,7 @@ class LLMClient:
     model: str = "qwen3.5:122b"
     base_url: str = "http://localhost:11434"
     _client: Any = field(default=None, init=False, repr=False)
+    last_fallback: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         import ollama
@@ -480,7 +481,7 @@ class LLMClient:
 
         for i, model in enumerate(models_to_try):
             try:
-                return self.chat_with_retry(
+                result = self.chat_with_retry(
                     message=message,
                     system_prompt=system_prompt,
                     tools=tools,
@@ -488,6 +489,9 @@ class LLMClient:
                     retry_config=retry_config,
                     priority=priority,
                 )
+                if i > 0:
+                    self.last_fallback = model
+                return result
             except (LLMUnavailableError, request_error) as e:
                 last_error = e
                 if i < len(models_to_try) - 1:
