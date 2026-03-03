@@ -173,6 +173,61 @@ def test_approval_stats_tracking(queue):
     assert stats[0]["denied_count"] == 1
 
 
+# --- purge_decided ---
+
+
+def test_purge_decided_removes_old_decided_actions(queue):
+    """purge_decided deletes approved/denied/executed/failed actions older than N days."""
+    aid1 = queue.add_action(business_id=1, action_type="a", description="Old approved")
+    aid2 = queue.add_action(business_id=1, action_type="b", description="Old denied")
+    aid3 = queue.add_action(business_id=1, action_type="c", description="Recent approved")
+    # Leave one as pending — should never be purged
+    queue.add_action(business_id=1, action_type="d", description="Pending, keep it")
+
+    queue.decide(aid1, approved=True)
+    queue.decide(aid2, approved=False)
+    queue.decide(aid3, approved=True)
+
+    # Backdate aid1 and aid2 to 40 days ago so they qualify for purge
+    queue._conn.execute(
+        "UPDATE actions SET decided_at = datetime('now', '-40 days') WHERE id IN (?, ?)",
+        (aid1, aid2),
+    )
+    queue._conn.commit()
+
+    purged = queue.purge_decided(older_than_days=30)
+    assert purged == 2
+
+    # aid3 (recent) and the pending action should still exist
+    assert queue.get_action(aid1) is None
+    assert queue.get_action(aid2) is None
+    assert queue.get_action(aid3) is not None
+    assert len(queue.list_actions(status="pending")) == 1
+
+
+def test_purge_decided_returns_zero_when_nothing_qualifies(queue):
+    """purge_decided returns 0 when no actions meet the age threshold."""
+    aid = queue.add_action(business_id=1, action_type="a", description="Recent")
+    queue.decide(aid, approved=True)
+    # decided_at is set to now — won't be older than 30 days
+    purged = queue.purge_decided(older_than_days=30)
+    assert purged == 0
+    assert queue.get_action(aid) is not None
+
+
+def test_purge_decided_does_not_touch_pending(queue):
+    """Pending actions are never purged regardless of age."""
+    queue.add_action(business_id=1, action_type="a", description="Pending forever")
+    # Manually backdate created_at far into the past (decided_at is NULL for pending)
+    queue._conn.execute(
+        "UPDATE actions SET created_at = datetime('now', '-100 days')"
+    )
+    queue._conn.commit()
+    purged = queue.purge_decided(older_than_days=1)
+    assert purged == 0
+    assert len(queue.list_actions(status="pending")) == 1
+
+
 # --- close ---
 
 

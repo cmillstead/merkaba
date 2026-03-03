@@ -2,14 +2,21 @@ import { useEffect, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { getApprovals, approveAction, denyAction } from '../api/client'
 import type { Approval } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 export default function Approvals() {
   const [tab, setTab] = useState<'pending' | 'all'>('pending')
   const [approvals, setApprovals] = useState<Approval[]>([])
+  const [loading, setLoading] = useState(true)
+  const { showToast } = useToast()
 
   const load = () => {
+    setLoading(true)
     const status = tab === 'pending' ? 'pending' : undefined
-    getApprovals(status).then(d => setApprovals(d.approvals)).catch(() => {})
+    getApprovals(status)
+      .then(d => setApprovals(d.approvals))
+      .catch(err => showToast(err.message || 'An error occurred', 'error'))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [tab])
@@ -52,7 +59,9 @@ export default function Approvals() {
         </button>
       </div>
 
-      {approvals.length === 0 ? (
+      {loading ? (
+        <div className="empty">Loading...</div>
+      ) : approvals.length === 0 ? (
         <div className="empty">
           {tab === 'pending' ? 'No pending approvals' : 'No approvals yet'}
         </div>

@@ -54,7 +54,7 @@ export const approveAction = (id: number) => request<{ id: number; status: strin
 export const denyAction = (id: number, reason?: string) => request<{ id: number; status: string }>(`/api/approvals/${id}/deny`, { method: 'POST', body: JSON.stringify({ reason }) });
 export const getApprovalStats = () => request<{ stats: Record<string, number> }>('/api/approvals/stats');
 
-// WebSocket chat with message buffering and auto-reconnect
+// WebSocket chat with message buffering, exponential backoff reconnect, and token auth
 export interface ChatConnection {
   send: (text: string) => void
   close: () => void
@@ -66,12 +66,22 @@ export interface ConnectChatOptions {
   onDisconnect?: () => void
 }
 
+// Build a WebSocket URL with optional ?token= query param for auth.
+// The token is read from localStorage (same key used by getHeaders()).
+function buildWsUrl(path: string): string {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  const base = `${proto}://${location.host}${path}`
+  const token = localStorage.getItem('merkaba_api_key')
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}
+
 export function connectChat(options: ConnectChatOptions): ChatConnection {
   const { onMessage, onConnect, onDisconnect } = options
   const pendingMessages: string[] = []
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let intentionallyClosed = false
+  let attempt = 0
 
   function drainPending() {
     while (pendingMessages.length > 0 && ws?.readyState === WebSocket.OPEN) {
@@ -80,10 +90,10 @@ export function connectChat(options: ConnectChatOptions): ChatConnection {
   }
 
   function createSocket() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    ws = new WebSocket(`${proto}://${location.host}/ws/chat`)
+    ws = new WebSocket(buildWsUrl('/ws/chat'))
 
     ws.onopen = () => {
+      attempt = 0 // Reset backoff on successful connection
       onConnect?.()
       drainPending()
     }
@@ -100,7 +110,10 @@ export function connectChat(options: ConnectChatOptions): ChatConnection {
       ws = null
       onDisconnect?.()
       if (!intentionallyClosed) {
-        reconnectTimer = setTimeout(createSocket, 2000)
+        // Exponential backoff: 1s → 2s → 4s → ... → 30s cap
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000)
+        attempt += 1
+        reconnectTimer = setTimeout(createSocket, delay)
       }
     }
 

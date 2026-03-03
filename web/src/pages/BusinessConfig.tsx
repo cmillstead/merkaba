@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getBusinessConfig, updateBusinessConfig } from '../api/client'
 import type { BusinessConfig as BusinessConfigType } from '../api/client'
 import { ArrowLeft, Save, FileText, Plug } from 'lucide-react'
+import { useToast } from '../context/ToastContext'
 
 type Tab = 'prompt' | 'adapters'
 
@@ -15,13 +16,14 @@ export default function BusinessConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('prompt')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const { showToast } = useToast()
 
   useEffect(() => {
     getBusinessConfig(businessId).then(c => {
       setConfig(c)
       setSoul(c.soul)
       setUser(c.user)
-    }).catch(() => {})
+    }).catch(err => showToast(err.message || 'Failed to load config', 'error'))
   }, [businessId])
 
   const handleSave = async () => {

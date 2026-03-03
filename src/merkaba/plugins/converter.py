@@ -49,12 +49,13 @@ class SkillConverter:
 
     def apply_llm_assisted(self) -> str:
         """Use LLM to rewrite skill for Merkaba compatibility."""
-        from merkaba.agent import Agent  # Lazy import to avoid circular dependency
+        from merkaba.llm import LLMClient  # Lazy import to avoid circular dependency
 
-        agent = Agent(model=self.model)
+        client = LLMClient(model=self.model)
         # Use replace instead of format to avoid issues with braces in content
         prompt = LLM_CONVERSION_PROMPT.replace("{content}", self.content)
-        return agent.run(prompt)
+        response = client.chat(prompt)
+        return response.content
 
     def add_metadata(
         self,

@@ -3,13 +3,17 @@
 
 Uses BackupManager directly (not the CLI) so we can point merkaba_dir
 at a temporary directory and avoid touching ~/.merkaba/.
+CLI-level tests for confirmation prompts use the shared cli_runner fixture.
 """
 
 import sqlite3
 import time
+from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
 
+from merkaba.cli import app
 from merkaba.memory.store import MemoryStore
 from merkaba.orchestration.backup import BackupManager
 
@@ -168,3 +172,65 @@ def test_backup_prune_keeps_max(tmp_path):
     # The remaining backups should be the 3 most recent (sorted ascending)
     timestamps = [b["timestamp"] for b in backups]
     assert timestamps == sorted(timestamps)
+
+
+# ---------------------------------------------------------------------------
+# CLI confirmation tests (use CliRunner + patched BackupManager)
+# ---------------------------------------------------------------------------
+
+def test_backup_restore_confirms(tmp_path):
+    """Verify backup restore asks for confirmation before overwriting."""
+    merkaba_dir = tmp_path / "merkaba"
+    merkaba_dir.mkdir()
+    _create_db(merkaba_dir / "memory.db")
+
+    mgr = BackupManager(merkaba_dir=merkaba_dir)
+    mgr.run_backup()
+    backups = mgr.list_backups()
+    ts = backups[0]["timestamp"]
+
+    runner = CliRunner()
+    # Patch the BackupManager class so the CLI uses our temp-dir instance
+    with patch("merkaba.orchestration.backup.BackupManager", return_value=mgr):
+        result = runner.invoke(app, ["backup", "restore", ts, "memory.db"], input="y\n")
+
+    assert result.exit_code == 0
+    assert "Continue?" in result.output
+
+
+def test_backup_restore_yes_skips_confirm(tmp_path):
+    """Verify --yes bypasses the confirmation prompt for backup restore."""
+    merkaba_dir = tmp_path / "merkaba"
+    merkaba_dir.mkdir()
+    _create_db(merkaba_dir / "memory.db")
+
+    mgr = BackupManager(merkaba_dir=merkaba_dir)
+    mgr.run_backup()
+    backups = mgr.list_backups()
+    ts = backups[0]["timestamp"]
+
+    runner = CliRunner()
+    with patch("merkaba.orchestration.backup.BackupManager", return_value=mgr):
+        result = runner.invoke(app, ["backup", "restore", ts, "memory.db", "--yes"])
+
+    assert result.exit_code == 0
+    assert "Continue?" not in result.output
+    assert "Restored" in result.output
+
+
+def test_backup_restore_aborts_on_no(tmp_path):
+    """Verify backup restore aborts when user says no at the confirmation."""
+    merkaba_dir = tmp_path / "merkaba"
+    merkaba_dir.mkdir()
+    _create_db(merkaba_dir / "memory.db")
+
+    mgr = BackupManager(merkaba_dir=merkaba_dir)
+    mgr.run_backup()
+    backups = mgr.list_backups()
+    ts = backups[0]["timestamp"]
+
+    runner = CliRunner()
+    with patch("merkaba.orchestration.backup.BackupManager", return_value=mgr):
+        result = runner.invoke(app, ["backup", "restore", ts, "memory.db"], input="n\n")
+
+    assert result.exit_code != 0

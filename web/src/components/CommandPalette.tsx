@@ -56,7 +56,13 @@ export default function CommandPalette({ commands }: Props) {
   if (!open) return null
 
   return (
-    <div className="command-palette-overlay" onClick={() => setOpen(false)}>
+    <div
+      className="command-palette-overlay"
+      role="dialog"
+      aria-label="Command palette"
+      aria-modal="true"
+      onClick={() => setOpen(false)}
+    >
       <div className="command-palette" onClick={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <input
           ref={inputRef}

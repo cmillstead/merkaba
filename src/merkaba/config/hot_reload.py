@@ -81,6 +81,20 @@ class HotConfig:
         self._callbacks: list = []
         self._lock = threading.Lock()
 
+        # Automatically clear the provider cache when config changes, so
+        # updated API keys and cloud_providers settings take effect immediately.
+        def _clear_provider_cache(
+            changed_keys: set, old_data: dict, new_data: dict
+        ) -> None:
+            try:
+                from merkaba.llm_providers.registry import clear_cache
+                clear_cache()
+                logger.debug("Provider cache cleared after config change (keys: %s)", changed_keys)
+            except Exception as exc:
+                logger.warning("Failed to clear provider cache on config change: %s", exc)
+
+        self._callbacks.append(_clear_provider_cache)
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get a config value, reloading from disk if file changed."""
         self._maybe_reload()

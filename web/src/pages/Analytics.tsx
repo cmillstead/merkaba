@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { getAnalytics } from '../api/client'
 import type { AnalyticsOverview } from '../api/client'
 import { BarChart3, PieChart, Database } from 'lucide-react'
+import { useToast } from '../context/ToastContext'
 
 export default function Analytics() {
   const [data, setData] = useState<AnalyticsOverview | null>(null)
   const [days, setDays] = useState(30)
+  const { showToast } = useToast()
 
   useEffect(() => {
-    getAnalytics(days).then(setData).catch(() => {})
+    getAnalytics(days).then(setData).catch(err => showToast(err.message || 'An error occurred', 'error'))
   }, [days])
 
   if (!data) return <div className="empty">Loading analytics...</div>

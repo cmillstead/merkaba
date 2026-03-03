@@ -6,17 +6,73 @@ from datetime import datetime
 from enum import Enum
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import frontmatter
 
 from merkaba.plugins.skills import scan_skill_content
+from merkaba.tools.builtin.web import is_url_allowed
+
+# Domains that the Skill Forge is permitted to contact
+FORGE_ALLOWED_DOMAINS: frozenset[str] = frozenset(
+    {"github.com", "raw.githubusercontent.com", "clawhub.ai"}
+)
 
 
 class UrlKind(Enum):
     CLAWHUB = "clawhub"
     GITHUB = "github"
     UNKNOWN = "unknown"
+
+
+def _forge_fetch(url: str) -> httpx.Response:
+    """Fetch a URL, enforcing domain allowlist and SSRF protection on every hop.
+
+    Args:
+        url: The URL to fetch.
+
+    Returns:
+        The final ``httpx.Response``.
+
+    Raises:
+        ValueError: If the URL or any redirect target is blocked.
+    """
+    _MAX_REDIRECTS = 5
+
+    def _check(candidate: str) -> None:
+        parsed = urlparse(candidate)
+        hostname = (parsed.hostname or "").lower()
+        # Strip leading "www." for domain matching
+        bare = hostname.removeprefix("www.")
+        if bare not in FORGE_ALLOWED_DOMAINS:
+            raise ValueError(
+                f"Forge URL blocked: '{hostname}' is not in the allowed domain list"
+            )
+        allowed, reason = is_url_allowed(candidate)
+        if not allowed:
+            raise ValueError(f"Forge URL blocked by SSRF check: {reason}")
+
+    _check(url)
+    current_url = url
+    hops = 0
+
+    while True:
+        response = httpx.get(current_url, follow_redirects=False, timeout=30.0)
+
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+
+        hops += 1
+        if hops > _MAX_REDIRECTS:
+            raise ValueError("Too many redirects")
+
+        location = response.headers.get("location", "")
+        if not location:
+            raise ValueError("Redirect with no Location header")
+
+        _check(location)
+        current_url = location
 
 
 def classify_url(url: str) -> UrlKind:
@@ -56,7 +112,7 @@ def _github_blob_to_raw(url: str) -> str:
 def scrape_github(url: str) -> ScrapedSkill:
     """Fetch a skill from a GitHub URL."""
     raw_url = _github_blob_to_raw(url)
-    response = httpx.get(raw_url, follow_redirects=True, timeout=30.0)
+    response = _forge_fetch(raw_url)
     response.raise_for_status()
 
     text = response.text
@@ -183,7 +239,7 @@ def _parse_clawhub_html(html: str, url: str) -> ScrapedSkill:
 
 def scrape_clawhub(url: str) -> ScrapedSkill:
     """Fetch a skill from a ClawHub URL, with Playwright fallback for JS pages."""
-    response = httpx.get(url, follow_redirects=True, timeout=30.0)
+    response = _forge_fetch(url)
     response.raise_for_status()
 
     html = response.text

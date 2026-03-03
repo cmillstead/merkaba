@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import MerkabaGlyph from './MerkabaGlyph'
 import DetailPanel from './DetailPanel'
 import type { AgentState, ToolInfo } from '../hooks/useControlSocket'
+import { getModels } from '../api/client'
 
 interface Props {
   agent: AgentState
@@ -9,15 +10,31 @@ interface Props {
   onModelChange: (model: string) => void
 }
 
+// Fallback model list used when /api/system/models is unavailable
+const FALLBACK_MODELS = ['qwen3.5:122b', 'qwen3:8b', 'qwen3:4b']
+
 export default function HarnessView({ agent, onBack, onModelChange }: Props) {
   const [selectedTool, setSelectedTool] = useState<ToolInfo | null>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const toolRefs = useRef<(SVGGElement | null)[]>([])
+  const [availableModels, setAvailableModels] = useState<string[]>(FALLBACK_MODELS)
 
   const cx = 300
   const cy = 250
   const radius = 160
   const tools = agent.tools
+
+  // Load available models from the API on mount; fall back to hardcoded list on error
+  useEffect(() => {
+    getModels()
+      .then(data => {
+        const names = data.models.map(m => m.name)
+        if (names.length > 0) setAvailableModels(names)
+      })
+      .catch(() => {
+        // API unavailable — keep the hardcoded fallback list already in state
+      })
+  }, [])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -123,7 +140,7 @@ export default function HarnessView({ agent, onBack, onModelChange }: Props) {
           })}
         </svg>
 
-        {/* Model selector */}
+        {/* Model selector — populated from /api/system/models, falls back to hardcoded list */}
         <div className="harness-model-selector">
           <label className="hud-label" htmlFor="model-select">MODEL</label>
           <select
@@ -132,9 +149,13 @@ export default function HarnessView({ agent, onBack, onModelChange }: Props) {
             value={agent.model}
             onChange={(e) => onModelChange(e.target.value)}
           >
-            <option value="qwen3.5:122b">qwen3.5:122b</option>
-            <option value="qwen3:8b">qwen3:8b</option>
-            <option value="qwen3:4b">qwen3:4b</option>
+            {/* Always include the current agent model even if not in the fetched list */}
+            {!availableModels.includes(agent.model) && (
+              <option value={agent.model}>{agent.model}</option>
+            )}
+            {availableModels.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
           </select>
         </div>
       </div>

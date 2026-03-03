@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useControlSocket } from '../hooks/useControlSocket'
 import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
 import HarnessView from '../components/HarnessView'
-import CommandPalette from '../components/CommandPalette'
 import DiagnosticsView from '../components/DiagnosticsView'
 
 type View =
@@ -31,32 +30,20 @@ export default function MissionControl() {
     })
   }, [])
 
+  // When a worker node is clicked, resolve via the worker's parent agent so
+  // HarnessView always receives a valid AgentState. Workers have a `parent`
+  // field pointing to the agent that owns them.
   const agent = view.mode === 'harness'
-    ? state.agents.find(a => a.id === view.nodeId) ?? null
+    ? (() => {
+        const direct = state.agents.find(a => a.id === view.nodeId)
+        if (direct) return direct
+        if (view.nodeType === 'worker') {
+          const worker = state.workers.find(w => w.id === view.nodeId)
+          if (worker?.parent) return state.agents.find(a => a.id === worker.parent) ?? null
+        }
+        return null
+      })()
     : null
-
-  const commands = useMemo(() => [
-    ...state.agents.map(a => ({
-      id: `go-${a.id}`,
-      label: `Go to ${a.name}`,
-      action: () => setView({ mode: 'harness', nodeId: a.id, nodeType: 'agent' }),
-    })),
-    ...state.workers.map(w => ({
-      id: `go-${w.id}`,
-      label: `Go to ${w.name}`,
-      action: () => setView({ mode: 'harness', nodeId: w.id, nodeType: 'worker' }),
-    })),
-    {
-      id: 'diagnostics',
-      label: 'Diagnostics',
-      action: () => setView({ mode: 'diagnostics' }),
-    },
-    {
-      id: 'overview',
-      label: 'Back to overview',
-      action: () => setView({ mode: 'constellation' }),
-    },
-  ], [state.agents, state.workers])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -111,8 +98,6 @@ export default function MissionControl() {
         <span className="command-hint">C Constellation</span>
         <span className="command-hint">Esc Back</span>
       </div>
-
-      <CommandPalette commands={commands} />
     </div>
   )
 }

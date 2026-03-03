@@ -698,3 +698,289 @@ def test_context_manager_closes_on_exception():
                 store.add_business("Test", "ecommerce")
                 raise RuntimeError("boom")
         assert store._conn is None
+
+
+# --- Hard Delete ---
+
+
+def test_hard_delete_removes_row(store):
+    """hard_delete returns True and the row is gone afterwards."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    result = store.hard_delete("facts", fact_id)
+
+    assert result is True
+    assert store.get_fact(fact_id) is None
+
+
+def test_hard_delete_invalid_table(store):
+    """hard_delete raises ValueError for a table not in the allowlist."""
+    with pytest.raises(ValueError, match="Invalid table: users"):
+        store.hard_delete("users", 1)
+
+
+def test_hard_delete_nonexistent_id(store):
+    """hard_delete returns False when the row does not exist."""
+    result = store.hard_delete("facts", 9999)
+    assert result is False
+
+
+def test_hard_delete_business_cascade(store):
+    """hard_delete_business removes the business and all child rows."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+    store.add_fact(biz_id, "pricing", "max_price", "9.99")
+    store.add_decision(biz_id, "pricing", "Lower price", "Competition")
+    store.add_learning("pricing", "Insight", source_business_id=biz_id)
+    store.add_episode(biz_id, "listing", 1, "A task", "success")
+    store.add_relationship(biz_id, "product", "A", "related", "B")
+    store.set_state(biz_id, "listing", "L-1", "status", "active")
+
+    counts = store.hard_delete_business(biz_id, cascade=True)
+
+    assert counts["businesses"] == 1
+    assert counts["facts"] == 2
+    assert counts["decisions"] == 1
+    assert counts["learnings"] == 1
+    assert counts["episodes"] == 1
+    assert counts["relationships"] == 1
+    assert counts["state"] == 1
+
+    # Business itself is gone
+    assert store.get_business(biz_id) is None
+    # No orphaned child rows remain
+    assert store.get_facts(biz_id, include_archived=True) == []
+    assert store.get_decisions(biz_id, include_archived=True) == []
+
+
+def test_purge_archived(store):
+    """purge_archived deletes all archived rows and returns the count."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    f1 = store.add_fact(biz_id, "pricing", "k1", "v1")
+    f2 = store.add_fact(biz_id, "pricing", "k2", "v2")
+    f3 = store.add_fact(biz_id, "pricing", "k3", "v3")
+
+    store.archive("facts", f1)
+    store.archive("facts", f2)
+    # f3 stays active
+
+    deleted = store.purge_archived("facts")
+
+    assert deleted == 2
+    # Only the active fact remains
+    remaining = store.get_facts(biz_id)
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == f3
+
+
+def test_purge_archived_with_age_filter(store):
+    """purge_archived with older_than_days only removes sufficiently old rows."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    f_old = store.add_fact(biz_id, "pricing", "old_key", "old_val")
+    f_new = store.add_fact(biz_id, "pricing", "new_key", "new_val")
+
+    # Archive both facts
+    store.archive("facts", f_old)
+    store.archive("facts", f_new)
+
+    # Back-date the old fact's updated_at so it appears stale
+    old_ts = (datetime.now() - timedelta(days=60)).isoformat()
+    store._conn.execute(
+        "UPDATE facts SET updated_at = ? WHERE id = ?", (old_ts, f_old)
+    )
+    store._conn.commit()
+
+    # Purge only rows archived more than 30 days ago
+    deleted = store.purge_archived("facts", older_than_days=30)
+
+    assert deleted == 1
+    # The recently-archived fact still exists (as archived)
+    remaining = store.list_archived("facts", business_id=biz_id)
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == f_new
+
+
+# --- Event callbacks ---
+
+
+def test_memory_event_on_add_fact(store):
+    """on_event callback is called with 'facts_extracted' when a fact is added."""
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    assert len(events) == 1
+    event_name, event_data = events[0]
+    assert event_name == "facts_extracted"
+    assert event_data["fact_id"] == fact_id
+    assert event_data["business_id"] == biz_id
+    assert event_data["content"] == "4.99"
+
+
+def test_memory_event_on_hard_delete(store):
+    """on_event callback is called with 'item_deleted' when a row is hard-deleted."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    result = store.hard_delete("facts", fact_id)
+
+    assert result is True
+    assert len(events) == 1
+    event_name, event_data = events[0]
+    assert event_name == "item_deleted"
+    assert event_data["table"] == "facts"
+    assert event_data["item_id"] == fact_id
+
+
+def test_memory_event_hard_delete_no_event_when_row_missing(store):
+    """on_event is NOT called when hard_delete finds no matching row."""
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    result = store.hard_delete("facts", 9999)
+
+    assert result is False
+    assert len(events) == 0
+
+
+def test_memory_event_on_archive(store):
+    """on_event callback is called with 'items_archived' when a fact is archived."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    store.archive("facts", fact_id)
+
+    assert len(events) == 1
+    event_name, event_data = events[0]
+    assert event_name == "items_archived"
+    assert event_data["table"] == "facts"
+    assert event_data["ids"] == [fact_id]
+
+
+def test_memory_event_callback_error_swallowed(store):
+    """A callback that raises an exception does not crash the caller."""
+    def bad_callback(name, data):
+        raise RuntimeError("callback exploded")
+
+    store.on_event = bad_callback
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    # Should not raise, even though the callback raises
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    # The fact was still stored successfully despite the bad callback
+    fact = store.get_fact(fact_id)
+    assert fact is not None
+    assert fact["value"] == "4.99"
+
+
+def test_memory_event_no_callback_by_default(store):
+    """MemoryStore does not fire events when on_event is None (default)."""
+    # This test verifies there is no crash when on_event is unset
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+    store.hard_delete("facts", fact_id)
+    # If we get here without error, the default (no callback) works correctly
+
+
+def test_fact_updated_event(store):
+    """update_fact emits a 'fact_updated' event with the fact_id and new content."""
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    # Clear the facts_extracted event from add_fact
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+    events.clear()
+
+    store.update_fact(fact_id, value="5.99", confidence=90)
+
+    assert len(events) == 1
+    event_name, event_data = events[0]
+    assert event_name == "fact_updated"
+    assert event_data["fact_id"] == fact_id
+    assert event_data["content"] == "5.99"
+
+
+def test_fact_updated_event_no_value_change(store):
+    """update_fact emits 'fact_updated' even when only non-value fields change; content is absent."""
+    events = []
+    store.on_event = lambda name, data: events.append((name, data))
+
+    biz_id = store.add_business("Shop", "ecommerce")
+    fact_id = store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+    events.clear()
+
+    store.update_fact(fact_id, confidence=80)
+
+    assert len(events) == 1
+    event_name, event_data = events[0]
+    assert event_name == "fact_updated"
+    assert event_data["fact_id"] == fact_id
+    # No "value" kwarg was passed so "content" is absent from the payload
+    assert "content" not in event_data
+
+
+# --- Episode deduplication ---
+
+
+def test_episode_dedup_same_content(store):
+    """Adding the same episode twice within an hour returns the existing ID and stores only one row."""
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    ep_id_1 = store.add_episode(biz_id, "listing", 1, "Created a listing", "success")
+    ep_id_2 = store.add_episode(biz_id, "listing", 2, "Created a listing", "success")
+
+    assert ep_id_1 == ep_id_2
+
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 1
+
+
+def test_episode_dedup_different_content(store):
+    """Episodes with different summaries are both stored."""
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    ep_id_1 = store.add_episode(biz_id, "listing", 1, "Created a listing", "success")
+    ep_id_2 = store.add_episode(biz_id, "listing", 2, "Updated a listing", "success")
+
+    assert ep_id_1 != ep_id_2
+
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 2
+
+
+def test_episode_dedup_after_window(store):
+    """An episode whose identical twin is older than one hour is stored as a new row."""
+    from datetime import datetime, timedelta
+
+    biz_id = store.add_business("Shop", "ecommerce")
+
+    # Insert the "old" episode directly with a timestamp just over an hour ago.
+    old_ts = (datetime.now() - timedelta(hours=2)).isoformat()
+    store._conn.execute(
+        "INSERT INTO episodes (business_id, task_type, task_id, summary, outcome, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (biz_id, "listing", 1, "Created a listing", "success", old_ts),
+    )
+    store._conn.commit()
+
+    # Now add the same episode through the normal API — it should NOT be deduped.
+    ep_id_new = store.add_episode(biz_id, "listing", 2, "Created a listing", "success")
+
+    eps = store.get_episodes(business_id=biz_id, limit=100)
+    assert len(eps) == 2
+    # The new episode has its own fresh ID
+    ids = {ep["id"] for ep in eps}
+    assert ep_id_new in ids

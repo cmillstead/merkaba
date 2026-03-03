@@ -239,6 +239,17 @@ All data lives in `~/.merkaba/`:
 11. **Plugin Sandboxing** — isolated execution for untrusted plugins
 12. **Conversation Encryption** — optional Fernet encryption for stored conversations
 13. **TOTP 2FA** — optional two-factor authentication for sensitive approvals
+14. **File Permission Enforcement** — SQLite databases and their parent directories receive restrictive OS permissions on creation (`ensure_secure_permissions` in `security/file_permissions.py`)
+
+### Data at Rest
+
+SQLite databases (`memory.db`, `actions.db`, `tasks.db`) are not encrypted at the application level. Protection for data at rest relies on three complementary controls:
+
+1. **File permissions** — `ensure_secure_permissions()` is called after every database directory and file is created. Directories receive mode `0o700` (owner read/write/execute only); database files receive mode `0o600` (owner read/write only). This prevents other local users from reading or modifying the databases. The function is a no-op on Windows, where NTFS ACLs provide equivalent isolation.
+
+2. **Full-disk encryption (recommended)** — FileVault (macOS), BitLocker (Windows), or LUKS (Linux) encrypts the underlying storage volume. If the device is lost or stolen and the user is not logged in, the databases cannot be read even if file permissions are bypassed (e.g., by booting from external media). Full-disk encryption is the primary defense against physical access attacks and is strongly recommended.
+
+3. **Conversation encryption** — Stored conversation logs can be encrypted with Fernet symmetric encryption via `merkaba security enable-encryption`. This adds per-record application-layer encryption on top of the OS-level controls above. See `security/encryption.py`.
 
 ## Session Management
 
@@ -289,6 +300,76 @@ Agent._execute_tools() loop
   → InterruptionManager.check_urgent(session_id)
       → STEER: inject message, continue with new direction
       → CANCEL: abort loop, return partial response
+```
+
+## WebSocket Protocol
+
+Merkaba exposes two WebSocket endpoints for real-time communication.
+
+### Authentication
+
+Both endpoints require the same authentication as HTTP endpoints when an API key is configured:
+
+- **Header**: `Authorization: Bearer <key>` or `X-API-Key: <key>`
+- **Query param**: `?token=<key>` (useful for browser clients that cannot set headers)
+
+When no API key is configured (default), connections are accepted without authentication.
+
+### Message Size Limit
+
+Incoming messages are capped at **64 KB** per frame. Messages exceeding this limit receive an error response and are not processed:
+
+```json
+{"type": "error", "content": "Message too large (max 64KB)"}
+```
+
+### `/ws/chat` — Agent Chat
+
+Real-time chat with the Merkaba agent routed through `SessionPool`.
+
+**Client sends:**
+```json
+{"content": "your message here"}
+```
+The `message` key is also accepted as an alias for `content`.
+
+**Server sends (in order):**
+```json
+{"type": "thinking", "tool": null, "status": "processing"}
+{"type": "thinking", "tool": "tool_name", "status": "completed"}
+{"type": "response", "content": "agent reply text"}
+```
+
+If the agent raises an unhandled exception, the server sends an error frame instead of a response:
+```json
+{"type": "error", "content": "error description"}
+```
+
+The connection stays open after an error — the client can send another message without reconnecting.
+
+### `/ws/control` — Mission Control
+
+Bidirectional channel for the Mission Control dashboard. Uses a subscribe/unsubscribe protocol over a shared connection.
+
+**Subscribe to a channel:**
+```json
+{"action": "subscribe", "channel": "state"}
+{"action": "subscribe", "channel": "diagnostics"}
+```
+
+**Unsubscribe:**
+```json
+{"action": "unsubscribe", "channel": "diagnostics"}
+```
+
+**Server sends (heartbeat, every 2 seconds):**
+```json
+{"type": "heartbeat", "state": { ... }}
+```
+
+**Server sends (diagnostics, when subscribed):**
+```json
+{"type": "diagnostics", "data": { ... }}
 ```
 
 ## Protocol Definitions

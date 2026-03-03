@@ -1,10 +1,13 @@
 # src/merkaba/plugins/agents.py
 """Agent configuration loading and management."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,8 +63,11 @@ class AgentManager:
 
             plugin_name = plugin_dir.name
             for agent_file in agents_dir.glob("*.md"):
-                agent = AgentConfig.from_file(agent_file, plugin_name)
-                self.agents[agent.name] = agent
+                try:
+                    agent = AgentConfig.from_file(agent_file, plugin_name)
+                    self.agents[agent.name] = agent
+                except Exception as e:
+                    logger.warning("Failed to load agent %s: %s", agent_file, e)
 
     def get(self, name: str) -> AgentConfig | None:
         """Get an agent config by name."""

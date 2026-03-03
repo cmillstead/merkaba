@@ -5,6 +5,7 @@ import os
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="no-trace")
 
@@ -67,7 +68,12 @@ def setup_logging(
     logger.setLevel(level)
 
     log_path = os.path.join(log_dir, "merkaba.jsonl")
-    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler = RotatingFileHandler(
+        log_path,
+        encoding="utf-8",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+    )
     handler.setFormatter(JsonFormatter())
     handler.addFilter(TraceIdFilter())
 

@@ -101,7 +101,7 @@ def test_memory_recall_with_business_filter(temp_dbs):
 
 def test_memory_decay(temp_dbs):
     with patch("merkaba.memory.lifecycle.MemoryDecayJob.run", return_value={"decayed": 3, "archived": 1}):
-        result = runner.invoke(app, ["memory", "decay"])
+        result = runner.invoke(app, ["memory", "decay", "--yes"])
     assert result.exit_code == 0
     assert "3 decayed" in result.output
     assert "1 archived" in result.output
@@ -217,7 +217,7 @@ def test_memory_consolidate(temp_dbs):
     with patch("merkaba.memory.lifecycle.MemoryConsolidationJob.run",
                return_value={"groups": 2, "summaries": 2, "archived": 5}):
         with patch("merkaba.llm.LLMClient"):
-            result = runner.invoke(app, ["memory", "consolidate"])
+            result = runner.invoke(app, ["memory", "consolidate", "--yes"])
     assert result.exit_code == 0
     assert "2 groups" in result.output
     assert "5 archived" in result.output

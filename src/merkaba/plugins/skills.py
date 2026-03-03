@@ -1,12 +1,15 @@
 # src/merkaba/plugins/skills.py
 """Skill loading and management."""
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 # Patterns that may indicate dangerous content in skills or generated code.
@@ -139,8 +142,11 @@ class SkillManager:
 
                 skill_file = skill_dir / "SKILL.md"
                 if skill_file.exists():
-                    skill = Skill.from_file(skill_file, plugin_name)
-                    self.skills[skill.name] = skill
+                    try:
+                        skill = Skill.from_file(skill_file, plugin_name)
+                        self.skills[skill.name] = skill
+                    except Exception as e:
+                        logger.warning("Failed to load skill %s: %s", skill_file, e)
 
     def get(self, name: str) -> Skill | None:
         """Get a skill by name."""
@@ -150,10 +156,29 @@ class SkillManager:
         """List all loaded skill names."""
         return list(self.skills.keys())
 
+    # Words that carry no meaningful signal for skill matching.
+    STOP_WORDS: frozenset[str] = frozenset({
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+        "on", "with", "at", "by", "from", "as", "into", "through", "during",
+        "before", "after", "above", "below", "between", "out", "off", "over",
+        "under", "again", "further", "then", "once", "and", "but", "or", "nor",
+        "not", "so", "yet", "both", "either", "neither", "each", "every", "all",
+        "any", "few", "more", "most", "other", "some", "such", "no", "only",
+        "own", "same", "than", "too", "very", "just", "about", "up", "it",
+        "its", "this", "that", "these", "those", "i", "me", "my", "we", "our",
+        "you", "your", "he", "him", "his", "she", "her", "they", "them",
+        "their", "what", "which", "who", "whom", "how", "when", "where", "why",
+    })
+
     def match(self, message: str) -> Skill | None:
         """Find a skill that matches the user message.
 
-        Uses simple keyword matching on skill descriptions.
+        Uses keyword matching on skill descriptions.  The description-based
+        fallback requires at least 2 meaningful (non-stop-word) keyword matches
+        to avoid false positives from single common words.
+
         Returns the first matching skill, or None.
         """
         message_lower = message.lower()
@@ -171,10 +196,16 @@ class SkillManager:
                 if any(kw in message_lower for kw in keywords):
                     return self.skills[skill_name]
 
-        # Fallback: check skill descriptions
+        # Fallback: check skill descriptions — require 2+ meaningful keyword matches
+        message_words = set(re.findall(r'\b\w+\b', message_lower))
         for skill in self.skills.values():
-            desc_words = skill.description.lower().split()
-            if any(word in message_lower for word in desc_words if len(word) > 4):
+            desc_words = [
+                word
+                for word in re.findall(r'\b\w+\b', skill.description.lower())
+                if word not in self.STOP_WORDS and len(word) > 1
+            ]
+            matches = sum(1 for word in desc_words if word in message_words)
+            if matches >= 2:
                 return skill
 
         return None

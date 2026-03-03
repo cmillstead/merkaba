@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { getTasks, updateTask, getTask as fetchTask } from '../api/client'
 import type { Task, TaskRun } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 function statusBadge(s: string) {
   switch (s) {
@@ -14,10 +15,18 @@ function statusBadge(s: string) {
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [runs, setRuns] = useState<TaskRun[]>([])
+  const { showToast } = useToast()
 
-  const load = () => getTasks().then(d => setTasks(d.tasks)).catch(() => {})
+  const load = () => {
+    setLoading(true)
+    getTasks()
+      .then(d => setTasks(d.tasks))
+      .catch(err => showToast(err.message || 'An error occurred', 'error'))
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => { load() }, [])
 
@@ -32,6 +41,15 @@ export default function Tasks() {
     setExpanded(id)
     const data = await fetchTask(id)
     setRuns(data.runs)
+  }
+
+  if (loading) {
+    return (
+      <>
+        <h1>Tasks</h1>
+        <div className="empty">Loading...</div>
+      </>
+    )
   }
 
   return (

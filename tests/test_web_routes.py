@@ -77,9 +77,49 @@ class TestSystemRoutes:
     def test_models(self, app_client):
         client, app = app_client
         resp = client.get("/api/system/models")
-        assert resp.status_code == 200
+        # Ollama not running in tests — expect 503 with error detail
+        assert resp.status_code in (200, 503)
         data = resp.json()
         assert "models" in data
+
+    def test_models_ollama_unavailable_returns_503(self, app_client):
+        client, app = app_client
+        # Ollama is not running in the test environment; the endpoint should
+        # return 503 (not 200) when it cannot reach the local service.
+        with patch("merkaba.web.routes.system.httpx.AsyncClient") as mock_cls:
+            import httpx as _httpx
+            mock_cls.return_value.__aenter__.side_effect = _httpx.ConnectError("refused")
+            resp = client.get("/api/system/models")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert "models" in data
+        assert "error" in data
+
+    def test_diagnostics_missing_store_returns_503(self, app_client):
+        client, app = app_client
+        # Remove diagnostics_store from app state to simulate uninitialized store
+        original = getattr(app.state, "diagnostics_store", None)
+        try:
+            if hasattr(app.state, "diagnostics_store"):
+                del app.state.diagnostics_store
+            resp = client.get("/api/system/diagnostics")
+            assert resp.status_code == 503
+            data = resp.json()
+            assert "error" in data
+        finally:
+            if original is not None:
+                app.state.diagnostics_store = original
+
+    def test_token_usage_missing_module_returns_503(self, app_client):
+        client, app = app_client
+        import sys
+        # Block the import by placing a sentinel that raises ImportError
+        with patch.dict(sys.modules, {"merkaba.observability.tokens": None}):
+            resp = client.get("/api/system/token-usage")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert "usage" in data
+        assert "error" in data
 
 
 # --- Business routes ---
@@ -126,7 +166,11 @@ class TestMemoryRoutes:
         client, app = app_client
         resp = client.get("/api/memory/facts")
         assert resp.status_code == 200
-        assert resp.json() == {"facts": []}
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["limit"] == 50
+        assert data["offset"] == 0
 
     def test_facts_with_filter(self, app_client):
         client, app = app_client
@@ -137,8 +181,9 @@ class TestMemoryRoutes:
 
         resp = client.get(f"/api/memory/facts?business_id={biz_id}&category=product")
         data = resp.json()
-        assert len(data["facts"]) == 1
-        assert data["facts"][0]["key"] == "color"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["key"] == "color"
+        assert data["total"] == 1
 
     def test_decisions(self, app_client):
         client, app = app_client
@@ -147,7 +192,8 @@ class TestMemoryRoutes:
         store.add_decision(biz_id, "pricing", "Raise price", "Market demand")
         resp = client.get(f"/api/memory/decisions?business_id={biz_id}")
         data = resp.json()
-        assert len(data["decisions"]) == 1
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
 
     def test_learnings(self, app_client):
         client, app = app_client
@@ -155,7 +201,104 @@ class TestMemoryRoutes:
         store.add_learning("pricing", "Higher prices work", confidence=80)
         resp = client.get("/api/memory/learnings")
         data = resp.json()
-        assert len(data["learnings"]) == 1
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+
+    def test_facts_pagination_limit_offset(self, app_client):
+        client, app = app_client
+        store = app.state.memory_store
+        biz_id = store.add_business("PagShop", "ecommerce")
+        for i in range(5):
+            store.add_fact(biz_id, "general", f"key{i}", f"val{i}")
+
+        resp = client.get(f"/api/memory/facts?business_id={biz_id}&limit=2&offset=0")
+        data = resp.json()
+        assert data["total"] == 5
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+        assert len(data["items"]) == 2
+
+        resp2 = client.get(f"/api/memory/facts?business_id={biz_id}&limit=2&offset=2")
+        data2 = resp2.json()
+        assert data2["total"] == 5
+        assert len(data2["items"]) == 2
+        # Items on page 2 are different from page 1
+        keys1 = {item["key"] for item in data["items"]}
+        keys2 = {item["key"] for item in data2["items"]}
+        assert keys1.isdisjoint(keys2)
+
+    def test_facts_pagination_offset_beyond_total(self, app_client):
+        client, app = app_client
+        store = app.state.memory_store
+        biz_id = store.add_business("PagShop2", "ecommerce")
+        store.add_fact(biz_id, "general", "k1", "v1")
+
+        resp = client.get(f"/api/memory/facts?business_id={biz_id}&limit=10&offset=100")
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"] == []
+
+    def test_decisions_pagination(self, app_client):
+        client, app = app_client
+        store = app.state.memory_store
+        biz_id = store.add_business("DecShop", "ecommerce")
+        for i in range(4):
+            store.add_decision(biz_id, "pricing", f"decision{i}", "reason")
+
+        resp = client.get(f"/api/memory/decisions?business_id={biz_id}&limit=2&offset=0")
+        data = resp.json()
+        assert data["total"] == 4
+        assert len(data["items"]) == 2
+
+    def test_learnings_pagination(self, app_client):
+        client, app = app_client
+        store = app.state.memory_store
+        for i in range(3):
+            store.add_learning("ops", f"learning{i}", confidence=70)
+
+        resp = client.get("/api/memory/learnings?limit=2&offset=0")
+        data = resp.json()
+        assert data["total"] == 3
+        assert len(data["items"]) == 2
+        assert data["limit"] == 2
+
+    def test_facts_invalid_limit_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/memory/facts?limit=0")
+        assert resp.status_code == 422
+
+    def test_facts_invalid_offset_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/memory/facts?offset=-1")
+        assert resp.status_code == 422
+
+    def test_facts_invalid_business_id_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/memory/facts?business_id=0")
+        assert resp.status_code == 422
+
+    def test_facts_limit_too_large_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/memory/facts?limit=501")
+        assert resp.status_code == 422
+
+    def test_delete_fact(self, app_client):
+        client, app = app_client
+        store = app.state.memory_store
+        biz_id = store.add_business("Shop", "ecommerce")
+        fact_id = store.add_fact(biz_id, "product", "color", "blue")
+
+        resp = client.delete(f"/api/memory/facts/{fact_id}")
+        assert resp.status_code == 204
+
+        # Verify it's gone — list should return empty
+        resp2 = client.get(f"/api/memory/facts?business_id={biz_id}")
+        assert resp2.json()["total"] == 0
+
+    def test_delete_fact_not_found(self, app_client):
+        client, app = app_client
+        resp = client.delete("/api/memory/facts/999999")
+        assert resp.status_code == 404
 
 
 # --- Task routes ---
@@ -165,7 +308,11 @@ class TestTaskRoutes:
         client, app = app_client
         resp = client.get("/api/tasks")
         assert resp.status_code == 200
-        assert resp.json() == {"tasks": []}
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["limit"] == 50
+        assert data["offset"] == 0
 
     def test_create_task(self, app_client):
         client, app = app_client
@@ -193,6 +340,16 @@ class TestTaskRoutes:
         resp = client.get("/api/tasks/999")
         assert resp.status_code == 404
 
+    def test_get_task_invalid_id_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/tasks/0")
+        assert resp.status_code == 422
+
+    def test_update_task_invalid_id_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.patch("/api/tasks/0", json={"status": "paused"})
+        assert resp.status_code == 422
+
     def test_pause_resume(self, app_client):
         client, app = app_client
         queue = app.state.task_queue
@@ -214,6 +371,54 @@ class TestTaskRoutes:
         assert resp.status_code == 200
         assert "runs" in resp.json()
 
+    def test_list_tasks_pagination(self, app_client):
+        client, app = app_client
+        queue = app.state.task_queue
+        for i in range(5):
+            queue.add_task(f"Task {i}", "health_check")
+
+        resp = client.get("/api/tasks?limit=2&offset=0")
+        data = resp.json()
+        assert data["total"] == 5
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+        assert len(data["items"]) == 2
+
+        resp2 = client.get("/api/tasks?limit=2&offset=2")
+        data2 = resp2.json()
+        assert data2["total"] == 5
+        assert len(data2["items"]) == 2
+        names1 = {t["name"] for t in data["items"]}
+        names2 = {t["name"] for t in data2["items"]}
+        assert names1.isdisjoint(names2)
+
+    def test_list_tasks_invalid_limit_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/tasks?limit=0")
+        assert resp.status_code == 422
+
+    def test_list_tasks_invalid_business_id_returns_422(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/tasks?business_id=0")
+        assert resp.status_code == 422
+
+    def test_delete_task(self, app_client):
+        client, app = app_client
+        queue = app.state.task_queue
+        task_id = queue.add_task("Temp task", "health_check")
+
+        resp = client.delete(f"/api/tasks/{task_id}")
+        assert resp.status_code == 204
+
+        # Verify it's gone
+        resp2 = client.get(f"/api/tasks/{task_id}")
+        assert resp2.status_code == 404
+
+    def test_delete_task_not_found(self, app_client):
+        client, app = app_client
+        resp = client.delete("/api/tasks/999999")
+        assert resp.status_code == 404
+
 
 # --- Approval routes ---
 
@@ -232,7 +437,8 @@ class TestApprovalRoutes:
             action_type="send_email",
             description="Send welcome email",
         )
-        resp = client.post(f"/api/approvals/{action_id}/approve")
+        # Body is optional; send an empty JSON object to satisfy the Pydantic model
+        resp = client.post(f"/api/approvals/{action_id}/approve", json={})
         assert resp.status_code == 200
         assert resp.json()["status"] == "approved"
 
@@ -253,7 +459,7 @@ class TestApprovalRoutes:
 
     def test_approve_not_found(self, app_client):
         client, app = app_client
-        resp = client.post("/api/approvals/999/approve")
+        resp = client.post("/api/approvals/999/approve", json={})
         assert resp.status_code == 404
 
     def test_stats(self, app_client):
@@ -261,6 +467,133 @@ class TestApprovalRoutes:
         resp = client.get("/api/approvals/stats")
         assert resp.status_code == 200
         assert "stats" in resp.json()
+
+    def test_purge_approvals(self, app_client):
+        client, app = app_client
+        queue = app.state.action_queue
+
+        # Create two decided actions with decided_at in the past (40 days ago)
+        aid1 = queue.add_action(business_id=1, action_type="send_email", description="Old approved")
+        aid2 = queue.add_action(business_id=1, action_type="send_email", description="Old denied")
+        # One still pending (should NOT be purged)
+        queue.add_action(business_id=1, action_type="send_email", description="Still pending")
+
+        queue.decide(aid1, approved=True)
+        queue.decide(aid2, approved=False)
+
+        # Manually backdate the decided_at timestamps so they appear old enough
+        queue._conn.execute(
+            "UPDATE actions SET decided_at = datetime('now', '-40 days') WHERE id IN (?, ?)",
+            (aid1, aid2),
+        )
+        queue._conn.commit()
+
+        resp = client.post("/api/approvals/purge", json={"older_than_days": 30})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["purged"] == 2
+
+        # Pending action should still exist
+        remaining = queue.list_actions(status="pending")
+        assert len(remaining) == 1
+
+    def test_approve_with_valid_totp(self, app_client):
+        """When 2FA is enabled and a valid TOTP code is supplied, approval succeeds."""
+        client, app = app_client
+        queue = app.state.action_queue
+        # High autonomy_level so that 2FA is required (threshold default is 3)
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="delete_record",
+            description="High risk delete",
+            autonomy_level=4,
+        )
+
+        from merkaba.approval.secure import SecureApprovalManager
+
+        # Build a real manager with a known TOTP secret so we can generate a valid code
+        import pyotp
+        secret = pyotp.random_base32()
+        valid_code = pyotp.TOTP(secret).now()
+
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=secret,
+            totp_threshold=3,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            resp = client.post(
+                f"/api/approvals/{action_id}/approve",
+                json={"totp_code": valid_code},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+
+    def test_approve_with_invalid_totp(self, app_client):
+        """When 2FA is enabled and an invalid TOTP code is supplied, endpoint returns 403."""
+        client, app = app_client
+        queue = app.state.action_queue
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="delete_record",
+            description="High risk delete",
+            autonomy_level=4,
+        )
+
+        import pyotp
+        from merkaba.approval.secure import SecureApprovalManager
+
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=pyotp.random_base32(),
+            totp_threshold=3,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            resp = client.post(
+                f"/api/approvals/{action_id}/approve",
+                json={"totp_code": "000000"},
+            )
+
+        assert resp.status_code == 403
+        assert "Invalid TOTP" in resp.json()["detail"]
+
+    def test_approve_without_totp_when_2fa_disabled(self, app_client):
+        """When 2FA is not configured, approval succeeds without supplying a TOTP code."""
+        client, app = app_client
+        queue = app.state.action_queue
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="send_email",
+            description="Regular action",
+            autonomy_level=4,
+        )
+
+        from merkaba.approval.secure import SecureApprovalManager
+
+        # Manager with no TOTP secret — 2FA is disabled
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=None,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            # Empty body — totp_code defaults to None, backwards compatible
+            resp = client.post(f"/api/approvals/{action_id}/approve", json={})
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
 
 
 # --- API key auth ---

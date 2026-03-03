@@ -610,3 +610,89 @@ class TestGetConfiguredProviders:
         ):
             result = get_configured_providers(str(config))
         assert result["anthropic"] is True
+
+
+# --- API Key Keychain Resolution ---
+
+
+class TestGetApiKeyKeychainResolution:
+    """Tests for the updated _get_api_key() resolution order."""
+
+    @pytest.mark.requires_keyring
+    def test_get_api_key_keychain_priority(self):
+        """Keychain key is preferred over env var when both are present."""
+        from merkaba.llm_providers.registry import _get_api_key
+
+        mock_keyring = MagicMock()
+        mock_keyring.get_password.return_value = "sk-keychain-key"
+
+        with patch.dict(sys.modules, {"keyring": mock_keyring}):
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-env-key"}):
+                key = _get_api_key("anthropic", {})
+
+        assert key == "sk-keychain-key"
+        mock_keyring.get_password.assert_called_once_with("merkaba", "anthropic_api_key")
+
+    @pytest.mark.requires_keyring
+    def test_get_api_key_env_fallback(self):
+        """Env var is used when keychain returns None."""
+        from merkaba.llm_providers.registry import _get_api_key
+
+        mock_keyring = MagicMock()
+        mock_keyring.get_password.return_value = None
+
+        with patch.dict(sys.modules, {"keyring": mock_keyring}):
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-env-openai"}):
+                key = _get_api_key("openai", {})
+
+        assert key == "sk-env-openai"
+
+    @pytest.mark.requires_keyring
+    def test_get_api_key_config_deprecation_warning(self, caplog):
+        """Config.json key triggers deprecation warning when keychain and env are empty."""
+        import logging
+        from merkaba.llm_providers.registry import _get_api_key
+
+        mock_keyring = MagicMock()
+        mock_keyring.get_password.return_value = None
+
+        with patch.dict(sys.modules, {"keyring": mock_keyring}):
+            with patch.dict(os.environ, {}, clear=True):
+                with caplog.at_level(logging.WARNING, logger="merkaba.llm_providers.registry"):
+                    key = _get_api_key("anthropic", {"api_key": "sk-config-key"})
+
+        assert key == "sk-config-key"
+        assert "config.json" in caplog.text
+        assert "merkaba security migrate-keys" in caplog.text
+
+    def test_get_api_key_no_keyring(self):
+        """Falls back to env var gracefully when keyring is not installed."""
+        from merkaba.llm_providers.registry import _get_api_key
+
+        # Simulate keyring not installed by raising ImportError on import
+        original = sys.modules.get("keyring")
+        try:
+            sys.modules["keyring"] = None  # None causes ImportError on `import keyring`
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-env-fallback"}):
+                key = _get_api_key("anthropic", {})
+        finally:
+            if original is None:
+                sys.modules.pop("keyring", None)
+            else:
+                sys.modules["keyring"] = original
+
+        assert key == "sk-env-fallback"
+
+    @pytest.mark.requires_keyring
+    def test_get_api_key_all_empty_returns_none(self):
+        """Returns None when keychain, env var, and config are all empty."""
+        from merkaba.llm_providers.registry import _get_api_key
+
+        mock_keyring = MagicMock()
+        mock_keyring.get_password.return_value = None
+
+        with patch.dict(sys.modules, {"keyring": mock_keyring}):
+            with patch.dict(os.environ, {}, clear=True):
+                key = _get_api_key("anthropic", {})
+
+        assert key is None

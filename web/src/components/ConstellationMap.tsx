@@ -120,10 +120,24 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
         <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
           <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1a1a3e" strokeWidth="0.5" />
         </pattern>
-        <radialGradient id="center-glow">
-          <stop offset="0%" stopColor="rgba(108, 99, 255, 0.35)" />
-          <stop offset="50%" stopColor="rgba(0, 240, 255, 0.12)" />
+        <radialGradient id="orb-fill">
+          <stop offset="0%" stopColor="#b0a0ff" />
+          <stop offset="6%" stopColor="#7868d8" />
+          <stop offset="18%" stopColor="#3a2e80" />
+          <stop offset="35%" stopColor="#161638" />
+          <stop offset="100%" stopColor="#12121a" />
+        </radialGradient>
+        <radialGradient id="orb-outer-glow">
+          <stop offset="78%" stopColor="rgba(80, 70, 200, 0.2)" />
+          <stop offset="92%" stopColor="rgba(0, 180, 255, 0.08)" />
           <stop offset="100%" stopColor="transparent" />
+        </radialGradient>
+        <radialGradient id="orb-vignette">
+          <stop offset="0%" stopColor="transparent" />
+          <stop offset="50%" stopColor="transparent" />
+          <stop offset="75%" stopColor="rgba(8, 8, 20, 0.35)" />
+          <stop offset="90%" stopColor="rgba(8, 8, 20, 0.65)" />
+          <stop offset="100%" stopColor="rgba(8, 8, 20, 0.9)" />
         </radialGradient>
       </defs>
       <rect width="800" height="600" fill="url(#grid)" />
@@ -167,16 +181,20 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
             onClick={() => onSelectNode(pos.id, pos.type)}
             onKeyDown={(e) => { if (e.key === 'Enter') onSelectNode(pos.id, pos.type) }}
           >
+            {/* Outer glow (agent only) */}
+            {isAgent && (
+              <circle r={56} fill="url(#orb-outer-glow)" />
+            )}
             {/* Glow circle behind node */}
             <circle
               r={isAgent ? 50 : 35}
               fill="transparent"
               className="constellation-glow"
             />
-            {/* Node circle */}
+            {/* Node circle — agent uses orb gradient, workers stay flat */}
             <circle
               r={isAgent ? 40 : 28}
-              fill="#12121a"
+              fill={isAgent ? 'url(#orb-fill)' : '#12121a'}
               stroke={status === 'active' ? '#00f0ff' : '#3a3a5c'}
               strokeWidth="1.5"
             />
@@ -204,23 +222,29 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
       {/* Merkaba glyph rendered via foreignObject for the primary agent */}
       {positions.length > 0 && positions[0].type === 'agent' && (
         <>
-          {/* Center glow — SVG radial gradient so it isn't clipped by foreignObject */}
+          {/* Clip wireframe to sphere boundary so vertices disappear behind the orb edge */}
+          <clipPath id="orb-clip">
+            <circle cx={positions[0].x} cy={positions[0].y} r={38} />
+          </clipPath>
+          <g clipPath="url(#orb-clip)" style={{ pointerEvents: 'none' }}>
+            <foreignObject
+              x={positions[0].x - 35}
+              y={positions[0].y - 35}
+              width={70}
+              height={70}
+              style={{ overflow: 'visible' }}
+            >
+              <MerkabaGlyph size={70} status={statusFor(positions[0].id)} speed={1} />
+            </foreignObject>
+          </g>
+          {/* Vignette on top — darkens wireframe at sphere edges */}
           <circle
             cx={positions[0].x}
             cy={positions[0].y}
-            r="36"
-            fill="url(#center-glow)"
+            r={40}
+            fill="url(#orb-vignette)"
             style={{ pointerEvents: 'none' }}
           />
-          <foreignObject
-            x={positions[0].x - 30}
-            y={positions[0].y - 30}
-            width={60}
-            height={60}
-            style={{ pointerEvents: 'none', overflow: 'visible' }}
-          >
-            <MerkabaGlyph size={60} status={statusFor(positions[0].id)} speed={1} />
-          </foreignObject>
         </>
       )}
     </svg>

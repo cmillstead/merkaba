@@ -12,6 +12,7 @@ UPLOAD_DIR = os.path.expanduser("~/.merkaba/uploads")
 CONVERSATIONS_DIR = os.path.expanduser("~/.merkaba/conversations")
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_WS_MESSAGE_SIZE = 64 * 1024  # 64 KB
 
 ALLOWED_EXTENSIONS = {
     ".txt", ".md", ".pdf", ".csv", ".json", ".xml", ".yaml", ".yml",
@@ -122,6 +123,12 @@ async def websocket_chat(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+
+            # Reject messages that exceed the size limit
+            if len(data) > MAX_WS_MESSAGE_SIZE:
+                await websocket.send_json({"type": "error", "content": "Message too large (max 64KB)"})
+                continue
+
             try:
                 msg = json.loads(data)
                 user_message = msg.get("message", data)
@@ -146,22 +153,27 @@ async def websocket_chat(websocket: WebSocket):
                     loop,
                 )
 
-            if pool:
-                # Route through SessionPool — serializes per-session, reuses Agent
-                logger.debug("Submitting to pool session %s: %s", session_id, user_message[:80])
-                response = await pool.submit(session_id, user_message, on_tool_call=on_tool_call)
-            else:
-                # Fallback for test mode (no pool configured)
-                from merkaba.agent import Agent
-                from merkaba.tools.base import PermissionTier
+            try:
+                if pool:
+                    # Route through SessionPool — serializes per-session, reuses Agent
+                    logger.debug("Submitting to pool session %s: %s", session_id, user_message[:80])
+                    response = await pool.submit(session_id, user_message, on_tool_call=on_tool_call)
+                else:
+                    # Fallback for test mode (no pool configured)
+                    from merkaba.agent import Agent
+                    from merkaba.tools.base import PermissionTier
 
-                agent = Agent()
-                agent.permission_manager.auto_approve_level = PermissionTier.MODERATE
-                logger.debug("Running agent with message: %s", user_message[:80])
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: agent.run(user_message, on_tool_call=on_tool_call),
-                )
+                    agent = Agent()
+                    agent.permission_manager.auto_approve_level = PermissionTier.MODERATE
+                    logger.debug("Running agent with message: %s", user_message[:80])
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: agent.run(user_message, on_tool_call=on_tool_call),
+                    )
+            except Exception as e:
+                logger.exception("Agent error for session %s: %s", session_id, e)
+                await websocket.send_json({"type": "error", "content": str(e)})
+                continue
 
             logger.debug("Agent response: %s", response[:200])
 

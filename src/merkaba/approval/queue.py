@@ -17,10 +17,13 @@ class ActionQueue:
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        from merkaba.security.file_permissions import ensure_secure_permissions
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
+            ensure_secure_permissions(db_dir)
         self._conn = sqlite3.connect(self.db_path)
+        ensure_secure_permissions(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -158,6 +161,20 @@ class ActionQueue:
             (self._now(), json.dumps(result) if result else None, action_id),
         )
         self._conn.commit()
+
+    def purge_decided(self, older_than_days: int = 30) -> int:
+        """Delete decided actions (approved/denied/executed/failed) older than N days.
+
+        Returns the number of rows deleted.
+        """
+        cursor = self._conn.execute(
+            """DELETE FROM actions
+               WHERE status IN ('approved', 'denied', 'executed', 'failed')
+                 AND decided_at < datetime('now', ? || ' days')""",
+            (f"-{older_than_days}",),
+        )
+        self._conn.commit()
+        return cursor.rowcount
 
     def get_pending_count(self, business_id: int | None = None) -> int:
         query = "SELECT COUNT(*) FROM actions WHERE status = 'pending'"

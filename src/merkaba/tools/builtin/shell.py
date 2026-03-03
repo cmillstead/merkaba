@@ -190,15 +190,27 @@ def is_blocked(command: str) -> bool:
 
 
 def _bash(command: str) -> str:
-    """Execute a shell command."""
+    """Execute a shell command.
+
+    Uses ``shell=False`` with ``shlex.split()`` to avoid shell-injection risks.
+    The allowlist in ``is_allowed()`` already rejects pipes, redirects, and
+    command-substitution constructs, so every command that reaches this point
+    is a plain executable + arguments that can be safely split and exec'd
+    directly without invoking a shell interpreter.
+    """
     allowed, reason = is_allowed(command)
     if not allowed:
         raise PermissionError(f"Command not allowed: {reason}")
 
     try:
+        args = shlex.split(command)
+    except ValueError as exc:
+        return f"[error] Could not parse command: {exc}"
+
+    try:
         result = subprocess.run(
-            command,
-            shell=True,
+            args,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=COMMAND_TIMEOUT_SECONDS,

@@ -22,10 +22,13 @@ class TaskQueue:
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        from merkaba.security.file_permissions import ensure_secure_permissions
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
+            ensure_secure_permissions(db_dir)
         self._conn = sqlite3.connect(self.db_path)
+        ensure_secure_permissions(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -175,6 +178,20 @@ class TaskQueue:
         values = list(updates.values()) + [task_id]
         self._conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
         self._conn.commit()
+
+    def delete_task(self, task_id: int) -> bool:
+        """Permanently delete a task and its runs.
+
+        Returns True if the task existed and was deleted, False if not found.
+        """
+        task = self.get_task(task_id)
+        if not task:
+            return False
+        self._conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
+        self._conn.execute("DELETE FROM dead_letter_queue WHERE task_id = ?", (task_id,))
+        cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
 
     def pause_task(self, task_id: int) -> None:
         self.update_task(task_id, status="paused")

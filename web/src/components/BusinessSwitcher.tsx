@@ -25,6 +25,7 @@ export default function BusinessSwitcher() {
       <select
         value={selected ?? ''}
         onChange={e => setSelected(e.target.value ? Number(e.target.value) : null)}
+        aria-label="Select business"
         style={{
           width: '100%',
           background: 'var(--bg)',

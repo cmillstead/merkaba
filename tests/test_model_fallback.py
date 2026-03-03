@@ -233,6 +233,30 @@ class TestChatWithFallback:
             with pytest.raises(AllModelsUnavailableError):
                 client.chat_with_fallback("hi", tier="classifier")
 
+    def test_llm_last_fallback_set(self):
+        """last_fallback is set to the fallback model name when primary is unavailable."""
+        client = LLMClient.__new__(LLMClient)
+        client.last_fallback = None
+        expected = LLMResponse(content="from fallback", model="qwen3:8b")
+        with patch.object(
+            client,
+            "chat_with_retry",
+            side_effect=[LLMUnavailableError("primary down"), expected],
+        ):
+            result = client.chat_with_fallback("hi", tier="complex")
+        assert result.content == "from fallback"
+        assert client.last_fallback == "qwen3:8b"
+
+    def test_llm_last_fallback_not_set_on_primary_success(self):
+        """last_fallback remains None when primary model succeeds."""
+        client = LLMClient.__new__(LLMClient)
+        client.last_fallback = None
+        expected = LLMResponse(content="primary result", model="qwen3.5:122b")
+        with patch.object(client, "chat_with_retry", return_value=expected):
+            result = client.chat_with_fallback("hi", tier="complex")
+        assert result.content == "primary result"
+        assert client.last_fallback is None
+
 
 # --- Integration: Agent ---
 

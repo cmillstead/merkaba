@@ -82,22 +82,49 @@ def is_url_allowed(url: str) -> tuple[bool, str]:
 
 
 def _web_fetch(url: str) -> str:
-    """Fetch content from a URL."""
-    # SSRF protection: validate URL before fetching
+    """Fetch content from a URL with SSRF-safe redirect handling."""
+    _MAX_REDIRECTS = 5
+
+    # SSRF protection: validate the initial URL before fetching
     allowed, reason = is_url_allowed(url)
     if not allowed:
         raise ValueError(f"URL not allowed: {reason}")
 
+    current_url = url
+    hops = 0
+
     try:
-        response = httpx.get(url, follow_redirects=True, timeout=30.0)
-        response.raise_for_status()
+        while True:
+            response = httpx.get(current_url, follow_redirects=False, timeout=30.0)
+
+            # Not a redirect — we're done
+            if response.status_code not in (301, 302, 303, 307, 308):
+                response.raise_for_status()
+                return response.text
+
+            # Redirect: validate the Location before following
+            hops += 1
+            if hops > _MAX_REDIRECTS:
+                raise ValueError("Too many redirects")
+
+            location = response.headers.get("location", "")
+            if not location:
+                raise ValueError("Redirect with no Location header")
+
+            allowed, reason = is_url_allowed(location)
+            if not allowed:
+                raise ValueError(f"Redirect target blocked: {reason}")
+
+            current_url = location
+
+    except ValueError:
+        raise
     except httpx.TimeoutException:
         return "[error] Request timed out"
     except httpx.ConnectError as e:
         return f"[error] Connection failed: {e}"
     except httpx.HTTPStatusError as e:
         return f"[error] HTTP {e.response.status_code}: {e.response.reason_phrase}"
-    return response.text
 
 
 web_fetch = Tool(

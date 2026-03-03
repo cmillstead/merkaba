@@ -5,7 +5,7 @@ import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -16,17 +16,33 @@ class MemoryStore:
 
     db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
     contradiction_detector: Any = field(default=None, repr=False)
+    on_event: Callable[[str, dict], None] | None = field(default=None, repr=False)
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        from merkaba.security.file_permissions import ensure_secure_permissions
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
+            ensure_secure_permissions(db_dir)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        ensure_secure_permissions(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._create_tables()
+
+    def _emit(self, event_name: str, data: dict) -> None:
+        """Fire the on_event callback with the given event name and data.
+
+        Errors in the callback are caught and logged so they never crash the caller.
+        """
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event_name, data)
+        except Exception as e:
+            logger.warning("on_event callback raised for %r: %s", event_name, e)
 
     def _create_tables(self):
         cursor = self._conn.cursor()
@@ -233,11 +249,20 @@ class MemoryStore:
                     business_id, category, key, value
                 )
                 if contradicted:
-                    self.contradiction_detector.resolve([c["id"] for c in contradicted])
+                    contradicted_ids = [c["id"] for c in contradicted]
+                    self.contradiction_detector.resolve(contradicted_ids)
                     logger.info(
                         "Archived %d contradicted facts for business %d",
                         len(contradicted), business_id,
                     )
+                    self._emit("contradiction_resolved", {
+                        "business_id": business_id,
+                        "category": category,
+                        "key": key,
+                        "new_value": value,
+                        "resolved_ids": contradicted_ids,
+                        "resolved_count": len(contradicted_ids),
+                    })
             except Exception as e:
                 logger.warning("Contradiction check failed: %s", e)
 
@@ -249,7 +274,13 @@ class MemoryStore:
             (business_id, category, key, value, confidence, source, now, now),
         )
         self._conn.commit()
-        return cursor.lastrowid
+        fact_id = cursor.lastrowid
+        self._emit("facts_extracted", {
+            "fact_id": fact_id,
+            "business_id": business_id,
+            "content": value,
+        })
+        return fact_id
 
     def get_fact(self, fact_id: int) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
@@ -284,6 +315,10 @@ class MemoryStore:
         values = list(updates.values()) + [fact_id]
         self._conn.execute(f"UPDATE facts SET {set_clause} WHERE id = ?", values)
         self._conn.commit()
+        emit_data: dict = {"fact_id": fact_id}
+        if "value" in updates:
+            emit_data["content"] = updates["value"]
+        self._emit("fact_updated", emit_data)
 
     # --- Decisions CRUD ---
 
@@ -562,6 +597,28 @@ class MemoryStore:
         duration_seconds: int | None = None,
         tags: list[str] | None = None,
     ) -> int:
+        from datetime import timedelta
+
+        # Deduplication: skip insert if an identical episode exists within the last hour.
+        window_start = (datetime.now() - timedelta(hours=1)).isoformat()
+        dup_cursor = self._conn.cursor()
+        dup_cursor.execute(
+            """SELECT id FROM episodes
+               WHERE business_id = ? AND task_type = ? AND summary = ?
+                 AND created_at >= ?
+               LIMIT 1""",
+            (business_id, task_type, summary, window_start),
+        )
+        existing = dup_cursor.fetchone()
+        if existing:
+            existing_id = existing[0]
+            logger.debug(
+                "Episode dedup triggered: business_id=%s task_type=%s summary=%r — "
+                "returning existing id=%s",
+                business_id, task_type, summary, existing_id,
+            )
+            return existing_id
+
         cursor = self._conn.cursor()
         cursor.execute(
             """INSERT INTO episodes
@@ -646,6 +703,97 @@ class MemoryStore:
             logger.info("Archived %d episodes older than %d days", deleted, max_age_days)
         return deleted
 
+    # --- Hard Delete ---
+
+    _VALID_TABLES = frozenset(
+        {"businesses", "facts", "decisions", "relationships", "state", "learnings", "episodes"}
+    )
+
+    def hard_delete(self, table: str, item_id: int) -> bool:
+        """Permanently delete a single row by id.
+
+        Returns True if a row was deleted, False if no row matched.
+        Raises ValueError for invalid table names.
+        If a VectorMemory backend is attached, removes the vector too.
+        """
+        if table not in self._VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        cursor = self._conn.execute(
+            f"DELETE FROM {table} WHERE id = ?", (item_id,)
+        )
+        self._conn.commit()
+        deleted = cursor.rowcount > 0
+        if deleted and hasattr(self, "_vectors") and self._vectors:
+            try:
+                self._vectors.delete_vectors(table, [item_id])
+            except Exception as e:
+                logger.warning(
+                    "Vector delete failed for %s/%d: %s", table, item_id, e
+                )
+        if deleted:
+            self._emit("item_deleted", {"table": table, "item_id": item_id})
+        return deleted
+
+    def hard_delete_business(self, business_id: int, cascade: bool = True) -> dict[str, int]:
+        """Permanently delete a business and optionally all of its children.
+
+        Returns a dict mapping table names to the number of rows deleted.
+        """
+        counts: dict[str, int] = {}
+        self._conn.execute("BEGIN")
+        try:
+            if cascade:
+                child_tables = (
+                    "facts",
+                    "decisions",
+                    "learnings",
+                    "episodes",
+                    "relationships",
+                    "state",
+                )
+                for child in child_tables:
+                    # learnings uses source_business_id; all others use business_id
+                    col = "source_business_id" if child == "learnings" else "business_id"
+                    cursor = self._conn.execute(
+                        f"DELETE FROM {child} WHERE {col} = ?", (business_id,)
+                    )
+                    counts[child] = cursor.rowcount
+
+            cursor = self._conn.execute(
+                "DELETE FROM businesses WHERE id = ?", (business_id,)
+            )
+            counts["businesses"] = cursor.rowcount
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        return counts
+
+    def purge_archived(self, table: str, older_than_days: int | None = None) -> int:
+        """Permanently delete all archived rows in a table.
+
+        If *older_than_days* is given, only rows whose ``updated_at`` is older
+        than that many days are removed.  Returns the count of deleted rows.
+        Raises ValueError for invalid table names or tables without an
+        ``archived`` column (businesses, relationships, state, episodes).
+        """
+        if table not in self._VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if table not in ("facts", "decisions", "learnings"):
+            raise ValueError(f"Table {table!r} does not have an archived column")
+        if older_than_days is not None:
+            cursor = self._conn.execute(
+                f"DELETE FROM {table} WHERE archived = 1 "
+                f"AND updated_at < datetime('now', ? || ' days')",
+                (f"-{older_than_days}",),
+            )
+        else:
+            cursor = self._conn.execute(
+                f"DELETE FROM {table} WHERE archived = 1"
+            )
+        self._conn.commit()
+        return cursor.rowcount
+
     # --- Lifecycle ---
 
     def archive(self, table: str, item_id: int, vectors=None) -> None:
@@ -659,6 +807,7 @@ class MemoryStore:
                 vectors.delete_vectors(table, [str(item_id)])
             except Exception as e:
                 logger.warning("Vector delete failed for %s/%d: %s", table, item_id, e)
+        self._emit("items_archived", {"table": table, "ids": [item_id]})
 
     def unarchive(self, table: str, item_id: int) -> None:
         """Restore an archived item."""

@@ -3,6 +3,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from merkaba.security.classifier import InputClassifier, CLASSIFIER_PROMPT
 
 
@@ -289,3 +291,157 @@ class TestInputClassifier:
         classifier = InputClassifier()
         _, _, complexity = classifier.classify("test message")
         assert complexity == "no_tools"
+
+
+# ---- fail_mode parameter ----
+
+
+class TestInputClassifierFailMode:
+    """Tests for the explicit fail_mode parameter."""
+
+    def test_invalid_fail_mode_raises(self):
+        """Constructing with an unknown fail_mode should raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid fail_mode"):
+            InputClassifier(fail_mode="unknown")
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_open_on_error(self, mock_get_client):
+        """fail_mode='open': LLM error → safe=True, complexity='complex'."""
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = ConnectionError("Ollama down")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="open")
+        is_safe, reason, complexity = classifier.classify("Hello")
+
+        assert is_safe is True
+        assert reason == ""
+        assert complexity == "complex"
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_closed_on_error(self, mock_get_client):
+        """fail_mode='closed': LLM error → safe=False, request blocked."""
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = ConnectionError("Ollama down")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="closed")
+        is_safe, reason, complexity = classifier.classify("Hello")
+
+        assert is_safe is False
+        assert reason != ""
+        # complexity field is returned as 'complex' even when blocked
+        assert complexity == "complex"
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_no_tools_on_error(self, mock_get_client):
+        """fail_mode='no_tools': LLM error → safe=True, complexity='no_tools'."""
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = RuntimeError("service unavailable")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="no_tools")
+        is_safe, reason, complexity = classifier.classify("Hello")
+
+        assert is_safe is True
+        assert reason == ""
+        assert complexity == "no_tools"
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_open_logs_warning(self, mock_get_client):
+        """fail_mode='open' logs at WARNING level when triggered."""
+        import logging
+
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = ConnectionError("down")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="open")
+        with patch.object(
+            logging.getLogger("merkaba.security.classifier"),
+            "warning",
+        ) as mock_warn:
+            classifier.classify("test")
+            mock_warn.assert_called_once()
+            assert "fail-open" in mock_warn.call_args[0][0].lower() or \
+                   "open" in mock_warn.call_args[0][0].lower()
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_closed_logs_warning(self, mock_get_client):
+        """fail_mode='closed' logs at WARNING level when triggered."""
+        import logging
+
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = ConnectionError("down")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="closed")
+        with patch.object(
+            logging.getLogger("merkaba.security.classifier"),
+            "warning",
+        ) as mock_warn:
+            classifier.classify("test")
+            mock_warn.assert_called_once()
+            assert "closed" in mock_warn.call_args[0][0].lower()
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_no_tools_logs_warning(self, mock_get_client):
+        """fail_mode='no_tools' logs at WARNING level when triggered."""
+        import logging
+
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = ConnectionError("down")
+        mock_get_client.return_value = mock_client
+
+        classifier = InputClassifier(fail_mode="no_tools")
+        with patch.object(
+            logging.getLogger("merkaba.security.classifier"),
+            "warning",
+        ) as mock_warn:
+            classifier.classify("test")
+            mock_warn.assert_called_once()
+            assert "no_tools" in mock_warn.call_args[0][0].lower()
+
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_does_not_affect_successful_classify(self, mock_get_client):
+        """When the LLM call succeeds, fail_mode has no effect on the result."""
+        mock_response = MagicMock()
+        mock_response.message.content = "SAFE COMPLEX"
+        mock_client = MagicMock()
+        mock_client.chat.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        for mode in ("open", "closed", "no_tools"):
+            classifier = InputClassifier(fail_mode=mode)
+            is_safe, reason, complexity = classifier.classify("What is photosynthesis?")
+            assert is_safe is True, f"Expected safe for fail_mode={mode!r}"
+            assert complexity == "complex", f"Expected complex for fail_mode={mode!r}"
+
+    def test_fail_mode_explicit_overrides_classifier_required(self):
+        """Explicit fail_mode takes precedence over classifier_required."""
+        # classifier_required=True would normally produce "no_tools"
+        # but explicit fail_mode="open" should win
+        classifier = InputClassifier(classifier_required=True, fail_mode="open")
+        assert classifier.fail_mode == "open"
+
+        # classifier_required=False would normally produce "open"
+        # but explicit fail_mode="closed" should win
+        classifier2 = InputClassifier(classifier_required=False, fail_mode="closed")
+        assert classifier2.fail_mode == "closed"
+
+    @patch("builtins.open")
+    @patch("merkaba.security.classifier.InputClassifier._get_client")
+    def test_fail_mode_read_from_config(self, mock_get_client, mock_open):
+        """fail_mode is read from config.json when not explicitly provided."""
+        import json
+
+        config_data = json.dumps({"security": {"classifier_fail_mode": "closed"}})
+        mock_open.return_value.__enter__ = lambda s: s
+        mock_open.return_value.__exit__ = MagicMock(return_value=False)
+        mock_open.return_value.read = MagicMock(return_value=config_data)
+
+        # Simulate json.load reading from the mock file
+        with patch("json.load", return_value={"security": {"classifier_fail_mode": "closed"}}):
+            classifier = InputClassifier()  # no explicit fail_mode
+
+        assert classifier.fail_mode == "closed"

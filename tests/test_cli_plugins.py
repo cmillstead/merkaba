@@ -170,3 +170,32 @@ class TestPluginAvailableCommand:
 
         assert result.exit_code == 0
         assert "No Claude Code plugins found" in result.stdout
+
+
+class TestCliExtensionResilience:
+    """Tests for resilient CLI extension loading."""
+
+    def test_cli_extension_load_continues_on_error(self):
+        """_load_cli_extensions should skip a bad extension and load the rest."""
+        from merkaba.cli import _load_cli_extensions, app as merkaba_app
+
+        good_app = MagicMock()
+        bad_app = MagicMock()
+        bad_app.side_effect = None  # add_typer itself will raise for bad_app
+
+        loaded = []
+
+        def fake_add_typer(ext_app, name):
+            if ext_app is bad_app:
+                raise RuntimeError("broken extension")
+            loaded.append(name)
+
+        extensions = {"good-ext": good_app, "bad-ext": bad_app}
+
+        with patch("merkaba.extensions.discover_cli_apps", return_value=extensions):
+            with patch.object(merkaba_app, "add_typer", side_effect=fake_add_typer):
+                # Should not raise despite one extension failing
+                _load_cli_extensions()
+
+        assert "good-ext" in loaded
+        assert "bad-ext" not in loaded

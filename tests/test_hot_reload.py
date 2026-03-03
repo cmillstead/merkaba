@@ -83,6 +83,24 @@ def test_hot_config_logs_security_changes(tmp_path, caplog):
     assert "Security-relevant config changed" in caplog.text
 
 
+def test_hot_config_clears_cache(tmp_path):
+    """Config change triggers clear_cache() on the provider registry."""
+    from unittest.mock import patch
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"cloud_providers": {"anthropic": {"api_key": "k1"}}}))
+
+    with patch("merkaba.llm_providers.registry.clear_cache") as mock_clear:
+        hc = HotConfig(config_file)
+        # Callback is registered but not yet called (no change yet)
+        mock_clear.reset_mock()
+
+        time.sleep(0.05)
+        config_file.write_text(json.dumps({"cloud_providers": {"anthropic": {"api_key": "k2"}}}))
+        hc.get("cloud_providers")  # Triggers reload and callbacks
+
+    mock_clear.assert_called_once()
+
+
 def test_hot_config_concurrent_access(tmp_path):
     """Multiple threads calling get() during reload don't crash or corrupt."""
     config_file = tmp_path / "config.json"

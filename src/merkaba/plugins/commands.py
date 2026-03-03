@@ -1,10 +1,13 @@
 # src/merkaba/plugins/commands.py
 """Command loading and management."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,8 +59,11 @@ class CommandManager:
 
             plugin_name = plugin_dir.name
             for cmd_file in commands_dir.glob("*.md"):
-                cmd = Command.from_file(cmd_file, plugin_name)
-                self.commands[cmd.name] = cmd
+                try:
+                    cmd = Command.from_file(cmd_file, plugin_name)
+                    self.commands[cmd.name] = cmd
+                except Exception as e:
+                    logger.warning("Failed to load command %s: %s", cmd_file, e)
 
     def get(self, name: str) -> Command | None:
         """Get a command by name."""
