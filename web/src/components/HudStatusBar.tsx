@@ -22,7 +22,7 @@ export default function HudStatusBar({ system, connected }: Props) {
         <span className="hud-label">TASKS</span>
         <span className="hud-value">{system.active_tasks}</span>
       </div>
-      <div className="hud-item">
+      <div className={`hud-item ${system.pending_approvals > 0 ? 'hud-pulse' : ''}`}>
         <span className="hud-label">APPROVALS</span>
         <span className={`hud-value ${system.pending_approvals > 0 ? 'hud-warning' : ''}`}>
           {system.pending_approvals}

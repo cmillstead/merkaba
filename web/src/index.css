@@ -416,6 +416,27 @@ input:focus, textarea:focus {
   filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.4));
 }
 
+/* Health ring error shake */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+.constellation-shake {
+  animation: shake 0.5s ease-in-out infinite;
+}
+
+/* HUD approval pulse */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.hud-pulse {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
 /* Harness View */
 .harness-view {
   flex: 1;

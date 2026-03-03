@@ -68,6 +68,7 @@ export default function MissionControl() {
           agents={state.agents}
           workers={state.workers}
           connections={state.connections}
+          system={state.system}
           onSelectNode={handleSelectNode}
         />
       )}

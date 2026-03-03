@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MerkabaGlyph from './MerkabaGlyph.tsx'
-import type { AgentState, WorkerState, Connection } from '../hooks/useControlSocket.ts'
+import type { AgentState, WorkerState, Connection, SystemState } from '../hooks/useControlSocket.ts'
 
 interface Props {
   agents: AgentState[]
   workers: WorkerState[]
   connections: Connection[]
+  system: SystemState
   onSelectNode: (nodeId: string, nodeType: 'agent' | 'worker') => void
 }
 
@@ -41,7 +42,7 @@ function computeLayout(agents: AgentState[], workers: WorkerState[]): NodePositi
   return positions
 }
 
-export default function ConstellationMap({ agents, workers, connections, onSelectNode }: Props) {
+export default function ConstellationMap({ agents, workers, connections, system, onSelectNode }: Props) {
   const positions = useMemo(() => computeLayout(agents, workers), [agents, workers])
   const [focusedIndex, setFocusedIndex] = useState(0)
   const nodesRef = useRef<(SVGGElement | null)[]>([])
@@ -55,6 +56,30 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
     if (worker.scheduled) return 'scheduled'
     return 'idle'
   }, [agents, workers])
+
+  const healthRingColor = useCallback((id: string): string => {
+    const worker = workers.find(w => w.id === id)
+    if (!worker) return '#3a3a5c'
+    const lastRun = worker.run_history?.[0]
+    if (lastRun?.status === 'success') return '#4ade80'
+    if (lastRun?.status === 'failed') return '#f87171'
+    if (worker.scheduled && (!worker.run_history || worker.run_history.length === 0)) return '#fbbf24'
+    return '#3a3a5c'
+  }, [workers])
+
+  const workerTooltip = useCallback((id: string): string => {
+    const worker = workers.find(w => w.id === id)
+    if (!worker) return id
+    const lastRun = worker.last_run ?? 'Never'
+    const nextRun = worker.next_run ?? 'Not scheduled'
+    return `${worker.name}\nLast run: ${lastRun}\nNext run: ${nextRun}`
+  }, [workers])
+
+  const orbSpeed = useMemo(() => {
+    if (system.active_tasks > 0) return 2
+    if (system.pending_approvals > 0) return 1.5
+    return 0.7
+  }, [system.active_tasks, system.pending_approvals])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const current = positions[focusedIndex]
@@ -167,6 +192,7 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
         const label = isAgent
           ? agents.find(a => a.id === pos.id)?.name ?? pos.id
           : workers.find(w => w.id === pos.id)?.name ?? pos.id
+        const isError = !isAgent && healthRingColor(pos.id) === '#f87171'
 
         return (
           <g
@@ -181,6 +207,7 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
             onClick={() => onSelectNode(pos.id, pos.type)}
             onKeyDown={(e) => { if (e.key === 'Enter') onSelectNode(pos.id, pos.type) }}
           >
+            <title>{isAgent ? label : workerTooltip(pos.id)}</title>
             {/* Outer glow (agent only) */}
             {isAgent && (
               <circle r={56} fill="url(#orb-outer-glow)" />
@@ -191,13 +218,26 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
               fill="transparent"
               className="constellation-glow"
             />
-            {/* Node circle — agent uses orb gradient, workers stay flat */}
-            <circle
-              r={isAgent ? 40 : 28}
-              fill={isAgent ? 'url(#orb-fill)' : '#12121a'}
-              stroke={status === 'active' ? '#00f0ff' : '#3a3a5c'}
-              strokeWidth="1.5"
-            />
+            {/* Error shake wrapper for worker nodes */}
+            <g className={isError ? 'constellation-shake' : undefined}>
+              {/* Health ring (workers only) */}
+              {!isAgent && (
+                <circle
+                  r={32}
+                  fill="none"
+                  stroke={healthRingColor(pos.id)}
+                  strokeWidth="2"
+                  opacity={0.8}
+                />
+              )}
+              {/* Node circle — agent uses orb gradient, workers stay flat */}
+              <circle
+                r={isAgent ? 40 : 28}
+                fill={isAgent ? 'url(#orb-fill)' : '#12121a'}
+                stroke={status === 'active' ? '#00f0ff' : '#3a3a5c'}
+                strokeWidth="1.5"
+              />
+            </g>
             {/* Label */}
             <text
               y={isAgent ? 55 : 42}
@@ -208,13 +248,6 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
             >
               {label}
             </text>
-            {/* Status indicator */}
-            <circle
-              cx={isAgent ? 30 : 20}
-              cy={isAgent ? -30 : -20}
-              r="4"
-              fill={status === 'active' ? '#00f0ff' : status === 'scheduled' ? '#fbbf24' : status === 'error' ? '#ff6b35' : '#3a3a5c'}
-            />
           </g>
         )
       })}
@@ -234,7 +267,7 @@ export default function ConstellationMap({ agents, workers, connections, onSelec
               height={70}
               style={{ overflow: 'visible' }}
             >
-              <MerkabaGlyph size={70} status={statusFor(positions[0].id)} speed={1} />
+              <MerkabaGlyph size={70} status={statusFor(positions[0].id)} speed={orbSpeed} />
             </foreignObject>
           </g>
           {/* Vignette on top — darkens wireframe at sphere edges */}
