@@ -1,4 +1,5 @@
 # tests/test_tools_shell.py
+import inspect
 import subprocess
 from unittest.mock import patch
 
@@ -161,3 +162,51 @@ class TestFullPathCommands:
         allowed, reason = is_allowed("/usr/bin/curl http://example.com")
         assert not allowed
         assert "not in allowlist" in reason.lower()
+
+
+class TestShellFalse:
+    """Verify _bash() invokes subprocess without shell=True."""
+
+    def test_shell_no_shell_true_simple_command(self):
+        """subprocess.run must be called with shell=False for simple commands.
+
+        The allowlist blocks pipes, redirects, and command-substitution, so
+        every command reaching _bash() is a plain executable + args that can
+        be exec'd directly via shlex.split() without invoking a shell interpreter.
+        """
+        captured_calls = []
+
+        original_run = subprocess.run
+
+        def tracking_run(args, **kwargs):
+            captured_calls.append({"args": args, "kwargs": kwargs})
+            # Actually run the command so the function behaves correctly
+            return original_run(args, **kwargs)
+
+        with patch("merkaba.tools.builtin.shell.subprocess.run", side_effect=tracking_run):
+            _bash("echo hello")
+
+        assert len(captured_calls) == 1, "subprocess.run should have been called once"
+        call = captured_calls[0]
+        assert call["kwargs"].get("shell") is False, (
+            "shell=False is required to prevent shell injection; "
+            f"got shell={call['kwargs'].get('shell')!r}"
+        )
+        # args must be a list, not the raw string
+        assert isinstance(call["args"], list), (
+            "subprocess.run must receive a list (from shlex.split), not a raw string"
+        )
+
+    def test_shell_false_source_code_check(self):
+        """The _bash source must not contain shell=True.
+
+        This is a belt-and-suspenders check: even if the runtime mock above
+        passes, the literal string 'shell=True' must not appear in the
+        implementation so that future refactors cannot silently reintroduce it.
+        """
+        import merkaba.tools.builtin.shell as shell_module
+
+        source = inspect.getsource(shell_module._bash)
+        assert "shell=True" not in source, (
+            "_bash() must not use shell=True. Use shell=False with shlex.split()."
+        )

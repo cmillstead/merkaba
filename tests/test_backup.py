@@ -2,6 +2,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -169,3 +170,84 @@ def test_restore_missing_backup_raises(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         mgr.restore("nonexistent_timestamp", "memory.db")
+
+
+# ---------------------------------------------------------------------------
+# Encryption tests
+# ---------------------------------------------------------------------------
+
+def test_backup_encrypt(tmp_path):
+    """run_backup(encrypt=True) should encrypt each backup file with .enc suffix."""
+    _make_db(tmp_path / "memory.db")
+    (tmp_path / "config.json").write_text('{"key": "value"}')
+
+    fake_key = b"A" * 32  # placeholder — will be wrapped by mock Fernet
+    fake_token = b"ENCRYPTED_BYTES"
+
+    mock_fernet_instance = MagicMock()
+    mock_fernet_instance.encrypt.return_value = fake_token
+
+    mock_fernet_cls = MagicMock(return_value=mock_fernet_instance)
+
+    mock_keyring = MagicMock()
+    mock_keyring.get_password.return_value = None  # no key stored yet
+    mock_keyring.set_password.return_value = None
+
+    with (
+        patch("merkaba.orchestration.backup.keyring", mock_keyring, create=True),
+        patch("merkaba.orchestration.backup.Fernet", mock_fernet_cls, create=True),
+        patch(
+            "merkaba.orchestration.backup._get_or_create_backup_key",
+            return_value=fake_key,
+        ),
+        patch(
+            "merkaba.orchestration.backup._encrypt_file",
+            side_effect=lambda path, key: _fake_encrypt(path),
+        ),
+    ):
+        mgr = BackupManager(merkaba_dir=tmp_path)
+        result = mgr.run_backup(encrypt=True)
+
+    # Unencrypted files must NOT exist
+    assert not (result / "memory.db").exists(), "Plaintext memory.db must be removed"
+    assert not (result / "config.json").exists(), "Plaintext config.json must be removed"
+
+    # Encrypted counterparts must exist
+    assert (result / "memory.db.enc").exists(), "memory.db.enc must be created"
+    assert (result / "config.json.enc").exists(), "config.json.enc must be created"
+
+
+def _fake_encrypt(path: Path) -> Path:
+    """Test helper that mimics _encrypt_file without real Fernet."""
+    enc_path = path.with_suffix(path.suffix + ".enc")
+    enc_path.write_bytes(b"FAKE_ENCRYPTED:" + path.read_bytes())
+    path.unlink()
+    return enc_path
+
+
+def test_backup_encrypt_no_deps(tmp_path, caplog):
+    """When cryptography/keyring is missing, a warning is logged and backup proceeds unencrypted."""
+    import logging
+
+    _make_db(tmp_path / "memory.db")
+
+    def _raise_import(*args, **kwargs):
+        raise ImportError("No module named 'cryptography'")
+
+    with patch(
+        "merkaba.orchestration.backup._get_or_create_backup_key",
+        side_effect=ImportError("No module named 'cryptography'"),
+    ):
+        with caplog.at_level(logging.WARNING, logger="merkaba.orchestration.backup"):
+            mgr = BackupManager(merkaba_dir=tmp_path)
+            result = mgr.run_backup(encrypt=True)
+
+    # Backup should still have been created (unencrypted fallback)
+    assert result.exists()
+    assert (result / "memory.db").exists(), "Unencrypted DB should be present as fallback"
+    assert not (result / "memory.db.enc").exists(), "No .enc file expected on import error"
+
+    # Warning must have been emitted
+    assert any("encryption" in record.message.lower() for record in caplog.records), (
+        "Expected a warning about missing encryption dependency"
+    )

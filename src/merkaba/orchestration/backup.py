@@ -9,6 +9,37 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+def _encrypt_file(path: Path, key: bytes) -> Path:
+    """Encrypt a file with Fernet, write <path>.enc, delete original.
+
+    Returns the path to the encrypted file.
+    """
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    f = Fernet(key)
+    plaintext = path.read_bytes()
+    ciphertext = f.encrypt(plaintext)
+    enc_path = path.with_suffix(path.suffix + ".enc")
+    enc_path.write_bytes(ciphertext)
+    path.unlink()
+    return enc_path
+
+
+def _get_or_create_backup_key() -> bytes:
+    """Return the backup encryption key from keyring, generating one if absent."""
+    import keyring  # noqa: PLC0415
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+
+    stored = keyring.get_password("merkaba", "backup_encryption_key")
+    if stored:
+        return stored.encode()
+    key = Fernet.generate_key()
+    keyring.set_password("merkaba", "backup_encryption_key", key.decode())
+    logger.info("Generated new backup encryption key and stored in keychain")
+    return key
+
+
 DBS_TO_BACKUP = ["memory.db", "tasks.db", "actions.db", "research.db"]
 
 
@@ -26,11 +57,34 @@ class BackupManager:
         if self.backup_dir is None:
             self.backup_dir = self.merkaba_dir / "backups"
 
-    def run_backup(self) -> Path:
-        """Create a timestamped backup of all databases and config."""
+    def run_backup(self, encrypt: bool = False) -> Path:
+        """Create a timestamped backup of all databases and config.
+
+        Args:
+            encrypt: When True, each backup file is encrypted with Fernet using a
+                key stored in (or generated and stored in) the system keychain under
+                the service "merkaba" / account "backup_encryption_key".  The
+                encrypted files are written with an additional ".enc" suffix and the
+                plaintext copies are deleted.  Requires the ``cryptography`` and
+                ``keyring`` packages; if either is missing a warning is logged and
+                the backup proceeds without encryption.
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = self.backup_dir / timestamp
         dest.mkdir(parents=True, exist_ok=True)
+
+        # Resolve encryption key once (if requested).
+        enc_key: bytes | None = None
+        if encrypt:
+            try:
+                enc_key = _get_or_create_backup_key()
+            except ImportError as exc:
+                logger.warning(
+                    "Backup encryption requested but a required package is missing "
+                    "(%s). Proceeding without encryption.",
+                    exc,
+                )
+                enc_key = None
 
         # Backup SQLite databases using online backup API
         for db_name in DBS_TO_BACKUP:
@@ -50,17 +104,27 @@ class BackupManager:
                     dst_conn.close()
                 if src_conn:
                     src_conn.close()
-            logger.info("Backed up %s", db_name)
+            if enc_key is not None:
+                dst_path = _encrypt_file(dst_path, enc_key)
+            logger.info("Backed up %s", dst_path.name)
 
         # Copy config.json if present
         config_src = self.merkaba_dir / "config.json"
         if config_src.exists():
-            shutil.copy2(str(config_src), str(dest / "config.json"))
+            config_dst = dest / "config.json"
+            shutil.copy2(str(config_src), str(config_dst))
+            if enc_key is not None:
+                _encrypt_file(config_dst, enc_key)
 
         # Copy conversations directory if present
         convos_src = self.merkaba_dir / "conversations"
         if convos_src.is_dir():
             shutil.copytree(str(convos_src), str(dest / "conversations"))
+            if enc_key is not None:
+                # Encrypt each file inside the conversations directory
+                for conv_file in (dest / "conversations").rglob("*"):
+                    if conv_file.is_file():
+                        _encrypt_file(conv_file, enc_key)
 
         self.prune_old_backups()
         logger.info("Backup complete: %s", dest)
