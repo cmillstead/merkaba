@@ -17,6 +17,15 @@ ws_router = APIRouter(tags=["control-ws"])
 
 HEARTBEAT_INTERVAL = 2  # seconds
 
+WORKER_DESCRIPTIONS = {
+    "health_check": "Analyzes business health metrics and generates reports",
+    "research": "Performs research using web and document tools",
+    "code": "Writes and reviews code using file and search tools",
+    "review": "Reviews business decisions and suggests improvements",
+    "memory_decay": "Reduces relevance scores on stale facts (daily 3am)",
+    "memory_consolidation": "Summarizes and archives old memories (weekly Sun 4am)",
+}
+
 
 class ModelChangeRequest(BaseModel):
     agent: str
@@ -84,17 +93,55 @@ def _build_state(conn: HTTPConnection) -> dict:
             "active": True,
         })
 
-    # Workers from registry
+    # Workers from registry — enriched with TaskQueue data
     workers = []
     connections = []
     scheduled_workers = {"health_check", "memory_decay", "memory_consolidation"}
+
+    # Build lookup of tasks by task_type for schedule/run info
+    try:
+        all_tasks = task_queue.list_tasks()
+    except Exception:
+        all_tasks = []
+    tasks_by_type: dict[str, dict] = {}
+    for t in all_tasks:
+        # Keep the first (oldest) task per type — matches the scheduled task
+        if t["task_type"] not in tasks_by_type:
+            tasks_by_type[t["task_type"]] = t
+
     for task_type, worker_cls in WORKER_REGISTRY.items():
+        task_info = tasks_by_type.get(task_type)
+        schedule = task_info["schedule"] if task_info else None
+        next_run = task_info["next_run"] if task_info else None
+        last_run = task_info["last_run"] if task_info else None
+
+        # Fetch recent run history (last 5)
+        run_history: list[dict] = []
+        if task_info:
+            try:
+                runs = task_queue.get_runs(task_info["id"])[:5]
+                run_history = [
+                    {
+                        "id": r["id"],
+                        "started_at": r["started_at"],
+                        "finished_at": r["finished_at"],
+                        "status": r["status"],
+                    }
+                    for r in runs
+                ]
+            except Exception:
+                pass
+
         workers.append({
             "id": task_type,
             "name": worker_cls.__name__.replace("Worker", ""),
+            "description": WORKER_DESCRIPTIONS.get(task_type, ""),
             "status": "idle",
             "scheduled": task_type in scheduled_workers,
-            "last_run": None,
+            "schedule": schedule,
+            "next_run": next_run,
+            "last_run": last_run,
+            "run_history": run_history,
             "parent": "merkaba-prime",
         })
         connections.append({

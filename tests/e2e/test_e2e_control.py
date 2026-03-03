@@ -252,3 +252,78 @@ class TestWebSocketAuthGuard:
         client, app = authed_app_client
         resp = client.get("/api/control/state")
         assert resp.status_code == 401
+
+
+@pytest.mark.e2e
+class TestControlWorkerDetails:
+    """Tests for enriched worker state including descriptions, schedule, and run history."""
+
+    def test_workers_include_description(self, app_client):
+        """Workers should include a description field."""
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert "description" in hc
+        assert hc["description"]  # non-empty string
+
+    def test_workers_include_schedule_info(self, app_client):
+        """Workers should include schedule, next_run from TaskQueue tasks."""
+        client, app = app_client
+        tq = app.state.task_queue
+        tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert "description" in hc
+        assert "schedule" in hc
+        assert "next_run" in hc
+        assert hc["schedule"] == "0 3 * * *"
+        assert hc["next_run"] is not None
+
+    def test_workers_include_recent_runs(self, app_client):
+        """Workers should include last 5 runs in run_history."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "success", result={"status": "healthy"})
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert "run_history" in hc
+        assert len(hc["run_history"]) == 1
+        assert hc["run_history"][0]["status"] == "success"
+
+    def test_run_history_limited_to_5(self, app_client):
+        """run_history should return at most 5 most recent runs."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Health Check", "health_check", schedule="0 3 * * *")
+        # Create 7 runs
+        for i in range(7):
+            run_id = tq.start_run(task_id)
+            tq.finish_run(run_id, "success", result={"iteration": i})
+
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        hc = next(w for w in data["workers"] if w["id"] == "health_check")
+        assert len(hc["run_history"]) == 5
+
+    def test_worker_without_tasks_has_empty_defaults(self, app_client):
+        """Workers with no matching tasks should have None/empty defaults."""
+        client, app = app_client
+        resp = client.get("/api/control/state")
+        data = resp.json()
+        # Find a worker that has no tasks in the queue
+        # research worker should have no tasks by default
+        research = next(w for w in data["workers"] if w["id"] == "research")
+        assert "description" in research
+        assert "schedule" in research
+        assert "next_run" in research
+        assert "run_history" in research
+        assert research["schedule"] is None
+        assert research["next_run"] is None
+        assert research["run_history"] == []
