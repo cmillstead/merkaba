@@ -220,6 +220,16 @@ def _build_state(conn: HTTPConnection) -> dict:
         next_run = task_info["next_run"] if task_info else None
         last_run = task_info["last_run"] if task_info else None
 
+        # Derive last_run from most recent finished run if task field is unset
+        # (covers race between background execution and heartbeat reads)
+        if not last_run and task_info:
+            try:
+                latest = task_queue.get_runs(task_info["id"])[:1]
+                if latest and latest[0].get("finished_at"):
+                    last_run = latest[0]["finished_at"]
+            except Exception:
+                pass
+
         # Fetch recent run history (last 5)
         run_history: list[dict] = []
         if task_info:
