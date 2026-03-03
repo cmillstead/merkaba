@@ -2,7 +2,7 @@ import logging
 import os
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from starlette.routing import Mount
 
@@ -82,7 +82,7 @@ async def diagnostics_state(request: Request):
 @router.get("/token-usage")
 async def token_usage(
     group_by: str = "model",
-    days: int = 7,
+    days: int = Query(default=7, ge=1, le=365),
 ):
     """Token usage summary, grouped by model or worker_type."""
     try:

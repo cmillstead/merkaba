@@ -37,7 +37,7 @@ async def list_tasks(
 
 
 @router.get("/runs/recent")
-async def recent_runs(request: Request, limit: int = 10):
+async def recent_runs(request: Request, limit: int = Query(default=10, ge=1, le=1000)):
     """Recent task runs across all tasks."""
     queue = request.app.state.task_queue
     tasks = queue.list_tasks()

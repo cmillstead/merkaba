@@ -663,6 +663,119 @@ def test_business_config_put_sanitizes_injection(app_client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 18. API parameter bounds (H16, M14, M15)
+# ---------------------------------------------------------------------------
+
+def test_purge_approvals_rejects_zero_days(app_client):
+    """POST /api/approvals/purge with older_than_days=0 returns 422 (H16).
+
+    older_than_days must be >= 1 to prevent accidental bulk deletion of all
+    decided actions regardless of age.
+    """
+    client, _app = app_client
+    resp = client.post("/api/approvals/purge", json={"older_than_days": 0})
+    assert resp.status_code == 422
+
+
+def test_purge_approvals_rejects_negative_days(app_client):
+    """POST /api/approvals/purge with older_than_days=-1 returns 422 (H16)."""
+    client, _app = app_client
+    resp = client.post("/api/approvals/purge", json={"older_than_days": -1})
+    assert resp.status_code == 422
+
+
+def test_purge_approvals_rejects_excessive_days(app_client):
+    """POST /api/approvals/purge with older_than_days=9999 returns 422 (H16)."""
+    client, _app = app_client
+    resp = client.post("/api/approvals/purge", json={"older_than_days": 9999})
+    assert resp.status_code == 422
+
+
+def test_purge_approvals_accepts_valid_days(app_client):
+    """POST /api/approvals/purge with older_than_days=30 returns 200 (H16)."""
+    client, _app = app_client
+    resp = client.post("/api/approvals/purge", json={"older_than_days": 30})
+    assert resp.status_code == 200
+    assert "purged" in resp.json()
+
+
+def test_recent_runs_rejects_negative_limit(app_client):
+    """GET /api/tasks/runs/recent?limit=-1 returns 422 (M14).
+
+    A negative limit would cause Python slicing to return unexpected results;
+    FastAPI validation must reject it before the handler runs.
+    """
+    client, _app = app_client
+    resp = client.get("/api/tasks/runs/recent?limit=-1")
+    assert resp.status_code == 422
+
+
+def test_recent_runs_rejects_zero_limit(app_client):
+    """GET /api/tasks/runs/recent?limit=0 returns 422 (M14)."""
+    client, _app = app_client
+    resp = client.get("/api/tasks/runs/recent?limit=0")
+    assert resp.status_code == 422
+
+
+def test_recent_runs_rejects_excessive_limit(app_client):
+    """GET /api/tasks/runs/recent?limit=9999 returns 422 (M14).
+
+    An unbounded limit would fetch all runs then slice in Python, causing
+    memory exhaustion under high load.
+    """
+    client, _app = app_client
+    resp = client.get("/api/tasks/runs/recent?limit=9999")
+    assert resp.status_code == 422
+
+
+def test_recent_runs_accepts_valid_limit(app_client):
+    """GET /api/tasks/runs/recent?limit=50 returns 200 (M14)."""
+    client, _app = app_client
+    resp = client.get("/api/tasks/runs/recent?limit=50")
+    assert resp.status_code == 200
+    assert "runs" in resp.json()
+
+
+def test_token_usage_rejects_zero_days(app_client):
+    """GET /api/system/token-usage?days=0 returns 422 (M15).
+
+    days=0 is semantically meaningless and could cause a divide-by-zero or
+    empty-range issue in the underlying aggregation query.
+    """
+    client, _app = app_client
+    resp = client.get("/api/system/token-usage?days=0")
+    assert resp.status_code == 422
+
+
+def test_token_usage_rejects_negative_days(app_client):
+    """GET /api/system/token-usage?days=-5 returns 422 (M15)."""
+    client, _app = app_client
+    resp = client.get("/api/system/token-usage?days=-5")
+    assert resp.status_code == 422
+
+
+def test_token_usage_rejects_excessive_days(app_client):
+    """GET /api/system/token-usage?days=999 returns 422 (M15).
+
+    days is capped at 365 to prevent unbounded table scans.
+    """
+    client, _app = app_client
+    resp = client.get("/api/system/token-usage?days=999")
+    assert resp.status_code == 422
+
+
+def test_token_usage_accepts_valid_days(app_client):
+    """GET /api/system/token-usage?days=7 returns 200 or 503 (M15).
+
+    503 is acceptable because the TokenUsageStore may not be present in the
+    test environment; the key assertion is that valid input is not rejected.
+    """
+    client, _app = app_client
+    resp = client.get("/api/system/token-usage?days=7")
+    # 200 if TokenUsageStore is available, 503 if the optional module is absent
+    assert resp.status_code in (200, 503)
+
+# ---------------------------------------------------------------------------
 # 18. No API key configured logs a startup warning (H15)
 # ---------------------------------------------------------------------------
 

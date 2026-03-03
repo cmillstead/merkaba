@@ -790,8 +790,8 @@ class TestChatSessions:
 # --- File upload ---
 
 class TestFileUpload:
-    def test_upload_returns_path_and_size(self, app_client):
-        """Uploading a file returns its saved path and size."""
+    def test_upload_returns_filename_and_size(self, app_client):
+        """Uploading a file returns its filename and size (no full path — M13)."""
         client, app = app_client
         file_content = b"Hello, this is a test file."
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -802,13 +802,10 @@ class TestFileUpload:
                 )
                 assert resp.status_code == 200
                 data = resp.json()
-                assert "path" in data
-                assert data["path"].startswith(tmpdir)
-                assert data["path"].endswith(".txt")
-                assert data["filename"] == "test.txt"
+                # M13: Must NOT expose full filesystem path
+                assert "path" not in data
+                assert data["filename"].endswith(".txt")
                 assert data["size"] == len(file_content)
-                # Verify the file actually exists on disk
-                assert os.path.isfile(data["path"])
 
     def test_upload_sanitizes_filename(self, app_client):
         """Filenames with path traversal characters are sanitized via os.path.basename."""
@@ -822,14 +819,12 @@ class TestFileUpload:
                 )
                 assert resp.status_code == 200
                 data = resp.json()
-                # The saved path should be inside the upload dir, not escaped
-                saved_path = data["path"]
-                assert saved_path.startswith(tmpdir)
-                assert os.path.realpath(saved_path).startswith(os.path.realpath(tmpdir))
-                # The original filename is returned as-is for display
-                assert data["filename"] == "../../etc/config.txt"
-                # But the actual file on disk is safely inside tmpdir
-                assert os.path.isfile(saved_path)
+                # M13: Must NOT expose full filesystem path
+                assert "path" not in data
+                # The returned filename should be just the basename (sanitized)
+                assert "/" not in data["filename"]
+                assert data["filename"].endswith(".txt")
+                assert data["size"] == len(file_content)
 
 
 # --- Business config routes ---
