@@ -343,11 +343,51 @@ def test_web_upload_valid_file(app_client, tmp_path):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["filename"] == "notes.txt"
+    assert data["filename"].endswith(".txt")
     assert data["size"] == len(b"Hello world")
-    assert data["path"].endswith(".txt")
-    # Verify the file was actually written
-    assert os.path.isfile(data["path"])
+    # Verify the file was actually written to the upload dir
+    assert os.path.isfile(os.path.join(upload_dir, data["filename"]))
+
+
+# ---------------------------------------------------------------------------
+# 9b. File upload — response does not expose server filesystem path (M13)
+# ---------------------------------------------------------------------------
+
+def test_web_upload_does_not_expose_server_path(app_client, tmp_path):
+    """POST /api/upload must not return an absolute server-side path in the response.
+
+    Verifies finding M13: the upload endpoint previously returned the full
+    server-side path (e.g. /Users/cevin/.merkaba/uploads/...) which leaks
+    the user's home directory and internal path structure.  The response must
+    contain only 'filename' (basename only) and 'size'; the 'path' key must
+    be absent.
+    """
+    client, app = app_client
+    upload_dir = str(tmp_path / "uploads")
+
+    with patch("merkaba.web.routes.chat.UPLOAD_DIR", upload_dir):
+        resp = client.post(
+            "/api/upload",
+            files={"file": ("secret.txt", b"sensitive data", "text/plain")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Response must NOT contain a 'path' key with an absolute server path
+    assert "path" not in data or not str(data.get("path", "")).startswith("/"), (
+        "Upload response must not expose an absolute server filesystem path"
+    )
+
+    # Response must contain 'filename' (basename only — no directory separators)
+    assert "filename" in data
+    assert "/" not in data["filename"], (
+        "Returned filename must be a basename with no directory component"
+    )
+
+    # Response must contain 'size'
+    assert "size" in data
+    assert data["size"] == len(b"sensitive data")
 
 
 # ---------------------------------------------------------------------------

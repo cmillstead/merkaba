@@ -106,7 +106,7 @@ async def upload_file(file: UploadFile):
     dest = os.path.join(UPLOAD_DIR, f"{stem}{ext}")
     with open(dest, "wb") as f:
         f.write(content)
-    return {"path": dest, "filename": file.filename, "size": len(content)}
+    return {"filename": os.path.basename(dest), "size": len(content)}
 
 
 @router.websocket("/ws/chat")
