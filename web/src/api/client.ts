@@ -270,6 +270,11 @@ export interface ChatMessage {
   status?: string;
 }
 
+// Config
+export const getConfig = () => request<Record<string, unknown>>('/api/system/config')
+export const updateConfig = (body: Record<string, unknown>) =>
+  request<Record<string, unknown>>('/api/system/config', { method: 'PUT', body: JSON.stringify(body) })
+
 // Business Config
 export interface BusinessConfig {
   soul: string

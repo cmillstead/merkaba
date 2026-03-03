@@ -2323,6 +2323,24 @@ input:focus, textarea:focus {
 }
 
 /* ========================================
+   Settings
+   ======================================== */
+
+.settings-page { max-width: 800px; }
+.settings-section { margin-bottom: 24px; }
+.settings-section h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.settings-row:last-child { border-bottom: none; }
+.settings-label { font-size: 13px; color: var(--text-dim); min-width: 160px; }
+.settings-value { font-size: 13px; font-family: 'SF Mono', 'Fira Code', monospace; }
+.settings-actions { display: flex; gap: 16px; margin-bottom: 24px; }
+.settings-select { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 6px 12px; font-size: 13px; }
+.settings-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings-input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 6px 12px; font-size: 13px; font-family: 'SF Mono', 'Fira Code', monospace; width: 200px; }
+.settings-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cron-description { font-size: 11px; color: var(--text-dim); margin-left: 8px; }
+
+/* ========================================
    Responsive
    ======================================== */
 
