@@ -175,10 +175,115 @@ def _build_state(conn: HTTPConnection) -> dict:
     }
 
 
+def _build_kanban(conn: HTTPConnection) -> dict:
+    """Build kanban board state — tasks, approvals, and recent runs grouped by column."""
+    task_queue = conn.app.state.task_queue
+    action_queue = conn.app.state.action_queue
+
+    # Tasks grouped by status
+    queued = []
+    running = []
+    try:
+        all_tasks = task_queue.list_tasks()
+        for t in all_tasks:
+            entry = {
+                "id": t["id"],
+                "name": t["name"],
+                "task_type": t["task_type"],
+                "status": t["status"],
+                "created_at": t["created_at"],
+            }
+            if t["status"] == "pending":
+                queued.append(entry)
+            elif t["status"] == "running":
+                running.append(entry)
+    except Exception:
+        logger.exception("Error fetching tasks for kanban")
+
+    # Pending approvals
+    awaiting_approval = []
+    try:
+        pending_actions = action_queue.list_actions(status="pending")
+        for a in pending_actions:
+            awaiting_approval.append({
+                "id": a["id"],
+                "business_id": a["business_id"],
+                "action_type": a["action_type"],
+                "description": a["description"],
+                "created_at": a["created_at"],
+            })
+    except Exception:
+        logger.exception("Error fetching approvals for kanban")
+
+    # Recent completed and failed runs from task_runs table (last 50 each)
+    completed = []
+    failed = []
+    try:
+        cursor = task_queue._conn.cursor()
+        cursor.execute(
+            """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at, tr.status,
+                      t.name, t.task_type
+               FROM task_runs tr
+               LEFT JOIN tasks t ON tr.task_id = t.id
+               WHERE tr.status = 'success'
+               ORDER BY tr.finished_at DESC
+               LIMIT 50"""
+        )
+        for row in cursor.fetchall():
+            r = dict(row)
+            completed.append({
+                "id": r["id"],
+                "task_id": r["task_id"],
+                "name": r.get("name"),
+                "task_type": r.get("task_type"),
+                "started_at": r["started_at"],
+                "finished_at": r["finished_at"],
+                "status": r["status"],
+            })
+
+        cursor.execute(
+            """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at, tr.status, tr.error,
+                      t.name, t.task_type
+               FROM task_runs tr
+               LEFT JOIN tasks t ON tr.task_id = t.id
+               WHERE tr.status = 'failed'
+               ORDER BY tr.finished_at DESC
+               LIMIT 50"""
+        )
+        for row in cursor.fetchall():
+            r = dict(row)
+            failed.append({
+                "id": r["id"],
+                "task_id": r["task_id"],
+                "name": r.get("name"),
+                "task_type": r.get("task_type"),
+                "started_at": r["started_at"],
+                "finished_at": r["finished_at"],
+                "status": r["status"],
+                "error": r.get("error"),
+            })
+    except Exception:
+        logger.exception("Error fetching task runs for kanban")
+
+    return {
+        "queued": queued,
+        "awaiting_approval": awaiting_approval,
+        "running": running,
+        "completed": completed,
+        "failed": failed,
+    }
+
+
 @router.get("/state")
 async def get_control_state(request: Request):
     """Full state snapshot for initial Mission Control load."""
     return _build_state(request)
+
+
+@router.get("/kanban")
+async def get_kanban_state(request: Request):
+    """Kanban board state — tasks, approvals, and recent runs grouped by column."""
+    return _build_kanban(request)
 
 
 @router.post("/model")
