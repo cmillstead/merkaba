@@ -44,14 +44,16 @@ class TestLLMConversion:
         content = "Use TodoWrite to track progress."
         converter = SkillConverter(content)
 
-        mock_agent = Mock()
-        mock_agent.run.return_value = "Use a checklist to track progress."
+        mock_response = Mock()
+        mock_response.content = "Use a checklist to track progress."
+        mock_client = Mock()
+        mock_client.chat.return_value = mock_response
 
-        with patch("merkaba.agent.Agent", return_value=mock_agent):
+        with patch("merkaba.llm.LLMClient", return_value=mock_client):
             result = converter.apply_llm_assisted()
 
-        mock_agent.run.assert_called_once()
-        call_arg = mock_agent.run.call_args[0][0]
+        mock_client.chat.assert_called_once()
+        call_arg = mock_client.chat.call_args[0][0]
         assert "TodoWrite" in call_arg  # Original content in prompt
         assert "file_read" in call_arg  # Available tools mentioned
 
@@ -59,13 +61,36 @@ class TestLLMConversion:
         content = "Use TodoWrite."
         converter = SkillConverter(content)
 
-        mock_agent = Mock()
-        mock_agent.run.return_value = "Track your progress manually."
+        mock_response = Mock()
+        mock_response.content = "Track your progress manually."
+        mock_client = Mock()
+        mock_client.chat.return_value = mock_response
 
-        with patch("merkaba.agent.Agent", return_value=mock_agent):
+        with patch("merkaba.llm.LLMClient", return_value=mock_client):
             result = converter.apply_llm_assisted()
 
         assert result == "Track your progress manually."
+
+    def test_converter_uses_llm_client(self):
+        """apply_llm_assisted() must use LLMClient.chat(), not Agent."""
+        content = "Use Bash to run commands."
+        converter = SkillConverter(content)
+
+        mock_response = Mock()
+        mock_response.content = "Use shell to run commands."
+        mock_client = Mock()
+        mock_client.chat.return_value = mock_response
+
+        with patch("merkaba.llm.LLMClient", return_value=mock_client) as mock_cls, \
+                patch("merkaba.agent.Agent") as mock_agent_cls:
+            result = converter.apply_llm_assisted()
+
+        # LLMClient must be instantiated and its chat() called
+        mock_cls.assert_called_once()
+        mock_client.chat.assert_called_once()
+        # Agent must NOT be instantiated
+        mock_agent_cls.assert_not_called()
+        assert result == "Use shell to run commands."
 
 
 class TestMetadataHeader:
