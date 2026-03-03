@@ -377,3 +377,115 @@ class TestControlWorkerTrigger:
         import json
         payload = json.loads(task["payload"]) if isinstance(task["payload"], str) else task["payload"]
         assert payload["triggered_by"] == "mission-control"
+
+
+@pytest.mark.e2e
+class TestControlKanban:
+    """Tests for GET /api/control/kanban endpoint."""
+
+    def test_kanban_empty_state(self, app_client):
+        client, app = app_client
+        resp = client.get("/api/control/kanban")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "queued" in data
+        assert "awaiting_approval" in data
+        assert "running" in data
+        assert "completed" in data
+        assert "failed" in data
+
+    def test_kanban_with_tasks(self, app_client):
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Test task", "health_check")
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(c["id"] == task_id for c in data["queued"])
+
+    def test_kanban_with_approvals(self, app_client):
+        client, app = app_client
+        aq = app.state.action_queue
+        action_id = aq.add_action(
+            business_id=1,
+            action_type="post_listing",
+            description="Post a new listing",
+        )
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(c["id"] == action_id for c in data["awaiting_approval"])
+
+    def test_kanban_running_tasks(self, app_client):
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Running task", "health_check")
+        tq.start_run(task_id)
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(c["id"] == task_id for c in data["running"])
+
+    def test_kanban_completed_runs(self, app_client):
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Done task", "health_check")
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "success", result={"ok": True})
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(r["task_id"] == task_id and r["status"] == "success" for r in data["completed"])
+
+    def test_kanban_failed_runs(self, app_client):
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Fail task", "health_check")
+        run_id = tq.start_run(task_id)
+        tq.finish_run(run_id, "failed", error="boom")
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert any(r["task_id"] == task_id and r["status"] == "failed" for r in data["failed"])
+
+    def test_kanban_completed_limited_to_50(self, app_client):
+        """Completed runs should be limited to 50 most recent."""
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("Many runs", "health_check")
+        for _ in range(55):
+            run_id = tq.start_run(task_id)
+            tq.finish_run(run_id, "success", result={"ok": True})
+        resp = client.get("/api/control/kanban")
+        data = resp.json()
+        assert len(data["completed"]) <= 50
+
+
+@pytest.mark.e2e
+class TestControlKanbanWebSocket:
+    """Tests for kanban subscription over /ws/control WebSocket."""
+
+    def test_subscribe_kanban(self, app_client):
+        client, app = app_client
+        tq = app.state.task_queue
+        tq.add_task("Test task", "health_check")
+
+        with client.websocket_connect("/ws/control") as ws:
+            initial = ws.receive_json()
+            assert "kanban" not in initial  # Not subscribed yet
+
+            ws.send_json({"type": "subscribe", "channel": "kanban"})
+            msg = ws.receive_json()
+            assert "kanban" in msg
+            assert "queued" in msg["kanban"]
+
+    def test_unsubscribe_kanban(self, app_client):
+        client, app = app_client
+
+        with client.websocket_connect("/ws/control") as ws:
+            initial = ws.receive_json()
+
+            # Subscribe
+            ws.send_json({"type": "subscribe", "channel": "kanban"})
+            msg = ws.receive_json()
+            assert "kanban" in msg
+
+            # Unsubscribe
+            ws.send_json({"type": "unsubscribe", "channel": "kanban"})
+            msg = ws.receive_json()
+            assert "kanban" not in msg

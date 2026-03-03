@@ -334,6 +334,8 @@ async def websocket_control(websocket: WebSocket):
                 if "diagnostics" in subscriptions:
                     store = websocket.app.state.diagnostics_store
                     state["diagnostics"] = store.to_dict()
+                if "kanban" in subscriptions:
+                    state["kanban"] = _build_kanban(websocket)
                 await websocket.send_json(state)
         except WebSocketDisconnect:
             pass
