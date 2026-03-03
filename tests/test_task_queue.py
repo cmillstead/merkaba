@@ -289,3 +289,30 @@ def test_context_manager_closes_on_exception():
                 q.add_task("Test Task", "check")
                 raise RuntimeError("boom")
         assert q._conn is None
+
+
+# --- Transactional delete_task ---
+
+
+def test_delete_task_is_transactional(queue):
+    """M6: delete_task must be atomic — wrapped in BEGIN/ROLLBACK."""
+    import inspect
+    source = inspect.getsource(queue.delete_task)
+    assert "BEGIN" in source
+    assert "ROLLBACK" in source
+
+
+def test_delete_task_removes_task_and_runs(queue):
+    """M6: delete_task removes the task and its associated runs."""
+    task_id = queue.add_task("Doomed Task", "check")
+    run_id = queue.start_run(task_id)
+    queue.finish_run(run_id, "success", result={"ok": True})
+
+    assert queue.delete_task(task_id) is True
+    assert queue.get_task(task_id) is None
+    assert queue.get_runs(task_id) == []
+
+
+def test_delete_task_returns_false_for_nonexistent(queue):
+    """M6: delete_task returns False when no task exists with the given ID."""
+    assert queue.delete_task(999) is False

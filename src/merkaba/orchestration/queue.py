@@ -183,15 +183,22 @@ class TaskQueue:
         """Permanently delete a task and its runs.
 
         Returns True if the task existed and was deleted, False if not found.
+        All three DELETEs are wrapped in an explicit transaction so the
+        operation is atomic — either everything is removed or nothing is.
         """
         task = self.get_task(task_id)
         if not task:
             return False
-        self._conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
-        self._conn.execute("DELETE FROM dead_letter_queue WHERE task_id = ?", (task_id,))
-        cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-        self._conn.commit()
-        return cursor.rowcount > 0
+        self._conn.execute("BEGIN")
+        try:
+            self._conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
+            self._conn.execute("DELETE FROM dead_letter_queue WHERE task_id = ?", (task_id,))
+            cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            self._conn.execute("COMMIT")
+            return cursor.rowcount > 0
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
 
     def pause_task(self, task_id: int) -> None:
         self.update_task(task_id, status="paused")
