@@ -8,6 +8,7 @@ import DashboardView from '../components/DashboardView'
 import KanbanBoard from '../components/KanbanBoard'
 import WorkerDetailView from '../components/WorkerDetailView'
 import CommandPalette from '../components/CommandPalette'
+import { useNotificationDetection } from '../hooks/useNotifications'
 
 type View =
   | { mode: 'dashboard' }
@@ -19,6 +20,7 @@ type View =
 
 export default function MissionControl() {
   const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
+  useNotificationDetection(state)
   const [view, setView] = useState<View>({ mode: 'dashboard' })
   const [viewReady, setViewReady] = useState(false)
 
