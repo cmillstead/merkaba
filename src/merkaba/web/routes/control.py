@@ -39,10 +39,13 @@ WORKER_SCHEDULES = {
 
 
 def ensure_scheduled_workers(task_queue) -> None:
-    """Idempotently ensure workers have tasks with their default cron schedules.
+    """Ensure each scheduled worker has exactly one task with its default cron.
 
-    If a task exists for the type but has no schedule (e.g. leftover from a
-    manual trigger), it is updated with the default cron.
+    On startup this:
+    - Creates missing scheduled tasks
+    - Fixes tasks that lost their schedule (e.g. from a manual trigger)
+    - Removes duplicate tasks for the same worker type
+    - Resets stuck 'running' tasks back to 'pending'
     """
     from croniter import croniter
 
@@ -51,26 +54,36 @@ def ensure_scheduled_workers(task_queue) -> None:
     except Exception:
         all_tasks = []
 
-    existing_by_type: dict[str, dict] = {}
+    # Group all tasks by type
+    tasks_by_type: dict[str, list[dict]] = {}
     for t in all_tasks:
-        if t["task_type"] not in existing_by_type:
-            existing_by_type[t["task_type"]] = t
+        tasks_by_type.setdefault(t["task_type"], []).append(t)
 
     for task_type, cron in WORKER_SCHEDULES.items():
-        existing = existing_by_type.get(task_type)
-        if existing is None:
-            task_queue.add_task(
-                name=task_type,
-                task_type=task_type,
-                schedule=cron,
-            )
+        tasks = tasks_by_type.get(task_type, [])
+
+        if not tasks:
+            task_queue.add_task(name=task_type, task_type=task_type, schedule=cron)
             logger.info("Created scheduled task: %s (%s)", task_type, cron)
-        elif not existing.get("schedule"):
-            next_run = croniter(cron, datetime.now()).get_next(datetime).isoformat()
-            task_queue.update_task(
-                existing["id"], schedule=cron, next_run=next_run,
-            )
-            logger.info("Updated task %s with schedule: %s", task_type, cron)
+            continue
+
+        # Keep the first task, delete duplicates
+        keep = tasks[0]
+        for dup in tasks[1:]:
+            task_queue.delete_task(dup["id"])
+            logger.info("Removed duplicate %s task (id=%d)", task_type, dup["id"])
+
+        # Ensure the kept task has the correct schedule
+        next_run = croniter(cron, datetime.now()).get_next(datetime).isoformat()
+        updates: dict = {}
+        if not keep.get("schedule"):
+            updates["schedule"] = cron
+            updates["next_run"] = next_run
+        if keep["status"] == "running":
+            updates["status"] = "pending"
+        if updates:
+            task_queue.update_task(keep["id"], **updates)
+            logger.info("Fixed %s task (id=%d): %s", task_type, keep["id"], updates)
 
 
 class ModelChangeRequest(BaseModel):

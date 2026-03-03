@@ -509,7 +509,6 @@ class TestEnsureScheduledWorkers:
 
         client, app = app_client
         tq = app.state.task_queue
-        # Simulate a zombie task from a manual trigger (no schedule)
         task_id = tq.add_task("Manual: health_check", "health_check")
         assert tq.get_task(task_id)["schedule"] is None
 
@@ -518,6 +517,35 @@ class TestEnsureScheduledWorkers:
         task = tq.get_task(task_id)
         assert task["schedule"] == WORKER_SCHEDULES["health_check"]
         assert task["next_run"] is not None
+
+    def test_removes_duplicate_tasks(self, app_client):
+        """Duplicate tasks for the same type should be cleaned up."""
+        from merkaba.web.routes.control import ensure_scheduled_workers
+
+        client, app = app_client
+        tq = app.state.task_queue
+        id1 = tq.add_task("Manual: health_check", "health_check")
+        id2 = tq.add_task("Manual: health_check", "health_check")
+
+        ensure_scheduled_workers(tq)
+
+        assert tq.get_task(id1) is not None  # kept
+        assert tq.get_task(id2) is None      # deleted
+
+    def test_resets_stuck_running_task(self, app_client):
+        """A stuck 'running' task should be reset to 'pending'."""
+        from merkaba.web.routes.control import ensure_scheduled_workers
+
+        client, app = app_client
+        tq = app.state.task_queue
+        task_id = tq.add_task("health_check", "health_check")
+        tq.update_task(task_id, status="running")
+
+        ensure_scheduled_workers(tq)
+
+        task = tq.get_task(task_id)
+        assert task["status"] == "pending"
+        assert task["schedule"] is not None
 
 
 @pytest.mark.e2e
