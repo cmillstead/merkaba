@@ -19,7 +19,12 @@ function formatTimestamp(ts: string | null): string {
 function runDotColor(status: string): string {
   if (status === 'completed' || status === 'success') return '#4ade80'
   if (status === 'failed' || status === 'error') return '#f87171'
+  if (status === 'running') return '#00f0ff'
   return '#3a3a5c'
+}
+
+function isRunning(status: string): boolean {
+  return status === 'running'
 }
 
 function runDotLabel(run: WorkerRun): string {
@@ -106,7 +111,7 @@ export default function WorkerDetailView({ worker, onBack }: Props) {
               {recentRuns.map((run) => (
                 <span
                   key={run.id}
-                  className="worker-detail-run-dot"
+                  className={`worker-detail-run-dot${isRunning(run.status) ? ' run-dot-running' : ''}`}
                   title={runDotLabel(run)}
                   style={{ background: runDotColor(run.status) }}
                 />
