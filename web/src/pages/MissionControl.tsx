@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { useControlSocket } from '../hooks/useControlSocket'
 import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
-import HarnessView from '../components/HarnessView'
+import AgentDetailView from '../components/AgentDetailView'
 import DiagnosticsView from '../components/DiagnosticsView'
 import WorkerDetailView from '../components/WorkerDetailView'
 
 type View =
   | { mode: 'constellation' }
-  | { mode: 'harness'; nodeId: string; nodeType: 'agent' | 'worker' }
+  | { mode: 'agent'; nodeId: string }
   | { mode: 'worker'; workerId: string }
   | { mode: 'diagnostics' }
 
@@ -20,7 +20,7 @@ export default function MissionControl() {
     if (nodeType === 'worker') {
       setView({ mode: 'worker', workerId: nodeId })
     } else {
-      setView({ mode: 'harness', nodeId, nodeType })
+      setView({ mode: 'agent', nodeId })
     }
   }, [])
 
@@ -35,21 +35,6 @@ export default function MissionControl() {
       body: JSON.stringify({ agent: 'merkaba-prime', model }),
     })
   }, [])
-
-  // When a worker node is clicked, resolve via the worker's parent agent so
-  // HarnessView always receives a valid AgentState. Workers have a `parent`
-  // field pointing to the agent that owns them.
-  const agent = view.mode === 'harness'
-    ? (() => {
-        const direct = state.agents.find(a => a.id === view.nodeId)
-        if (direct) return direct
-        if (view.nodeType === 'worker') {
-          const worker = state.workers.find(w => w.id === view.nodeId)
-          if (worker?.parent) return state.agents.find(a => a.id === worker.parent) ?? null
-        }
-        return null
-      })()
-    : null
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -81,13 +66,20 @@ export default function MissionControl() {
         />
       )}
 
-      {view.mode === 'harness' && agent && (
-        <HarnessView
-          agent={agent}
-          onBack={handleBack}
-          onModelChange={handleModelChange}
-        />
-      )}
+      {view.mode === 'agent' && (() => {
+        const agent = state.agents.find(a => a.id === view.nodeId)
+        if (!agent) return null
+        const approvals = state.kanban?.awaiting_approval ?? []
+        return (
+          <AgentDetailView
+            agent={agent}
+            system={state.system}
+            pendingApprovals={approvals}
+            onBack={handleBack}
+            onModelChange={handleModelChange}
+          />
+        )
+      })()}
 
       {view.mode === 'worker' && (() => {
         const worker = state.workers.find(w => w.id === view.workerId)

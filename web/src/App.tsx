@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import { Radar, MessageSquare, ListTodo, ShieldCheck, Brain, BarChart3 } from 'lucide-react'
+import MerkabaGlyph from './components/MerkabaGlyph'
 import { BusinessProvider } from './context/BusinessContext'
 import { ToastProvider } from './context/ToastContext'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -31,7 +32,10 @@ function AppShell() {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <div className="sidebar-brand">Merkaba</div>
+        <div className="sidebar-brand">
+          <MerkabaGlyph size={34} status="active" speed={0.5} />
+          Merkaba
+        </div>
         <BusinessSwitcher />
         <nav role="navigation" aria-label="Main navigation">
           <NavLink to="/" end><Radar size={16} /> Mission Control</NavLink>
