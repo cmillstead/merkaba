@@ -280,6 +280,53 @@ def test_web_websocket_chat(app_client):
 
 
 # ---------------------------------------------------------------------------
+# 8b. WebSocket chat — agent error returns generic message (C1)
+# ---------------------------------------------------------------------------
+
+def test_web_websocket_chat_error_is_sanitized(app_client):
+    """WebSocket agent error sends a generic message, not the raw exception text.
+
+    Verifies finding C1: str(e) must not be forwarded to the client. The
+    content must not contain file paths, tracebacks, or internal module names.
+    """
+    client, app = app_client
+
+    internal_error = RuntimeError(
+        "Traceback (most recent call last):\n"
+        "  File /Users/cevin/src/merkaba/src/merkaba/agent.py, line 42\n"
+        "sqlite3.OperationalError: database is locked: /home/user/.merkaba/memory.db"
+    )
+
+    mock_agent = MagicMock()
+    mock_agent.run.side_effect = internal_error
+    mock_agent.permission_manager = MagicMock()
+
+    with patch("merkaba.agent.Agent", return_value=mock_agent):
+        with client.websocket_connect("/ws/chat") as ws:
+            ws.send_json({"message": "trigger error"})
+
+            # First message is the thinking indicator
+            msg1 = ws.receive_json()
+            assert msg1["type"] == "thinking"
+
+            # Second message must be a generic error — NOT the raw exception
+            msg2 = ws.receive_json()
+            assert msg2["type"] == "error"
+
+            content = msg2["content"]
+            # Must be the sanitized generic message
+            assert "internal error" in content.lower() or "please try again" in content.lower()
+            # Must NOT leak any internal details
+            assert "Traceback" not in content
+            assert "merkaba" not in content
+            assert "/Users/" not in content
+            assert "/home/" not in content
+            assert "sqlite3" not in content
+            assert ".db" not in content
+            assert "agent.py" not in content
+
+
+# ---------------------------------------------------------------------------
 # 9. File upload — valid extension succeeds
 # ---------------------------------------------------------------------------
 

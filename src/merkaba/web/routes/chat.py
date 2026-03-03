@@ -172,7 +172,7 @@ async def websocket_chat(websocket: WebSocket):
                     )
             except Exception as e:
                 logger.exception("Agent error for session %s: %s", session_id, e)
-                await websocket.send_json({"type": "error", "content": str(e)})
+                await websocket.send_json({"type": "error", "content": "An internal error occurred. Please try again."})
                 continue
 
             logger.debug("Agent response: %s", response[:200])
