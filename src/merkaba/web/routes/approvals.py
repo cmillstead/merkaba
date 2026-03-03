@@ -8,6 +8,10 @@ class DecisionBody(BaseModel):
     reason: str | None = None
 
 
+class ApproveBody(BaseModel):
+    totp_code: str | None = None
+
+
 @router.get("")
 async def list_approvals(
     request: Request,
@@ -20,16 +24,33 @@ async def list_approvals(
 
 
 @router.post("/{action_id}/approve")
-async def approve_action(action_id: int, request: Request):
-    """Approve a pending action (with rate limiting, 2FA skipped for web)."""
-    from merkaba.approval.secure import RateLimitExceeded, SecureApprovalManager
+async def approve_action(action_id: int, body: ApproveBody, request: Request):
+    """Approve a pending action (with rate limiting and optional TOTP 2FA)."""
+    from merkaba.approval.secure import (
+        RateLimitExceeded,
+        SecureApprovalManager,
+        TotpInvalid,
+        TotpRequired,
+    )
 
     queue = request.app.state.action_queue
     manager = SecureApprovalManager.from_config(queue)
+
+    # If 2FA is configured, pass the totp_code through and let the manager
+    # decide whether it's required for this specific action's autonomy level.
+    # TotpRequired / TotpInvalid are surfaced as 403 to the caller.
     try:
-        result = manager.approve(action_id, decided_by="web")
+        result = manager.approve(
+            action_id,
+            decided_by="web",
+            totp_code=body.totp_code,
+        )
     except RateLimitExceeded:
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    except TotpRequired:
+        raise HTTPException(status_code=403, detail="TOTP code required")
+    except TotpInvalid:
+        raise HTTPException(status_code=403, detail="Invalid TOTP code")
     if not result:
         raise HTTPException(status_code=404, detail="Action not found")
     return {"id": action_id, "status": "approved"}

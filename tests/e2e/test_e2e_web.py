@@ -183,7 +183,7 @@ def test_web_approval_workflow(app_client):
     assert approvals[0]["action_type"] == "send_email"
 
     # POST approve
-    resp = client.post(f"/api/approvals/{action_id}/approve")
+    resp = client.post(f"/api/approvals/{action_id}/approve", json={})
     assert resp.status_code == 200
     assert resp.json()["status"] == "approved"
 

@@ -39,13 +39,65 @@ class InputClassifier:
     Runs user messages through a lightweight model to detect prompt injection
     attempts that bypass regex-based pattern matching (e.g. poetic jailbreaks,
     roleplay attacks, creative rephrasing).
+
+    ``fail_mode`` controls behaviour when the LLM call raises an exception:
+
+    - ``"open"``     — allow through as safe/complex (permissive, legacy behaviour
+                       when ``classifier_required=False``)
+    - ``"closed"``   — return an unsafe/blocked classification
+    - ``"no_tools"`` — allow through as safe but disable tool access (default,
+                       legacy behaviour when ``classifier_required=True``)
+
+    When ``fail_mode`` is explicitly supplied it takes precedence over
+    ``classifier_required``.  If only ``classifier_required`` is set (for
+    backwards compatibility), ``fail_mode`` is derived from it:
+    ``True`` → ``"no_tools"``, ``False`` → ``"open"``.
     """
 
-    def __init__(self, model: str = CLASSIFIER_MODEL, enabled: bool = True, classifier_required: bool = True):
+    _VALID_FAIL_MODES = {"open", "closed", "no_tools"}
+
+    def __init__(
+        self,
+        model: str = CLASSIFIER_MODEL,
+        enabled: bool = True,
+        classifier_required: bool = True,
+        fail_mode: str | None = None,
+    ):
         self.model = model
         self.enabled = enabled
         self.classifier_required = classifier_required
+
+        # Resolve fail_mode: explicit arg wins, then config file, then
+        # fall back to deriving from classifier_required for backwards compat.
+        if fail_mode is not None:
+            if fail_mode not in self._VALID_FAIL_MODES:
+                raise ValueError(
+                    f"Invalid fail_mode {fail_mode!r}. "
+                    f"Must be one of: {sorted(self._VALID_FAIL_MODES)}"
+                )
+            self.fail_mode = fail_mode
+        else:
+            self.fail_mode = self._load_fail_mode_from_config()
+
         self._client = None
+
+    def _load_fail_mode_from_config(self) -> str:
+        """Read classifier_fail_mode from ~/.merkaba/config.json, with fallback."""
+        import json
+        import os
+
+        config_path = os.path.expanduser("~/.merkaba/config.json")
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            mode = config.get("security", {}).get("classifier_fail_mode")
+            if mode in self._VALID_FAIL_MODES:
+                return mode
+        except (FileNotFoundError, json.JSONDecodeError, PermissionError, OSError):
+            pass
+
+        # Legacy fallback: derive from classifier_required
+        return "no_tools" if self.classifier_required else "open"
 
     def _get_client(self):
         """Lazy-init the Ollama client."""
@@ -97,11 +149,19 @@ class InputClassifier:
             return is_safe, reason, complexity
 
         except Exception as e:
-            if self.classifier_required:
-                # Classifier required but unavailable — allow through without tools
-                logger.warning("Input classifier unavailable (no-tools mode): %s", e)
+            if self.fail_mode == "closed":
+                logger.warning(
+                    "Input classifier unavailable (fail-closed — blocking): %s", e
+                )
+                return False, "Classifier unavailable; request blocked by fail-closed policy", "complex"
+            elif self.fail_mode == "no_tools":
+                logger.warning(
+                    "Input classifier unavailable (fail-no_tools — allowing without tools): %s", e
+                )
                 return True, "", "no_tools"
             else:
-                # Fail open with complex (use big model with tools)
-                logger.debug("Input classifier error (failing open): %s", e)
+                # "open" — fail permissively
+                logger.warning(
+                    "Input classifier unavailable (fail-open — allowing through): %s", e
+                )
                 return True, "", "complex"

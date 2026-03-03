@@ -232,7 +232,8 @@ class TestApprovalRoutes:
             action_type="send_email",
             description="Send welcome email",
         )
-        resp = client.post(f"/api/approvals/{action_id}/approve")
+        # Body is optional; send an empty JSON object to satisfy the Pydantic model
+        resp = client.post(f"/api/approvals/{action_id}/approve", json={})
         assert resp.status_code == 200
         assert resp.json()["status"] == "approved"
 
@@ -253,7 +254,7 @@ class TestApprovalRoutes:
 
     def test_approve_not_found(self, app_client):
         client, app = app_client
-        resp = client.post("/api/approvals/999/approve")
+        resp = client.post("/api/approvals/999/approve", json={})
         assert resp.status_code == 404
 
     def test_stats(self, app_client):
@@ -261,6 +262,104 @@ class TestApprovalRoutes:
         resp = client.get("/api/approvals/stats")
         assert resp.status_code == 200
         assert "stats" in resp.json()
+
+    def test_approve_with_valid_totp(self, app_client):
+        """When 2FA is enabled and a valid TOTP code is supplied, approval succeeds."""
+        client, app = app_client
+        queue = app.state.action_queue
+        # High autonomy_level so that 2FA is required (threshold default is 3)
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="delete_record",
+            description="High risk delete",
+            autonomy_level=4,
+        )
+
+        from merkaba.approval.secure import SecureApprovalManager
+
+        # Build a real manager with a known TOTP secret so we can generate a valid code
+        import pyotp
+        secret = pyotp.random_base32()
+        valid_code = pyotp.TOTP(secret).now()
+
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=secret,
+            totp_threshold=3,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            resp = client.post(
+                f"/api/approvals/{action_id}/approve",
+                json={"totp_code": valid_code},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+
+    def test_approve_with_invalid_totp(self, app_client):
+        """When 2FA is enabled and an invalid TOTP code is supplied, endpoint returns 403."""
+        client, app = app_client
+        queue = app.state.action_queue
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="delete_record",
+            description="High risk delete",
+            autonomy_level=4,
+        )
+
+        import pyotp
+        from merkaba.approval.secure import SecureApprovalManager
+
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=pyotp.random_base32(),
+            totp_threshold=3,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            resp = client.post(
+                f"/api/approvals/{action_id}/approve",
+                json={"totp_code": "000000"},
+            )
+
+        assert resp.status_code == 403
+        assert "Invalid TOTP" in resp.json()["detail"]
+
+    def test_approve_without_totp_when_2fa_disabled(self, app_client):
+        """When 2FA is not configured, approval succeeds without supplying a TOTP code."""
+        client, app = app_client
+        queue = app.state.action_queue
+        action_id = queue.add_action(
+            business_id=1,
+            action_type="send_email",
+            description="Regular action",
+            autonomy_level=4,
+        )
+
+        from merkaba.approval.secure import SecureApprovalManager
+
+        # Manager with no TOTP secret — 2FA is disabled
+        manager = SecureApprovalManager(
+            action_queue=queue,
+            totp_secret=None,
+        )
+
+        with patch(
+            "merkaba.approval.secure.SecureApprovalManager.from_config",
+            return_value=manager,
+        ):
+            # Empty body — totp_code defaults to None, backwards compatible
+            resp = client.post(f"/api/approvals/{action_id}/approve", json={})
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
 
 
 # --- API key auth ---
