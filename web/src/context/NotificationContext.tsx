@@ -19,6 +19,7 @@ interface NotificationContextValue {
 
 const STORAGE_KEY = 'merkaba_notifications'
 const MAX_NOTIFICATIONS = 50
+const DEDUP_WINDOW_MS = 60_000 // merge duplicates within 60s
 
 function loadFromStorage(): Notification[] {
   try {
@@ -39,6 +40,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const addNotification = useCallback((n: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     setNotifications(prev => {
+      const now = Date.now()
+      const dupeIdx = prev.findIndex(
+        p => p.type === n.type && p.title === n.title &&
+          now - new Date(p.timestamp).getTime() < DEDUP_WINDOW_MS,
+      )
+      if (dupeIdx !== -1) {
+        const updated = { ...prev[dupeIdx], timestamp: new Date().toISOString(), read: false }
+        const next = [updated, ...prev.filter((_, i) => i !== dupeIdx)]
+        saveToStorage(next)
+        return next
+      }
       const next = [
         {
           ...n,

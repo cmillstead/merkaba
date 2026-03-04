@@ -39,9 +39,10 @@ export const getDecisions = (businessId?: number) => {
 export const getLearnings = () => request<{ learnings: Learning[] }>('/api/memory/learnings');
 
 // Tasks
-export const getTasks = (status?: string) => {
+export const getTasks = async (status?: string) => {
   const params = status ? `?status=${status}` : '';
-  return request<{ tasks: Task[] }>(`/api/tasks${params}`);
+  const data = await request<{ items: Task[] }>(`/api/tasks${params}`);
+  return { tasks: data.items };
 };
 export const getTask = (id: number) => request<{ task: Task; runs: TaskRun[] }>(`/api/tasks/${id}`);
 export const createTask = (body: CreateTaskBody) => request<{ id: number; status: string }>('/api/tasks', { method: 'POST', body: JSON.stringify(body) });

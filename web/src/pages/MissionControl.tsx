@@ -21,7 +21,7 @@ type View =
 export default function MissionControl() {
   const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
   useNotificationDetection(state)
-  const [view, setView] = useState<View>({ mode: 'dashboard' })
+  const [view, setView] = useState<View>({ mode: 'constellation' })
   const [viewReady, setViewReady] = useState(false)
 
   useEffect(() => {

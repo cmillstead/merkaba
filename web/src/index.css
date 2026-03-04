@@ -40,6 +40,7 @@ a:hover { color: var(--accent-hover); }
   flex-direction: column;
   padding: 20px 0;
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .sidebar-brand {
@@ -2217,7 +2218,7 @@ input:focus, textarea:focus {
 .notification-dropdown {
   position: absolute;
   top: calc(100% + 8px);
-  right: -10px;
+  left: -60px;
   width: 320px;
   background: var(--bg-card);
   border: 1px solid var(--border);
