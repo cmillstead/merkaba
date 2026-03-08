@@ -63,6 +63,7 @@ export const denyAction = (id: number, reason?: string) => request<{ id: number;
 export const getApprovalStats = () => request<{ stats: Record<string, number> }>('/api/approvals/stats');
 
 // WebSocket chat with message buffering, exponential backoff reconnect, and token auth
+export const MAX_PENDING_MESSAGES = 50
 export interface ChatConnection {
   send: (text: string) => void
   close: () => void
@@ -138,6 +139,9 @@ export function connectChat(options: ConnectChatOptions): ChatConnection {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(payload)
       } else {
+        if (pendingMessages.length >= MAX_PENDING_MESSAGES) {
+          pendingMessages.shift()
+        }
         pendingMessages.push(payload)
       }
     },
