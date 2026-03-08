@@ -342,6 +342,35 @@ class TestWebSocketChannelValidation:
         )
 
 
+class TestChangeModelUsesMerkabaHome:
+    """Verify the /model endpoint respects MERKABA_HOME instead of hardcoding ~/.merkaba."""
+
+    def test_merkaba_home_respected_in_config_endpoint(self, tmp_path):
+        """When MERKABA_HOME is set, the change_model endpoint should write config there."""
+        import asyncio
+
+        config_dir = tmp_path / "custom_home"
+        config_dir.mkdir()
+        config_file = config_dir / "config.json"
+        config_file.write_text(json.dumps({"models": {"complex": "old-model"}}))
+
+        request = MagicMock()
+        request.app.state.merkaba_base_dir = None
+
+        with patch.dict(os.environ, {"MERKABA_HOME": str(config_dir)}):
+            from merkaba.web.routes.control import ModelChangeRequest, change_model
+
+            body = ModelChangeRequest(agent="merkaba-prime", model="new-model")
+            result = asyncio.get_event_loop().run_until_complete(
+                change_model(body, request)
+            )
+
+        assert result["model"] == "new-model"
+        # Verify config was written to MERKABA_HOME, not ~/.merkaba
+        written = json.loads(config_file.read_text())
+        assert written["models"]["complex"] == "new-model"
+
+
 class TestBuildStateNoNPlusOne:
     """Verify _build_state uses batch queries instead of per-worker N+1 loops."""
 

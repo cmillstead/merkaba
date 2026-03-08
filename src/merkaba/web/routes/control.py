@@ -13,6 +13,8 @@ from starlette.requests import HTTPConnection
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
+from merkaba.paths import merkaba_home
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["control"])
@@ -402,7 +404,7 @@ async def change_model(body: ModelChangeRequest, request: Request):
     from merkaba.config.loader import clear_cache, load_config
     from merkaba.config.utils import atomic_write_json
 
-    path = os.path.join(getattr(request.app.state, "merkaba_base_dir", None) or os.path.expanduser("~/.merkaba"), "config.json")
+    path = os.path.join(getattr(request.app.state, "merkaba_base_dir", None) or merkaba_home(), "config.json")
     config = load_config(path=path, use_cache=False)
     models = config.get("models")
     if not isinstance(models, dict):
