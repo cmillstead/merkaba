@@ -205,16 +205,16 @@ class DiagnosticsMiddleware:
             if message["type"] == "websocket.receive":
                 try:
                     self.store.ws_frame_received(conn_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to record WS frame received: %s", e, exc_info=True)
             return message
 
         async def send_wrapper(message):
             if message["type"] == "websocket.send":
                 try:
                     self.store.ws_frame_sent(conn_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to record WS frame sent: %s", e, exc_info=True)
             await send(message)
 
         try:

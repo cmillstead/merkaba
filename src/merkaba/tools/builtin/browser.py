@@ -188,8 +188,8 @@ async def _close_browser() -> None:
     if _browser is not None:
         try:
             await _browser.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to close browser: %s", e, exc_info=True)
     _browser = None
     _page = None
 
@@ -257,14 +257,14 @@ def _browser_fill(selector: str, value: str) -> str:
         try:
             await page.get_by_label(selector).fill(value, timeout=5000)
             return f"Filled field '{selector}' with value"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Label-based fill failed for '%s': %s", selector, e)
         # Try placeholder-based locator
         try:
             await page.get_by_placeholder(selector).fill(value, timeout=5000)
             return f"Filled field '{selector}' with value"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Placeholder-based fill failed for '%s': %s", selector, e)
         # Fall back to CSS selector
         await page.fill(selector, value, timeout=10000)
         return f"Filled element matching '{selector}' with value"

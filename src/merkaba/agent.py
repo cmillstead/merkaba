@@ -152,8 +152,8 @@ class Agent:
             try:
                 from merkaba.memory.vectors import VectorMemory
                 vectors = VectorMemory()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("VectorMemory init failed (optional): %s", e, exc_info=True)
             self.retrieval = MemoryRetrieval(store=store, vectors=vectors)
             set_memory_retrieval(self.retrieval)
             logger.info("Memory retrieval initialized (db=%s, vectors=%s)",
@@ -191,9 +191,9 @@ class Agent:
             report = scanner.quick_scan()
             if report.has_issues:
                 self._print_security_banner(report)
-        except Exception:
+        except Exception as e:
             # Don't block startup on scan errors
-            pass
+            logger.debug("Security scan skipped: %s", e, exc_info=True)
 
     def _print_security_banner(self, report: SecurityReport):
         """Print prominent security alert banner."""
@@ -352,8 +352,8 @@ class Agent:
         try:
             from merkaba.observability.tracing import new_trace_id
             new_trace_id("agent")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to set trace ID: %s", e, exc_info=True)
 
         # Fire SESSION_START the first time this run() is called for a session.
         # We detect "first call" by checking whether the conversation is empty.
@@ -380,8 +380,8 @@ class Agent:
                 context_summary=user_message[:200],
                 model=self.simple_model if complexity == "simple" else self.model,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to record classifier decision: %s", e, exc_info=True)
         if not is_safe:
             refusal = "I can't process that request — it was flagged as a potential prompt injection attempt."
             self.memory.append("user", user_message)

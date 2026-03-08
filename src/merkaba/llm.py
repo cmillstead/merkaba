@@ -373,8 +373,8 @@ class LLMClient:
                                     duration_ms=result.duration_ms,
                                     trace_id=get_trace_id(),
                                 )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to record token usage: %s", e, exc_info=True)
                     return result
                 except ollama_lib.RequestError:
                     raise  # bad model name, etc. — will never succeed
@@ -517,8 +517,8 @@ class LLMClient:
                             context_summary=f"tier={tier}, error={e}",
                             model=next_model,
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to record model fallback decision: %s", e, exc_info=True)
 
         raise AllModelsUnavailableError(
             f"All models unavailable for tier '{tier}': {models_to_try}. Last error: {last_error}"

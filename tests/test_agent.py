@@ -226,3 +226,15 @@ def test_agent_warns_on_encryption_failure(temp_memory_dir, caplog):
         "encryption unavailable" in r.message.lower() or "plaintext" in r.message.lower()
         for r in caplog.records
     )
+
+
+def test_agent_vector_init_failure_logged(temp_memory_dir, caplog):
+    """VectorMemory init failure should be logged at DEBUG level."""
+    import logging
+    caplog.set_level(logging.DEBUG)
+    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("chromadb unavailable")):
+        agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
+    assert any(
+        "VectorMemory init failed" in r.message and "chromadb unavailable" in r.message
+        for r in caplog.records
+    ), f"Expected VectorMemory init failure log record, got: {[r.message for r in caplog.records]}"

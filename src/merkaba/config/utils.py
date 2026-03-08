@@ -2,8 +2,11 @@
 
 import copy
 import json
+import logging
 import os
 import tempfile
+
+logger = logging.getLogger(__name__)
 
 _SECRET_KEY_NAMES = frozenset(
     {"api_key", "key", "secret", "token", "password", "encryption_key", "totp_secret"}
@@ -28,8 +31,8 @@ def atomic_write_json(path: str, data: dict, **kwargs) -> None:
     except BaseException:
         try:
             os.unlink(tmp)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.debug("Failed to clean up temp file %s: %s", tmp, e)
         raise
 
 

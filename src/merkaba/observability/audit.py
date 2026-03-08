@@ -1,5 +1,6 @@
 # src/merkaba/observability/audit.py
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -7,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from merkaba.paths import db_path as _db_path
+
+logger = logging.getLogger(__name__)
 
 try:
     from merkaba.security.file_permissions import ensure_secure_permissions as _secure
@@ -160,5 +163,5 @@ def record_decision(
             confidence=confidence,
             trace_id=trace_id,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to record audit decision: %s", e, exc_info=True)

@@ -2,6 +2,7 @@
 """Fernet-based conversation encryption at rest."""
 
 import base64
+import logging
 import os
 
 from cryptography.fernet import Fernet
@@ -9,6 +10,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
 ENCRYPTED_PREFIX = b"MERKABA_ENC:"
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationEncryptor:
@@ -46,8 +49,8 @@ class ConversationEncryptor:
             key_b64 = get_secret("conversation_encryption_key")
             if key_b64:
                 return cls(key_b64.encode())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to load encryption key from keychain: %s", e)
         return None
 
     def encrypt(self, plaintext: str) -> str:
@@ -97,8 +100,8 @@ class ConversationEncryptor:
                     key = base64.urlsafe_b64encode(kdf.derive(self._passphrase.encode()))
                     f = Fernet(key)
                     return f.decrypt(maybe_token).decode()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to decrypt with embedded salt, falling back to legacy: %s", e)
 
         # Legacy format or keychain-based: use instance Fernet directly
         return self._fernet.decrypt(raw).decode()

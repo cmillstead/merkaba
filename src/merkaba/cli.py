@@ -119,8 +119,8 @@ def main(
                 root.addHandler(RichHandler(console=console, show_time=False))
         else:
             setup_logging()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to configure logging: %s", e, exc_info=True)
 
 
 @app.command(rich_help_panel="Core")
@@ -775,8 +775,8 @@ def memory_recall(
     try:
         from merkaba.memory.vectors import VectorMemory
         vectors = VectorMemory()
-    except (ImportError, Exception):
-        pass
+    except (ImportError, Exception) as e:
+        logger.debug("VectorMemory init skipped: %s", e, exc_info=True)
 
     retrieval = MemoryRetrieval(store=store, vectors=vectors)
     try:
@@ -1038,8 +1038,8 @@ def conversations_list(
             if not raw.startswith("MERKABA_ENC:"):
                 data = json.loads(raw)
                 msg_count = str(len(data.get("messages", [])))
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("Failed to read conversation %s: %s", conv_id, e)
         table.add_row(conv_id, msg_count, mtime)
 
     console.print(table)
@@ -2812,8 +2812,8 @@ def security_status():
         rl = security.get("approval_rate_limit", {})
         max_approvals = rl.get("max_approvals", 5)
         window_seconds = rl.get("window_seconds", 60)
-    except (KeyError, AttributeError):
-        pass
+    except (KeyError, AttributeError) as e:
+        logger.debug("Failed to load security config: %s", e)
 
     console.print(f"TOTP threshold: autonomy_level >= {totp_threshold}")
     console.print(f"Rate limit: {max_approvals} approvals per {window_seconds}s")

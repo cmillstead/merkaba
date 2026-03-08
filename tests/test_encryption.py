@@ -200,3 +200,32 @@ class TestConversationLogEncryption:
             encryptor=enc2,
         )
         assert log2._history == []
+
+
+class TestEncryptionFailureLogging:
+    """Verify that encryption/decryption failures produce log records."""
+
+    def test_encryption_failure_logged(self, caplog):
+        """Keychain load failure should log a warning."""
+        import logging
+        from unittest.mock import patch
+
+        caplog.set_level(logging.WARNING)
+        with patch(
+            "merkaba.security.encryption.get_secret",
+            side_effect=RuntimeError("keychain locked"),
+            create=True,
+        ):
+            # Force the import path used inside from_keychain
+            with patch.dict(
+                "sys.modules",
+                {"merkaba.security.secrets": type("m", (), {"get_secret": staticmethod(lambda k: (_ for _ in ()).throw(RuntimeError("keychain locked")))})()},
+            ):
+                result = ConversationEncryptor.from_keychain()
+
+        assert result is None
+        assert any(
+            "Failed to load encryption key from keychain" in r.message
+            and "keychain locked" in r.message
+            for r in caplog.records
+        ), f"Expected keychain failure warning, got: {[r.message for r in caplog.records]}"

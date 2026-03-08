@@ -272,5 +272,5 @@ def _iter_dirs(parent: str):
         for entry in os.scandir(parent):
             if entry.is_dir():
                 yield entry.path
-    except OSError:
-        pass
+    except OSError as e:
+        logger.debug("Failed to scan directory %s: %s", parent, e)

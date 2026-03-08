@@ -121,8 +121,8 @@ class Supervisor:
         try:
             from merkaba.observability.tracing import new_trace_id
             new_trace_id(f"task-{task['id']}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to set trace ID for task: %s", e, exc_info=True)
 
         logger.info("Supervisor handling task %s (%s)", task["id"], task["name"])
 
@@ -147,8 +147,8 @@ class Supervisor:
                 alternatives=[m.value for m in DispatchMode],
                 context_summary=f"task={task['name']}, type={task['task_type']}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to record dispatch decision: %s", e, exc_info=True)
 
         if mode == DispatchMode.EXPLORE_THEN_EXECUTE:
             result = self._handle_explore_then_execute(task, worker_class)
@@ -351,8 +351,8 @@ class Supervisor:
                                 context_summary=f"task={task['name']}",
                                 model=INTEGRATION_CHECK_MODEL,
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Failed to record competition winner: %s", e, exc_info=True)
                         return successful[idx]
                     break
         except Exception as e:

@@ -145,8 +145,8 @@ class SlackAdapter(IntegrationAdapter):
         if self._bolt_handler is not None:
             try:
                 self._bolt_handler.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close Slack Bolt handler: %s", e, exc_info=True)
             self._bolt_handler = None
         self._bolt_app = None
         self._bolt_thread = None

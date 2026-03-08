@@ -101,8 +101,8 @@ def _make_lifespan(db_overrides: dict | None = None):
             try:
                 from merkaba.observability.tracing import setup_logging
                 setup_logging()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to set up logging: %s", e, exc_info=True)
             app.state.api_key = _load_api_key()
             if app.state.api_key is None:
                 logger.warning(

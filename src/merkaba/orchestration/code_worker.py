@@ -123,8 +123,8 @@ class CodeWorker(Worker):
                 try:
                     if os.path.isfile(path):
                         os.remove(path)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.debug("Failed to clean up file %s: %s", path, e)
             else:
                 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
                 with open(path, "w") as f:

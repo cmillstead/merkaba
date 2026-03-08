@@ -132,8 +132,8 @@ class SecureApprovalManager:
             from merkaba.observability.audit import record_decision
 
             record_decision(decision_type=decision_type, decision=decision)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to record audit decision: %s", e, exc_info=True)
 
     @classmethod
     def from_config(cls, action_queue: ActionQueue) -> "SecureApprovalManager":
@@ -144,8 +144,8 @@ class SecureApprovalManager:
             from merkaba.security.secrets import get_secret
 
             totp_secret = get_secret("totp_secret")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load TOTP secret from keychain: %s", e, exc_info=True)
 
         # Load config
         totp_threshold = 3

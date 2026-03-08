@@ -71,8 +71,8 @@ async def system_status(request: Request):
         async with httpx.AsyncClient() as client:
             resp = await client.get("http://localhost:11434/api/tags", timeout=3.0)
             ollama_ok = resp.status_code == 200
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to check Ollama status: %s", e, exc_info=True)
 
     # DB sizes
     def _file_size(path: str) -> int | None:

@@ -437,8 +437,8 @@ async def trigger_worker(worker_id: str, request: Request):
             if t["task_type"] == worker_id:
                 task_id = t["id"]
                 break
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to search existing tasks for worker %s: %s", worker_id, e, exc_info=True)
 
     # Create one only if no existing task found
     if task_id is None:
@@ -557,8 +557,8 @@ async def websocket_control(websocket: WebSocket):
                         from merkaba.web.diagnostics import TraceDepth
                         store = websocket.app.state.diagnostics_store
                         store.set_trace_depth(TraceDepth(level))
-                    except (ValueError, AttributeError):
-                        pass
+                    except (ValueError, AttributeError) as e:
+                        logger.debug("Failed to set trace depth: %s", e, exc_info=True)
         except WebSocketDisconnect:
             pass
         except asyncio.CancelledError:

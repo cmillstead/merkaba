@@ -41,8 +41,8 @@ class GraduationChecker:
                     alternatives=["promote", "keep_current"],
                     context_summary=f"business={business_id}, approved={approved}, denied={denied}",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to record graduation suggestion: %s", e, exc_info=True)
             return {
                 "business_id": business_id,
                 "action_type": action_type,
