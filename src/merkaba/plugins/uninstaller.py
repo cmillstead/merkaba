@@ -38,7 +38,8 @@ class PluginUninstaller:
         settings_path: str | None = None,
     ):
         self.claude_dir = claude_dir or os.path.expanduser("~/.claude")
-        self.merkaba_dir = merkaba_dir or os.path.expanduser("~/.merkaba")
+        from merkaba.paths import merkaba_home as _merkaba_home
+        self.merkaba_dir = merkaba_dir or _merkaba_home()
         self.settings_path = settings_path or os.path.join(self.claude_dir, "settings.json")
 
     def scan(self, name: str) -> list[UninstallTarget]:

@@ -33,7 +33,7 @@ export default function BusinessConfig() {
       const updated = await updateBusinessConfig(businessId, { soul, user })
       setConfig(updated)
       setMessage({ type: 'success', text: 'Config saved' })
-    } catch (e) {
+    } catch {
       setMessage({ type: 'error', text: 'Failed to save' })
     } finally {
       setSaving(false)

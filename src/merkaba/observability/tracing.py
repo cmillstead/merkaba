@@ -35,7 +35,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).replace(tzinfo=None).isoformat(),
             "level": record.levelname,
             "trace_id": getattr(record, "trace_id", "no-trace"),
             "module": record.module,
@@ -61,7 +61,8 @@ def setup_logging(
     _setup_done = True
 
     if log_dir is None:
-        log_dir = os.path.expanduser("~/.merkaba/logs")
+        from merkaba.paths import subdir as _subdir
+        log_dir = _subdir("logs")
     os.makedirs(log_dir, exist_ok=True)
     from merkaba.security.file_permissions import ensure_secure_permissions
     ensure_secure_permissions(log_dir)

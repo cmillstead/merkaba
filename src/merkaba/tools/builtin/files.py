@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from merkaba.tools.base import Tool, PermissionTier
+from merkaba.paths import config_path as _config_path
 
 
 # Denied directory paths (will block any path under these)
@@ -15,7 +16,7 @@ DENIED_PATHS = [
     "~/.azure",
     "~/.netrc",
     "~/.git-credentials",
-    "~/.merkaba/config.json",
+    _config_path(),
     "/etc/passwd",
     "/etc/shadow",
     "/etc/sudoers",

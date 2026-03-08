@@ -826,6 +826,23 @@ class TestFileUpload:
                 assert data["filename"].endswith(".txt")
                 assert data["size"] == len(file_content)
 
+    def test_upload_secures_written_file(self, app_client):
+        """Uploaded files should receive secure permissions after being written."""
+        client, app = app_client
+        file_content = b"secure me"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("merkaba.web.routes.chat.UPLOAD_DIR", tmpdir):
+                with patch("merkaba.security.file_permissions.ensure_secure_permissions") as mock_secure:
+                    resp = client.post(
+                        "/api/upload",
+                        files={"file": ("test.txt", file_content, "text/plain")},
+                    )
+                assert resp.status_code == 200
+                data = resp.json()
+                written_path = os.path.join(tmpdir, data["filename"])
+                mock_secure.assert_any_call(tmpdir)
+                mock_secure.assert_any_call(written_path)
+
 
 # --- Business config routes ---
 

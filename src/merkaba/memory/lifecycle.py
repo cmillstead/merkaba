@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from merkaba.memory.store import MemoryStore
 from merkaba.security.sanitizer import sanitize_memory_value
+from merkaba.config.defaults import DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,11 @@ class SessionExtractor:
 
     llm: object  # LLMClient
     store: MemoryStore
-    model: str = "qwen3:4b"
+    model: str = None
+
+    def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["classifier"]
 
     def extract(self, messages: list[dict], business_id: int = 0) -> list[dict]:
         """Extract facts from conversation messages.
@@ -195,9 +200,13 @@ class MemoryConsolidationJob:
 
     store: MemoryStore
     llm: object  # LLMClient
-    model: str = "qwen3:4b"
+    model: str = None
     min_group_size: int = 5
     vectors: object | None = None
+
+    def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["classifier"]
 
     def run(self) -> dict:
         """Run consolidation across all businesses.

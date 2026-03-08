@@ -4,9 +4,11 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException, WebSocketException
+from fastapi import FastAPI, Depends, HTTPException, Request, WebSocketException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from merkaba.paths import config_path as _config_path, merkaba_home as _merkaba_home
 from starlette.requests import HTTPConnection
 from starlette.types import Receive, Scope, Send
 
@@ -43,12 +45,9 @@ class SPAStaticFiles(StaticFiles):
 
 
 def _load_api_key() -> str | None:
-    config_path = os.path.expanduser("~/.merkaba/config.json")
-    try:
-        with open(config_path) as f:
-            return json.load(f).get("api_key")
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return None
+    from merkaba.config.loader import load_config
+
+    return load_config().get("api_key")
 
 
 def verify_api_key(conn: HTTPConnection):
@@ -117,7 +116,7 @@ def _make_lifespan(db_overrides: dict | None = None):
                     "Set 'api_key' in ~/.merkaba/config.json to require API key authentication. "
                     "All endpoints are currently accessible without credentials."
                 )
-            app.state.merkaba_base_dir = None  # use ~/.merkaba default
+            app.state.merkaba_base_dir = _merkaba_home()
             app.state.memory_store = MemoryStore()
             app.state.memory_retrieval = MemoryRetrieval(store=app.state.memory_store)
             app.state.task_queue = TaskQueue()
@@ -133,13 +132,9 @@ def _make_lifespan(db_overrides: dict | None = None):
             # Validate configuration
             try:
                 from merkaba.config.validation import validate_config, Severity
-                config_path = os.path.expanduser("~/.merkaba/config.json")
-                try:
-                    with open(config_path) as f:
-                        config = json.load(f)
-                except (FileNotFoundError, json.JSONDecodeError):
-                    config = {}
-                issues = validate_config(config, Path(os.path.expanduser("~/.merkaba")))
+                from merkaba.config.loader import load_config
+                config = load_config()
+                issues = validate_config(config, Path(_merkaba_home()))
                 for issue in issues:
                     if issue.severity == Severity.ERROR:
                         logger.error("Config: [%s] %s", issue.component, issue.message)
@@ -167,13 +162,10 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     # Build CORS origins: start with the hard-coded dev origins, then merge
     # any user-configured origins from ~/.merkaba/config.json.  This is done
     # eagerly (before lifespan) because CORSMiddleware is not hot-reloadable.
+    from merkaba.config.loader import load_config as _load_cfg
     cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
-    try:
-        with open(os.path.expanduser("~/.merkaba/config.json")) as _f:
-            _user_cfg = json.load(_f)
-        cors_origins.extend(_user_cfg.get("cors_origins", []))
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
+    _user_cfg = _load_cfg()
+    cors_origins.extend(_user_cfg.get("cors_origins", []))
 
     app.add_middleware(
         CORSMiddleware,
@@ -216,6 +208,32 @@ def create_app(db_overrides: dict | None = None) -> FastAPI:
     # Serve React static files if built
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():
+        # SPA catch-all: serve index.html for any path that isn't an API route,
+        # WebSocket route, or existing static file.  This allows React Router to
+        # handle client-side routing when users navigate directly to URLs like
+        # /calendar, /settings, /tasks-page, etc.
+        index_path = static_dir / "index.html"
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa_fallback(request: Request, path: str):
+            # Let API and WebSocket routes pass through (they are already
+            # registered above and will match before this catch-all).
+            if path.startswith("api/") or path.startswith("ws/"):
+                raise HTTPException(status_code=404, detail="Not found")
+
+            # If the path corresponds to an actual static file, let the
+            # static files mount handle it (it's registered right after).
+            static_file = (static_dir / path).resolve()
+            if static_file.is_relative_to(static_dir.resolve()) and static_file.is_file():
+                return FileResponse(str(static_file))
+
+            # For all other paths, serve index.html so React Router can
+            # resolve the route client-side.
+            if index_path.is_file():
+                return FileResponse(str(index_path))
+
+            raise HTTPException(status_code=404, detail="Not found")
+
         app.mount("/", SPAStaticFiles(directory=str(static_dir), html=True), name="static")
 
     return app

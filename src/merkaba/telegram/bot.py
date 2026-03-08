@@ -35,18 +35,6 @@ class MerkabaBot:
         self.pool = SessionPool()
         self.plugin_registry = PluginRegistry.default()
 
-    def _get_agent(self):
-        """Get or create a default agent for non-pooled operations.
-
-        Used only for skill activation which sets agent state directly.
-        Normal message handling goes through self.pool.submit().
-        TODO: Rework skill activation to integrate with SessionPool.
-        """
-        from merkaba.agent import Agent
-        if not hasattr(self, "_fallback_agent") or self._fallback_agent is None:
-            self._fallback_agent = Agent()
-        return self._fallback_agent
-
     def is_authorized(self, user_id: int) -> bool:
         """Check if user is authorized."""
         return user_id in self.allowed_user_ids
@@ -64,7 +52,8 @@ class MerkabaBot:
             return
 
         user_message = update.message.text
-        logger.info(f"Message from {user_id}: {user_message}")
+        logger.info("Message from %s (length=%d)", user_id, len(user_message))
+        logger.debug("Message content from %s: %s", user_id, user_message[:80])
 
         # Build session ID with topic awareness (prevents context bleeding)
         topic_id = str(update.message.message_thread_id) if update.message.message_thread_id else None
@@ -138,8 +127,9 @@ class MerkabaBot:
             await update.message.reply_text(f"Skill '{skill_name}' not found.")
             return
 
-        # Set the skill directly on the agent
-        self._get_agent().active_skill = skill
+        topic_id = str(update.message.message_thread_id) if update.message.message_thread_id else None
+        session_id = build_session_id("telegram", str(update.effective_user.id), topic_id=topic_id)
+        self.pool.set_active_skill(session_id, skill)
         await update.message.reply_text(
             f"Activated skill: {skill_name}\n"
             f"{skill.description}\n\n"

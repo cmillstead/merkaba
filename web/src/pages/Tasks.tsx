@@ -82,7 +82,14 @@ export default function Tasks() {
             <tbody>
               {tasks.map(t => (
                 <>
-                  <tr key={t.id} onClick={() => expand(t.id)} style={{ cursor: 'pointer' }}>
+                  <tr
+                    key={t.id}
+                    onClick={() => expand(t.id)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expand(t.id) } }}
+                    tabIndex={0}
+                    role="button"
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td style={{ fontWeight: 500 }}>{t.name}</td>
                     <td>{t.task_type}</td>
                     <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{t.schedule ?? '-'}</td>

@@ -66,6 +66,20 @@ class TestModelTierAndChains:
         assert chains == {k: ModelTier(primary=v.primary, fallbacks=list(v.fallbacks), timeout=v.timeout)
                           for k, v in MODEL_CHAINS.items()}
 
+    def test_load_fallback_chains_uses_simple_model_overrides(self, tmp_path):
+        config = tmp_path / "config.json"
+        config.write_text(json.dumps({
+            "models": {
+                "complex": "llama3:70b",
+                "simple": "llama3:8b",
+                "classifier": "phi4:mini",
+            }
+        }))
+        chains = load_fallback_chains(str(config))
+        assert chains["complex"].primary == "llama3:70b"
+        assert chains["simple"].primary == "llama3:8b"
+        assert chains["classifier"].primary == "phi4:mini"
+
 
 # --- get_available_models ---
 

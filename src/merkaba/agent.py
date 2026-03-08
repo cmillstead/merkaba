@@ -29,16 +29,19 @@ from merkaba.memory.context_budget import ContextWindowConfig
 from merkaba.orchestration.interruption import InterruptionManager, InterruptionMode
 
 
-SIMPLE_MODEL = "qwen3:8b"
-MERKABA_CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
+from merkaba.paths import config_path as _config_path
+from merkaba.config.defaults import DEFAULT_MODELS
+
+SIMPLE_MODEL = DEFAULT_MODELS["simple"]
+MERKABA_CONFIG_PATH = _config_path()
 
 
 @dataclass
 class Agent:
     """The core agent that orchestrates LLM and tools."""
 
-    model: str = "qwen3.5:122b"
-    simple_model: str = SIMPLE_MODEL
+    model: str = None
+    simple_model: str = None
     max_iterations: int = 10
     memory_storage_dir: str | None = None
     plugins_enabled: bool = True
@@ -62,6 +65,10 @@ class Agent:
     _hot_config: HotConfig | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["complex"]
+        if self.simple_model is None:
+            self.simple_model = DEFAULT_MODELS["simple"]
         self.llm = LLMClient(model=self.model)
         self.registry = ToolRegistry()
         self.context_config = ContextWindowConfig()
@@ -102,6 +109,29 @@ class Agent:
 
         # Run security quick scan
         self._run_security_check()
+
+    def attach_session(self, session_id: str) -> None:
+        """Bind this agent to a stable external session identifier."""
+        if self.session_id == session_id:
+            return
+
+        self.session_id = session_id
+        self.memory.bind_session(session_id)
+        persisted_tree = self.memory.get_tree()
+        if persisted_tree is not None:
+            self._tree = persisted_tree
+            self._tree.session_id = session_id
+            return
+
+        self._tree = ConversationTree(session_id=session_id)
+
+        for message in self.memory.get_history():
+            metadata = message.get("metadata") or {}
+            self._tree.append(
+                message.get("role", "assistant"),
+                message.get("content"),
+                metadata,
+            )
 
     @property
     def conversation(self) -> list[dict]:
@@ -356,7 +386,7 @@ class Agent:
             refusal = "I can't process that request — it was flagged as a potential prompt injection attempt."
             self.memory.append("user", user_message)
             self.memory.append("assistant", refusal, {"blocked": True, "reason": reason})
-            self.memory.save()
+            self.memory.save(tree=self._tree)
             return refusal
 
         # PRE_MESSAGE: fire before appending to conversation tree
@@ -456,7 +486,7 @@ class Agent:
                 # Final response
                 self._tree.append("assistant", response.content)
                 self.memory.append("assistant", response.content)
-                self.memory.save()
+                self.memory.save(tree=self._tree)
                 self._extract_session_memories()
                 # POST_MESSAGE: fire after response is finalised
                 post_msg_outputs = self._fire_hooks(
@@ -471,7 +501,7 @@ class Agent:
                     logger.debug("POST_MESSAGE hook output: %s", output[:200])
                 return response.content
 
-        self.memory.save()
+        self.memory.save(tree=self._tree)
         self._extract_session_memories()
         return "I've reached my iteration limit. Please try a simpler request."
 

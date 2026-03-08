@@ -4,7 +4,14 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from merkaba.paths import subdir as _subdir
+
 logger = logging.getLogger(__name__)
+
+try:
+    from merkaba.security.file_permissions import ensure_secure_permissions as _secure
+except ImportError:  # pragma: no cover
+    _secure = None
 
 try:
     import chromadb
@@ -20,19 +27,24 @@ class VectorMemory:
     """ChromaDB-backed vector memory for semantic search."""
 
     persist_dir: str = field(
-        default_factory=lambda: os.path.expanduser("~/.merkaba/memory_vectors/")
+        default_factory=lambda: _subdir("memory_vectors")
     )
-    ollama_model: str = "nomic-embed-text"
+    ollama_model: str = None
     _client: Any = field(default=None, init=False, repr=False)
     _embedding_fn: Any = field(default=None, init=False, repr=False)
     _collections: dict = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self):
+        if self.ollama_model is None:
+            from merkaba.config.defaults import DEFAULT_MODELS
+            self.ollama_model = DEFAULT_MODELS["embedding"]
         if not HAS_CHROMADB:
             raise ImportError(
                 "chromadb is required for VectorMemory. Install with: pip install chromadb"
             )
         os.makedirs(self.persist_dir, exist_ok=True)
+        if _secure:
+            _secure(self.persist_dir)
         self._embedding_fn = OllamaEmbeddingFunction(
             model_name=self.ollama_model,
             url="http://localhost:11434/api/embeddings",
@@ -80,6 +92,26 @@ class VectorMemory:
             return
         collection = self._collection(collection_name)
         collection.delete(ids=ids)
+
+    def delete_vectors_for_business(self, business_id: int) -> dict[str, int]:
+        """Delete all vectors associated with a business from facts and decisions.
+
+        Learnings are cross-business and are not deleted here.
+        Returns a dict mapping collection names to the count of deleted vectors.
+        """
+        counts: dict[str, int] = {}
+        for name in ("facts", "decisions"):
+            collection = self._collection(name)
+            # Find all vectors matching this business_id
+            results = collection.get(
+                where={"business_id": business_id},
+                include=[],
+            )
+            ids = results.get("ids", [])
+            if ids:
+                collection.delete(ids=ids)
+            counts[name] = len(ids)
+        return counts
 
     # --- Rebuild ---
 

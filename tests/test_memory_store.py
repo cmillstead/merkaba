@@ -1050,3 +1050,163 @@ def test_episode_dedup_after_window(store):
     # The new episode has its own fresh ID
     ids = {ep["id"] for ep in eps}
     assert ep_id_new in ids
+
+
+# --- WAL Checkpoint After Hard Deletes ---
+
+
+def _make_tracking_conn(real_conn):
+    """Wrap a sqlite3.Connection to track all executed SQL statements.
+
+    sqlite3.Connection attributes are read-only, so we cannot use
+    ``patch.object``.  Instead, return a thin proxy that delegates to the
+    real connection but records every SQL string passed to ``execute``.
+    """
+    from unittest.mock import MagicMock
+
+    wrapper = MagicMock(wraps=real_conn)
+    executed: list[str] = []
+
+    def tracking_execute(sql, *args, **kwargs):
+        executed.append(sql)
+        return real_conn.execute(sql, *args, **kwargs)
+
+    wrapper.execute = tracking_execute
+    return wrapper, executed
+
+
+def test_wal_checkpoint_after_hard_delete_business(store):
+    """hard_delete_business calls WAL checkpoint(TRUNCATE) after deleting."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_fact(biz_id, "pricing", "avg_price", "4.99")
+
+    wrapper, executed = _make_tracking_conn(store._conn)
+    store._conn = wrapper
+
+    store.hard_delete_business(biz_id, cascade=True)
+
+    assert any("wal_checkpoint" in s for s in executed), (
+        "Expected PRAGMA wal_checkpoint(TRUNCATE) to be called after hard_delete_business"
+    )
+
+
+def test_wal_checkpoint_after_purge_archived(store):
+    """purge_archived calls WAL checkpoint(TRUNCATE) after deleting archived rows."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    f1 = store.add_fact(biz_id, "pricing", "k1", "v1")
+    store.archive("facts", f1)
+
+    wrapper, executed = _make_tracking_conn(store._conn)
+    store._conn = wrapper
+
+    deleted = store.purge_archived("facts")
+
+    assert deleted == 1
+    assert any("wal_checkpoint" in s for s in executed), (
+        "Expected PRAGMA wal_checkpoint(TRUNCATE) to be called after purge_archived"
+    )
+
+
+def test_wal_checkpoint_skipped_when_no_rows_purged(store):
+    """purge_archived does NOT call WAL checkpoint when no rows were deleted."""
+    # No archived rows to purge
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_fact(biz_id, "pricing", "k1", "v1")  # active, not archived
+
+    wrapper, executed = _make_tracking_conn(store._conn)
+    store._conn = wrapper
+
+    deleted = store.purge_archived("facts")
+
+    assert deleted == 0
+    assert not any("wal_checkpoint" in s for s in executed), (
+        "WAL checkpoint should NOT be called when no rows were purged"
+    )
+
+
+# --- count_facts ---
+
+
+def test_count_facts_active(store):
+    """count_facts() returns the count of non-archived facts."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    store.add_fact(biz_id, "pricing", "k1", "v1")
+    store.add_fact(biz_id, "pricing", "k2", "v2")
+
+    assert store.count_facts() == 2
+    assert store.count_facts(archived=False) == 2
+
+
+def test_count_facts_archived(store):
+    """count_facts(archived=True) returns only archived facts."""
+    biz_id = store.add_business("Shop", "ecommerce")
+    f1 = store.add_fact(biz_id, "pricing", "k1", "v1")
+    store.add_fact(biz_id, "pricing", "k2", "v2")
+    store.archive("facts", f1)
+
+    assert store.count_facts(archived=True) == 1
+    assert store.count_facts(archived=False) == 1
+
+
+def test_count_facts_empty(store):
+    """count_facts() returns 0 when no facts exist."""
+    assert store.count_facts() == 0
+    assert store.count_facts(archived=True) == 0
+
+
+# --- get_recent_conversations ---
+
+
+def test_get_recent_conversations_no_dir(store):
+    """get_recent_conversations() returns empty list when no conversations dir exists."""
+    result = store.get_recent_conversations()
+    assert result == []
+
+
+def test_get_recent_conversations_with_files(store):
+    """get_recent_conversations() reads JSON files and returns summaries."""
+    import json as _json
+
+    # Create conversations directory next to the db
+    conv_dir = os.path.join(os.path.dirname(store.db_path), "conversations")
+    os.makedirs(conv_dir, exist_ok=True)
+
+    # Write two conversation files
+    conv1 = {
+        "messages": [{"role": "user", "content": "Hello world, this is a test message"}],
+        "saved_at": "2026-03-01T12:00:00",
+    }
+    conv2 = {
+        "messages": [{"role": "assistant", "content": "Hi"}, {"role": "user", "content": "Second convo"}],
+        "saved_at": "2026-03-02T12:00:00",
+    }
+
+    with open(os.path.join(conv_dir, "session-001.json"), "w") as f:
+        _json.dump(conv1, f)
+    with open(os.path.join(conv_dir, "session-002.json"), "w") as f:
+        _json.dump(conv2, f)
+
+    result = store.get_recent_conversations(limit=10)
+    assert len(result) == 2
+    assert all(isinstance(r, dict) for r in result)
+    # Should have session_id, preview, timestamp
+    for r in result:
+        assert "session_id" in r
+        assert "preview" in r
+        assert "timestamp" in r
+
+
+def test_get_recent_conversations_respects_limit(store):
+    """get_recent_conversations() respects the limit parameter."""
+    import json as _json
+
+    conv_dir = os.path.join(os.path.dirname(store.db_path), "conversations")
+    os.makedirs(conv_dir, exist_ok=True)
+
+    for i in range(5):
+        conv = {"messages": [{"role": "user", "content": f"Message {i}"}], "saved_at": f"2026-03-0{i+1}T12:00:00"}
+        with open(os.path.join(conv_dir, f"session-{i:03d}.json"), "w") as f:
+            _json.dump(conv, f)
+
+    result = store.get_recent_conversations(limit=2)
+    assert len(result) == 2

@@ -10,6 +10,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
+from starlette.background import BackgroundTask
+from starlette.responses import JSONResponse as StarletteJSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ def ensure_scheduled_workers(task_queue) -> None:
             logger.info("Removed duplicate %s task (id=%d)", task_type, dup["id"])
 
         # Ensure the kept task has the correct schedule
-        next_run = croniter(cron, datetime.now()).get_next(datetime).isoformat()
+        next_run = croniter(cron, datetime.now(timezone.utc)).get_next(datetime).replace(tzinfo=None).isoformat()
         updates: dict = {}
         if not keep.get("schedule"):
             updates["schedule"] = cron
@@ -91,9 +93,16 @@ class ModelChangeRequest(BaseModel):
     model: str
 
 
-# v1: Display-only model override, not persisted across restarts.
-# Does not affect actual agent model routing — that requires config changes.
-_model_overrides: dict[str, str] = {}
+def _get_configured_complex_model(base_dir: str | None) -> str:
+    """Load the configured complex model, falling back to builtin defaults."""
+    from merkaba.config.defaults import DEFAULT_MODELS
+    from merkaba.config.loader import load_config
+
+    config_path = os.path.join(base_dir, "config.json") if base_dir else None
+    models = load_config(path=config_path).get("models", {})
+    if isinstance(models, dict) and models.get("complex"):
+        return models["complex"]
+    return DEFAULT_MODELS["complex"]
 
 
 def _get_recent_activity(base_dir: str | None, limit: int = 5) -> list[dict]:
@@ -153,16 +162,12 @@ def _build_state(conn: HTTPConnection) -> dict:
 
     # System stats — memory facts count (across all businesses)
     try:
-        cursor = memory_store._conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM facts WHERE archived = 0")
-        facts_count = cursor.fetchone()[0]
+        facts_count = memory_store.count_facts(archived=False)
     except Exception:
         facts_count = 0
 
     try:
-        cursor = memory_store._conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM facts WHERE archived = 1")
-        archived_count = cursor.fetchone()[0]
+        archived_count = memory_store.count_facts(archived=True)
     except Exception:
         archived_count = 0
 
@@ -214,38 +219,40 @@ def _build_state(conn: HTTPConnection) -> dict:
         if t["task_type"] not in tasks_by_type:
             tasks_by_type[t["task_type"]] = t
 
+    # Batch-fetch recent runs for all tasks in a single query (avoids N+1)
+    task_ids = [t["id"] for t in tasks_by_type.values()]
+    try:
+        runs_by_task = task_queue.get_runs_for_tasks(task_ids, limit_per_task=5)
+    except Exception:
+        runs_by_task = {}
+
     for task_type, worker_cls in WORKER_REGISTRY.items():
         task_info = tasks_by_type.get(task_type)
         schedule = task_info["schedule"] if task_info else None
         next_run = task_info["next_run"] if task_info else None
         last_run = task_info["last_run"] if task_info else None
 
+        # Look up pre-fetched runs for this task
+        task_runs = runs_by_task.get(task_info["id"], []) if task_info else []
+
         # Derive last_run from most recent finished run if task field is unset
         # (covers race between background execution and heartbeat reads)
-        if not last_run and task_info:
-            try:
-                latest = task_queue.get_runs(task_info["id"])[:1]
-                if latest and latest[0].get("finished_at"):
-                    last_run = latest[0]["finished_at"]
-            except Exception:
-                pass
+        if not last_run and task_runs:
+            for r in task_runs:
+                if r.get("finished_at"):
+                    last_run = r["finished_at"]
+                    break
 
-        # Fetch recent run history (last 5)
-        run_history: list[dict] = []
-        if task_info:
-            try:
-                runs = task_queue.get_runs(task_info["id"])[:5]
-                run_history = [
-                    {
-                        "id": r["id"],
-                        "started_at": r["started_at"],
-                        "finished_at": r["finished_at"],
-                        "status": r["status"],
-                    }
-                    for r in runs
-                ]
-            except Exception:
-                pass
+        # Build run history from pre-fetched runs (already limited to 5)
+        run_history = [
+            {
+                "id": r["id"],
+                "started_at": r["started_at"],
+                "finished_at": r["finished_at"],
+                "status": r["status"],
+            }
+            for r in task_runs
+        ]
 
         workers.append({
             "id": task_type,
@@ -267,7 +274,7 @@ def _build_state(conn: HTTPConnection) -> dict:
 
     return {
         "type": "state_update",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "system": {
             "status": "online",
             "memory_facts": facts_count,
@@ -279,7 +286,7 @@ def _build_state(conn: HTTPConnection) -> dict:
             "id": "merkaba-prime",
             "name": "Merkaba",
             "role": "supervisor",
-            "model": _model_overrides.get("merkaba-prime", "qwen3.5:122b"),
+            "model": _get_configured_complex_model(getattr(conn.app.state, "merkaba_base_dir", None)),
             "status": "active",
             "tools": tools,
             "workers": [w["id"] for w in workers],
@@ -334,22 +341,11 @@ def _build_kanban(conn: HTTPConnection) -> dict:
     except Exception:
         logger.exception("Error fetching approvals for kanban")
 
-    # Recent completed and failed runs from task_runs table (last 50 each)
+    # Recent completed and failed runs via public API (last 50 each)
     completed = []
     failed = []
     try:
-        cursor = task_queue._conn.cursor()
-        cursor.execute(
-            """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at, tr.status,
-                      t.name, t.task_type
-               FROM task_runs tr
-               LEFT JOIN tasks t ON tr.task_id = t.id
-               WHERE tr.status = 'success'
-               ORDER BY tr.finished_at DESC
-               LIMIT 50"""
-        )
-        for row in cursor.fetchall():
-            r = dict(row)
+        for r in task_queue.get_recent_runs(status="success", limit=50):
             completed.append({
                 "id": r["id"],
                 "task_id": r["task_id"],
@@ -360,17 +356,7 @@ def _build_kanban(conn: HTTPConnection) -> dict:
                 "status": r["status"],
             })
 
-        cursor.execute(
-            """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at, tr.status, tr.error,
-                      t.name, t.task_type
-               FROM task_runs tr
-               LEFT JOIN tasks t ON tr.task_id = t.id
-               WHERE tr.status = 'failed'
-               ORDER BY tr.finished_at DESC
-               LIMIT 50"""
-        )
-        for row in cursor.fetchall():
-            r = dict(row)
+        for r in task_queue.get_recent_runs(status="failed", limit=50):
             failed.append({
                 "id": r["id"],
                 "task_id": r["task_id"],
@@ -396,30 +382,47 @@ def _build_kanban(conn: HTTPConnection) -> dict:
 @router.get("/state")
 async def get_control_state(request: Request):
     """Full state snapshot for initial Mission Control load."""
-    return _build_state(request)
+    return await asyncio.to_thread(_build_state, request)
 
 
 @router.get("/kanban")
 async def get_kanban_state(request: Request):
     """Kanban board state — tasks, approvals, and recent runs grouped by column."""
-    return _build_kanban(request)
+    return await asyncio.to_thread(_build_kanban, request)
 
 
 @router.post("/model")
-async def change_model(body: ModelChangeRequest):
-    """Change the model assigned to an agent."""
+async def change_model(body: ModelChangeRequest, request: Request):
+    """Change the primary complex model used by the main agent."""
     if body.agent != "merkaba-prime":
         raise HTTPException(status_code=404, detail=f"Agent '{body.agent}' not found")
-    _model_overrides[body.agent] = body.model
+
+    from merkaba.config.loader import clear_cache, load_config
+    from merkaba.config.utils import atomic_write_json
+
+    path = os.path.join(getattr(request.app.state, "merkaba_base_dir", None) or os.path.expanduser("~/.merkaba"), "config.json")
+    config = load_config(path=path, use_cache=False)
+    models = config.get("models")
+    if not isinstance(models, dict):
+        models = {}
+        config["models"] = models
+    models["complex"] = body.model
+    atomic_write_json(path, config)
+    try:
+        from merkaba.security.file_permissions import ensure_secure_permissions
+    except ImportError:
+        ensure_secure_permissions = None
+
+    if ensure_secure_permissions is not None:
+        ensure_secure_permissions(os.path.dirname(path))
+        ensure_secure_permissions(path)
+    clear_cache()
     return {"agent": body.agent, "model": body.model}
 
 
 @router.post("/worker/{worker_id}/trigger")
 async def trigger_worker(worker_id: str, request: Request):
     """Manually trigger a worker — executes it and records the run."""
-    from starlette.background import BackgroundTask
-    from starlette.responses import JSONResponse as StarletteJSONResponse
-
     from merkaba.orchestration.workers import WORKER_REGISTRY
 
     if worker_id not in WORKER_REGISTRY:
@@ -448,23 +451,52 @@ async def trigger_worker(worker_id: str, request: Request):
     task = task_queue.get_task(task_id)
     run_id = task_queue.start_run(task_id)
 
-    db_path = task_queue.db_path
+    task_db_path = task_queue.db_path
+    action_db_path = request.app.state.action_queue.db_path
+    memory_db_path = request.app.state.memory_store.db_path
+
+    def _queue_approval(action_queue, action: dict) -> None:
+        action_queue.add_action(
+            business_id=action.get("business_id") or task.get("business_id") or 0,
+            action_type=action.get("action_type", worker_id),
+            description=action.get("description", ""),
+            params=action.get("params"),
+            autonomy_level=action.get("autonomy_level", 1),
+            task_run_id=run_id,
+        )
 
     def _execute_worker():
+        from merkaba.approval.queue import ActionQueue
+        from merkaba.memory.store import MemoryStore
         from merkaba.orchestration.queue import TaskQueue
-        tq = TaskQueue(db_path=db_path)
-        worker_cls = WORKER_REGISTRY[worker_id]
-        worker = worker_cls()
+        from merkaba.orchestration.supervisor import Supervisor
+
+        tq = TaskQueue(db_path=task_db_path)
+        aq = ActionQueue(db_path=action_db_path)
+        store = MemoryStore(db_path=memory_db_path)
+        supervisor = None
         try:
-            result = worker.execute(task)
+            supervisor = Supervisor(
+                memory_store=store,
+                on_needs_approval=lambda action: _queue_approval(aq, action),
+            )
+            result = supervisor.handle_task(task)
+            status = "success" if result.get("success") else "failed"
             tq.finish_run(
-                run_id, "success", result=result.output if result else None,
+                run_id,
+                status,
+                result=result.get("output") if status == "success" else None,
+                error=result.get("error") if status == "failed" else None,
             )
         except Exception as e:
             logger.error("Manual trigger of %s failed: %s", worker_id, e)
             tq.finish_run(run_id, "failed", error=str(e))
         finally:
-            tq.update_task(task_id, last_run=datetime.now().isoformat())
+            tq.update_task(task_id, last_run=datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+            if supervisor is not None:
+                supervisor.close()
+            aq.close()
+            store.close()
             tq.close()
 
     return StarletteJSONResponse(
@@ -491,12 +523,12 @@ async def websocket_control(websocket: WebSocket):
         try:
             while True:
                 await asyncio.sleep(HEARTBEAT_INTERVAL)
-                state = _build_state(websocket)
+                state = await asyncio.to_thread(_build_state, websocket)
                 if "diagnostics" in subscriptions:
                     store = websocket.app.state.diagnostics_store
                     state["diagnostics"] = store.to_dict()
                 if "kanban" in subscriptions:
-                    state["kanban"] = _build_kanban(websocket)
+                    state["kanban"] = await asyncio.to_thread(_build_kanban, websocket)
                 await websocket.send_json(state)
         except WebSocketDisconnect:
             pass
@@ -536,7 +568,7 @@ async def websocket_control(websocket: WebSocket):
 
     try:
         # Send initial state immediately (no diagnostics yet — not subscribed)
-        state = _build_state(websocket)
+        state = await asyncio.to_thread(_build_state, websocket)
         await websocket.send_json(state)
 
         # Run heartbeat and receive concurrently

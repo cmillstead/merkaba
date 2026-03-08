@@ -1,9 +1,11 @@
 # tests/e2e/test_e2e_control.py
 """E2E tests for the Mission Control /api/control endpoints."""
 
+import json
 import os
 import sqlite3
 import sys
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -157,6 +159,11 @@ class TestControlModel:
         data = resp.json()
         assert data["model"] == "qwen3:8b"
 
+        config_path = os.path.join(app.state.merkaba_base_dir, "config.json")
+        with open(config_path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["models"]["complex"] == "qwen3:8b"
+
     def test_change_model_invalid_agent(self, app_client):
         client, app = app_client
         resp = client.post("/api/control/model", json={
@@ -169,14 +176,6 @@ class TestControlModel:
 @pytest.mark.e2e
 class TestControlIntegration:
     """Integration tests verifying model changes flow through state and WebSocket."""
-
-    @pytest.fixture(autouse=True)
-    def _reset_model_overrides(self):
-        """Clear module-level model overrides so each test starts from defaults."""
-        from merkaba.web.routes.control import _model_overrides
-        _model_overrides.clear()
-        yield
-        _model_overrides.clear()
 
     def test_state_then_model_change_reflects_in_state(self, app_client):
         client, app = app_client
@@ -506,7 +505,6 @@ class TestControlWorkerTrigger:
 
     def test_trigger_worker_failure_preserves_last_run(self, app_client):
         """Even when worker fails, last_run should be updated (finally block)."""
-        import time
         from unittest.mock import patch
         from merkaba.orchestration.workers import HealthCheckWorker
 

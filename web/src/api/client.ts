@@ -39,9 +39,10 @@ export const getDecisions = (businessId?: number) => {
 export const getLearnings = () => request<{ learnings: Learning[] }>('/api/memory/learnings');
 
 // Tasks
-export const getTasks = (status?: string) => {
+export const getTasks = async (status?: string) => {
   const params = status ? `?status=${status}` : '';
-  return request<{ tasks: Task[] }>(`/api/tasks${params}`);
+  const data = await request<{ items: Task[] }>(`/api/tasks${params}`);
+  return { tasks: data.items };
 };
 export const getTask = (id: number) => request<{ task: Task; runs: TaskRun[] }>(`/api/tasks/${id}`);
 export const createTask = (body: CreateTaskBody) => request<{ id: number; status: string }>('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
@@ -151,6 +152,7 @@ export function connectChat(options: ConnectChatOptions): ChatConnection {
 // Types
 export interface SystemStatus {
   ollama: boolean;
+  version?: string;
   databases: Record<string, number | null>;
   counts: {
     memory: Record<string, number>;
@@ -270,6 +272,11 @@ export interface ChatMessage {
   status?: string;
 }
 
+// Config
+export const getConfig = () => request<Record<string, unknown>>('/api/system/config')
+export const updateConfig = (body: Record<string, unknown>) =>
+  request<Record<string, unknown>>('/api/system/config', { method: 'PUT', body: JSON.stringify(body) })
+
 // Business Config
 export interface BusinessConfig {
   soul: string
@@ -295,4 +302,39 @@ export interface AnalyticsOverview {
 export const getAnalytics = (days?: number) => {
   const params = days ? `?days=${days}` : ''
   return request<AnalyticsOverview>(`/api/analytics/overview${params}`)
+}
+
+export const triggerWorker = (workerId: string) =>
+  request<{ status: string }>(`/api/control/worker/${workerId}/trigger`, { method: 'POST' })
+
+// Chat sessions
+export interface ChatSession {
+  id: string
+  saved_at: string | null
+  message_count: number
+  preview: string
+}
+
+export interface ChatSessionDetail {
+  messages: { role: string; content: string }[]
+}
+
+export const getChatSessions = () =>
+  request<{ sessions: ChatSession[] }>('/api/chat/sessions')
+
+export const getChatSession = (id: string) =>
+  request<ChatSessionDetail>(`/api/chat/sessions/${id}`)
+
+// File upload (uses FormData — must not set Content-Type so browser sets multipart boundary)
+export async function uploadFile(form: FormData): Promise<{ path: string }> {
+  const headers: HeadersInit = {}
+  const key = localStorage.getItem('merkaba_api_key')
+  if (key) headers['X-API-Key'] = key
+  const resp = await fetch(`${BASE}/api/upload`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
+  return resp.json()
 }

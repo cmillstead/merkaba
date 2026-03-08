@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tesseract</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+  }
+  /* Subtle grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(100,100,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(100,100,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  .container {
+    display: flex;
+    gap: 60px;
+    align-items: center;
+  }
+  svg { filter: drop-shadow(0 0 20px rgba(100,80,255,0.15)); }
+  .label {
+    color: rgba(150,140,200,0.4);
+    font-size: 11px;
+    text-align: center;
+    margin-top: 8px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div>
+    <svg id="small" width="160" height="160" viewBox="-1.6 -1.6 3.2 3.2"></svg>
+    <div class="label">tesseract</div>
+  </div>
+  <div>
+    <svg id="large" width="420" height="420" viewBox="-1.6 -1.6 3.2 3.2"></svg>
+    <div class="label">hypercube</div>
+  </div>
+</div>
+
+<script>
+// 16 vertices of a tesseract: all (±1, ±1, ±1, ±1)
+const VERTS = [];
+for (let i = 0; i < 16; i++) {
+  VERTS.push([
+    (i & 1) ? 1 : -1,
+    (i & 2) ? 1 : -1,
+    (i & 4) ? 1 : -1,
+    (i & 8) ? 1 : -1,
+  ]);
+}
+
+// 32 edges: connect vertices differing in exactly one coordinate
+const EDGES = [];
+for (let i = 0; i < 16; i++) {
+  for (let j = i + 1; j < 16; j++) {
+    let diff = 0;
+    for (let k = 0; k < 4; k++) {
+      if (VERTS[i][k] !== VERTS[j][k]) diff++;
+    }
+    if (diff === 1) EDGES.push([i, j]);
+  }
+}
+
+// 4D rotation on a plane (indices a, b)
+function rotate4(v, a, b, angle) {
+  const out = [...v];
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  out[a] = v[a] * c - v[b] * s;
+  out[b] = v[a] * s + v[b] * c;
+  return out;
+}
+
+// Perspective project 4D → 3D (w-perspective)
+function project4to3(v, d4) {
+  const w = 1 / (d4 - v[3]);
+  return [v[0] * w, v[1] * w, v[2] * w];
+}
+
+// Perspective project 3D → 2D (z-perspective)
+function project3to2(v, d3) {
+  const w = 1 / (d3 - v[2]);
+  return [v[0] * w, v[1] * w, v[2]];
+}
+
+// Inner cube = vertices with w = -1, outer cube = vertices with w = +1
+function getEdgeType(ia, ib) {
+  const wa = VERTS[ia][3], wb = VERTS[ib][3];
+  if (wa === -1 && wb === -1) return 'inner';
+  if (wa === 1 && wb === 1) return 'outer';
+  return 'cross'; // connects inner to outer
+}
+
+const COLORS = {
+  inner: '#6c63ff',
+  outer: '#00f0ff',
+  cross: '#8855dd',
+};
+
+const NS = 'http://www.w3.org/2000/svg';
+
+function setupSVG(svg) {
+  const defs = document.createElementNS(NS, 'defs');
+
+  // Orb gradient
+  const id = svg.id;
+  const orbGrad = document.createElementNS(NS, 'radialGradient');
+  orbGrad.id = `${id}-orb`;
+  [
+    ['0%',   'rgba(230,220,255,1)'],
+    ['8%',   'rgba(180,160,255,0.95)'],
+    ['20%',  'rgba(140,120,245,0.7)'],
+    ['38%',  'rgba(90,70,210,0.4)'],
+    ['60%',  'rgba(50,38,150,0.15)'],
+    ['100%', 'rgba(25,20,80,0.0)'],
+  ].forEach(([off, col]) => {
+    const st = document.createElementNS(NS, 'stop');
+    st.setAttribute('offset', off);
+    st.setAttribute('stop-color', col);
+    orbGrad.appendChild(st);
+  });
+  defs.appendChild(orbGrad);
+  svg.appendChild(defs);
+
+  const backGroup = document.createElementNS(NS, 'g');
+  const orbGroup = document.createElementNS(NS, 'g');
+  const frontGroup = document.createElementNS(NS, 'g');
+  svg.appendChild(backGroup);
+  svg.appendChild(orbGroup);
+  svg.appendChild(frontGroup);
+
+  // Orb circle
+  const orbCircle = document.createElementNS(NS, 'circle');
+  orbCircle.setAttribute('cx', '0');
+  orbCircle.setAttribute('cy', '0');
+  orbCircle.setAttribute('r', '0.6');
+  orbCircle.setAttribute('fill', `url(#${id}-orb)`);
+  orbGroup.appendChild(orbCircle);
+
+  const isSmall = svg.id === 'small';
+  const strokeWidth = isSmall ? '0.035' : '0.02';
+  const dotRadius = isSmall ? '0.05' : '0.035';
+
+  // Create edge lines
+  const edgeEls = EDGES.map(([ia, ib]) => {
+    const line = document.createElementNS(NS, 'line');
+    const type = getEdgeType(ia, ib);
+    line.setAttribute('stroke', COLORS[type]);
+    line.setAttribute('stroke-width', strokeWidth);
+    line.setAttribute('stroke-linecap', 'round');
+    return { line, ia, ib, type };
+  });
+
+  // Create vertex dots
+  const dotEls = VERTS.map((_, idx) => {
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('r', dotRadius);
+    const w = VERTS[idx][3];
+    circle.setAttribute('fill', w === -1 ? COLORS.inner : COLORS.outer);
+    return { circle, idx };
+  });
+
+  return { backGroup, orbGroup, frontGroup, orbCircle, edgeEls, dotEls };
+}
+
+// Setup once, then animate
+const smallSVG = document.getElementById('small');
+const largeSVG = document.getElementById('large');
+
+const smallEls = setupSVG(smallSVG);
+const largeEls = setupSVG(largeSVG);
+
+let angle = 0;
+const d4 = 2.5;  // 4D camera distance — closer = more dramatic fold
+const d3 = 5.0;  // 3D camera distance — further = less 3D distortion
+const scale = 4.8;
+
+function render() {
+  angle += 0.006;
+
+  const projected = VERTS.map(v => {
+    let r = rotate4(v, 0, 3, angle);        // XW rotation — the "tesseract fold"
+    r = rotate4(r, 1, 2, angle * 0.6);      // YZ rotation
+    r = rotate4(r, 0, 2, angle * 0.3);      // XZ gentle tilt
+    const p3 = project4to3(r, d4);
+    const [x, y, z] = project3to2(p3, d3);
+    return [x * scale, y * scale, z];
+  });
+
+  ;[smallEls, largeEls].forEach(({ backGroup, frontGroup, orbCircle, edgeEls, dotEls }) => {
+    while (backGroup.firstChild) backGroup.removeChild(backGroup.firstChild);
+    while (frontGroup.firstChild) frontGroup.removeChild(frontGroup.firstChild);
+
+    edgeEls.forEach(e => {
+      const pa = projected[e.ia];
+      const pb = projected[e.ib];
+      const avgZ = (pa[2] + pb[2]) / 2;
+      const opacity = 0.25 + 0.6 * ((avgZ + 1.5) / 3.0);
+
+      e.line.setAttribute('x1', String(pa[0]));
+      e.line.setAttribute('y1', String(pa[1]));
+      e.line.setAttribute('x2', String(pb[0]));
+      e.line.setAttribute('y2', String(pb[1]));
+      e.line.setAttribute('stroke-opacity', String(Math.max(0.1, Math.min(1, opacity))));
+
+      (avgZ > 0 ? frontGroup : backGroup).appendChild(e.line);
+    });
+
+    dotEls.forEach(d => {
+      const p = projected[d.idx];
+      d.circle.setAttribute('cx', String(p[0]));
+      d.circle.setAttribute('cy', String(p[1]));
+      const opacity = 0.3 + 0.7 * ((p[2] + 1.5) / 3.0);
+      d.circle.setAttribute('fill-opacity', String(Math.max(0.15, Math.min(1, opacity))));
+
+      (p[2] > 0 ? frontGroup : backGroup).appendChild(d.circle);
+    });
+
+    const pulse = 0.75 + 0.1 * Math.sin(angle * 2.5);
+    orbCircle.setAttribute('r', String(pulse));
+  });
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

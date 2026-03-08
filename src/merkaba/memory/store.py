@@ -4,8 +4,10 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable
+
+from merkaba.paths import db_path as _db_path
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 class MemoryStore:
     """SQLite-backed structured memory for Merkaba."""
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
+    db_path: str = field(default_factory=lambda: _db_path("memory"))
     contradiction_detector: Any = field(default=None, repr=False)
     on_event: Callable[[str, dict], None] | None = field(default=None, repr=False)
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
@@ -198,7 +200,7 @@ class MemoryStore:
         self._conn.commit()
 
     def _now(self) -> str:
-        return datetime.now().isoformat()
+        return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # --- Business CRUD ---
 
@@ -614,7 +616,7 @@ class MemoryStore:
         from datetime import timedelta
 
         # Deduplication: skip insert if an identical episode exists within the last hour.
-        window_start = (datetime.now() - timedelta(hours=1)).isoformat()
+        window_start = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None).isoformat()
         dup_cursor = self._conn.cursor()
         dup_cursor.execute(
             """SELECT id FROM episodes
@@ -710,7 +712,7 @@ class MemoryStore:
             raise ValueError("max_age_days must be at least 1")
         from datetime import timedelta
 
-        cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).replace(tzinfo=None).isoformat()
         cursor = self._conn.execute(
             "DELETE FROM episodes WHERE created_at < ?", (cutoff,)
         )
@@ -787,6 +789,8 @@ class MemoryStore:
         except Exception:
             self._conn.execute("ROLLBACK")
             raise
+        # Force WAL checkpoint so deleted data does not linger in the WAL file.
+        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return counts
 
     def purge_archived(self, table: str, older_than_days: int | None = None) -> int:
@@ -812,7 +816,11 @@ class MemoryStore:
                 f"DELETE FROM {table} WHERE archived = 1"
             )
         self._conn.commit()
-        return cursor.rowcount
+        deleted = cursor.rowcount
+        if deleted:
+            # Force WAL checkpoint so purged data does not linger in the WAL file.
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return deleted
 
     # --- Lifecycle ---
 
@@ -877,7 +885,7 @@ class MemoryStore:
         """
         from datetime import timedelta
 
-        cutoff = (datetime.now() - timedelta(days=stale_days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).replace(tzinfo=None).isoformat()
         total_decayed = 0
         total_archived = 0
 
@@ -898,6 +906,65 @@ class MemoryStore:
 
         self._conn.commit()
         return {"decayed": total_decayed, "archived": total_archived}
+
+    # --- Aggregate Queries ---
+
+    def count_facts(self, archived: bool = False) -> int:
+        """Return the total number of facts, optionally filtering by archived status.
+
+        Args:
+            archived: If False (default), count only active (non-archived) facts.
+                      If True, count only archived facts.
+        """
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM facts WHERE archived = ?",
+            (1 if archived else 0,),
+        )
+        return cursor.fetchone()[0]
+
+    def get_recent_conversations(self, limit: int = 10) -> list[dict]:
+        """Return recent conversation summaries from the conversations directory.
+
+        Reads the latest JSON files from ~/.merkaba/conversations/ and returns
+        a list of dicts with session_id, preview, and timestamp.
+        """
+        import json as _json
+        from pathlib import Path
+
+        base_dir = os.path.dirname(self.db_path)
+        conv_dir = Path(base_dir) / "conversations"
+        if not conv_dir.is_dir():
+            return []
+
+        try:
+            files = sorted(
+                (f for f in conv_dir.iterdir() if f.suffix == ".json"),
+                key=lambda f: f.name,
+                reverse=True,
+            )[:limit]
+        except OSError:
+            return []
+
+        results: list[dict] = []
+        for f in files:
+            try:
+                data = _json.loads(f.read_text())
+                messages = data.get("messages", [])
+                preview = ""
+                for msg in messages:
+                    if msg.get("role") == "user":
+                        content = msg.get("content", "")
+                        preview = content[:80]
+                        break
+                results.append({
+                    "session_id": f.stem,
+                    "preview": preview,
+                    "timestamp": data.get("saved_at"),
+                })
+            except (OSError, _json.JSONDecodeError, KeyError):
+                continue
+        return results
 
     # --- Stats ---
 

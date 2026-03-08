@@ -3,21 +3,31 @@ import json
 import os
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+
+from merkaba.paths import subdir as _subdir
+
+try:
+    from merkaba.security.file_permissions import ensure_secure_permissions as _secure
+except ImportError:  # pragma: no cover
+    _secure = None
 
 
 @dataclass
 class ConversationLog:
     """Persistent conversation logging."""
 
-    storage_dir: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/conversations"))
-    session_id: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d-%H%M%S"))
+    storage_dir: str = field(default_factory=lambda: _subdir("conversations"))
+    session_id: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
     encryptor: Any = field(default=None)
     _history: list[dict[str, Any]] = field(default_factory=list, init=False)
+    _tree_data: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         os.makedirs(self.storage_dir, exist_ok=True)
+        if _secure:
+            _secure(self.storage_dir)
         self._load()
 
     @property
@@ -37,15 +47,18 @@ class ConversationLog:
                     raw = self.encryptor.decrypt(raw)
                 data = json.loads(raw)
                 self._history = data.get("messages", [])
-            except (json.JSONDecodeError, OSError, Exception):
+                tree_data = data.get("tree")
+                self._tree_data = tree_data if isinstance(tree_data, dict) else None
+            except (json.JSONDecodeError, OSError, ValueError, Exception):
                 self._history = []
+                self._tree_data = None
 
     def append(self, role: str, content: str, metadata: dict | None = None):
         """Append a message to the conversation."""
         entry = {
             "role": role,
             "content": content,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         if metadata:
             entry["metadata"] = metadata
@@ -59,13 +72,16 @@ class ConversationLog:
             return self._history[-limit:]
         return self._history.copy()
 
-    def save(self):
+    def save(self, tree: "ConversationTree | None" = None):
         """Persist conversation to disk, encrypting if encryptor is available."""
         data = {
             "session_id": self.session_id,
             "messages": self._history,
-            "saved_at": datetime.now().isoformat(),
+            "saved_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
+        if tree is not None:
+            data["tree"] = tree.to_serializable()
+            self._tree_data = data["tree"]
         content = json.dumps(data, indent=2)
         if self.encryptor:
             content = self.encryptor.encrypt(content)
@@ -73,10 +89,31 @@ class ConversationLog:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+        if _secure:
+            _secure(self._filepath)
+
+    def bind_session(self, session_id: str):
+        """Rebind this log to a different session and load any persisted history."""
+        if self.session_id == session_id:
+            return
+        self.session_id = session_id
+        self._history = []
+        self._tree_data = None
+        self._load()
+
+    def get_tree(self) -> "ConversationTree | None":
+        """Return the persisted conversation tree if present."""
+        if self._tree_data is None:
+            return None
+        try:
+            return ConversationTree.from_serializable(self._tree_data)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def clear(self):
         """Clear conversation history."""
         self._history = []
+        self._tree_data = None
 
 
 @dataclass
@@ -96,7 +133,7 @@ class Message:
 class ConversationTree:
     """Tree-structured conversation history supporting branching and pruning."""
 
-    session_id: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d-%H%M%S"))
+    session_id: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
     messages: dict[str, Message] = field(default_factory=dict)
     current_leaf_id: str | None = None
 
@@ -108,7 +145,7 @@ class ConversationTree:
             parent_id=self.current_leaf_id,
             role=role,
             content=content,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             metadata=metadata or {},
         )
         self.messages[msg_id] = msg

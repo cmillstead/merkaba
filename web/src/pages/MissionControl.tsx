@@ -4,11 +4,16 @@ import HudStatusBar from '../components/HudStatusBar'
 import ConstellationMap from '../components/ConstellationMap'
 import AgentDetailView from '../components/AgentDetailView'
 import DiagnosticsView from '../components/DiagnosticsView'
+import DashboardView from '../components/DashboardView'
 import KanbanBoard from '../components/KanbanBoard'
 import WorkerDetailView from '../components/WorkerDetailView'
 import CommandPalette from '../components/CommandPalette'
+import { useNotificationDetection } from '../hooks/useNotifications'
+import { getConfig, triggerWorker, updateConfig } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 type View =
+  | { mode: 'dashboard' }
   | { mode: 'constellation' }
   | { mode: 'agent'; nodeId: string }
   | { mode: 'worker'; workerId: string }
@@ -17,6 +22,8 @@ type View =
 
 export default function MissionControl() {
   const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
+  useNotificationDetection(state)
+  const { showToast } = useToast()
   const [view, setView] = useState<View>({ mode: 'constellation' })
   const [viewReady, setViewReady] = useState(false)
 
@@ -40,14 +47,25 @@ export default function MissionControl() {
   }, [])
 
   const handleModelChange = useCallback((model: string) => {
-    fetch('/api/control/model', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: 'merkaba-prime', model }),
-    })
-  }, [])
+    getConfig()
+      .then(cfg => {
+        const currentModels = typeof cfg.models === 'object' && cfg.models !== null
+          ? cfg.models as Record<string, unknown>
+          : {}
+        return updateConfig({
+          models: {
+            ...currentModels,
+            complex: model,
+          },
+        })
+      })
+      .catch(err => {
+        showToast(err instanceof Error ? err.message : 'Failed to change model', 'error')
+      })
+  }, [showToast])
 
   const commands = useMemo(() => [
+    { id: 'nav-dashboard', label: 'Go to Dashboard', action: () => setView({ mode: 'dashboard' }) },
     { id: 'nav-constellation', label: 'Go to Constellation', action: () => setView({ mode: 'constellation' }) },
     { id: 'nav-kanban', label: 'Go to Kanban', action: () => setView({ mode: 'kanban' }) },
     { id: 'nav-diagnostics', label: 'Go to Diagnostics', action: () => setView({ mode: 'diagnostics' }) },
@@ -59,14 +77,20 @@ export default function MissionControl() {
     ...state.workers.map(w => ({
       id: `trigger-${w.id}`,
       label: `Trigger Worker: ${w.name}`,
-      action: () => { fetch(`/api/control/worker/${w.id}/trigger`, { method: 'POST' }) },
+      action: () => { triggerWorker(w.id).catch(err => {
+        showToast(err instanceof Error ? err.message : 'Failed to trigger worker', 'error')
+      }) },
     })),
-  ], [state.workers])
+  ], [state.workers, showToast])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.key === 'd' || e.key === 'D') {
+      if (e.key === 'h' || e.key === 'H') {
+        if (view.mode !== 'dashboard') {
+          setView({ mode: 'dashboard' })
+        }
+      } else if (e.key === 'd' || e.key === 'D') {
         if (view.mode !== 'diagnostics') {
           setView({ mode: 'diagnostics' })
         }
@@ -89,6 +113,10 @@ export default function MissionControl() {
       <HudStatusBar system={state.system} connected={connected} />
 
       <div className={`mc-view-wrapper ${viewReady ? 'mc-view-active' : 'mc-view-enter'}`}>
+        {view.mode === 'dashboard' && (
+          <DashboardView state={state} connected={connected} />
+        )}
+
         {view.mode === 'constellation' && (
           <ConstellationMap
             agents={state.agents}
@@ -142,6 +170,7 @@ export default function MissionControl() {
 
       <div className="command-bar">
         <span className="command-hint">Ctrl+/ Command Palette</span>
+        <span className="command-hint">H Dashboard</span>
         <span className="command-hint">D Diagnostics</span>
         <span className="command-hint">K Kanban</span>
         <span className="command-hint">C Constellation</span>

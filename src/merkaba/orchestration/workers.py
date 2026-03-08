@@ -44,7 +44,7 @@ class Worker:
     """Base class for task-executing workers. Single-shot: receive task, do work, return result."""
 
     business_id: int | None = None
-    model: str = "qwen3.5:122b"
+    model: str = None
     max_iterations: int = 5
     memory: Any = None  # MemoryRetrieval, imported lazily
     tools: Any = None  # ToolRegistry, imported lazily
@@ -57,6 +57,9 @@ class Worker:
     def _get_llm(self):
         if self._llm is None:
             from merkaba.llm import LLMClient
+            if self.model is None:
+                from merkaba.config.defaults import DEFAULT_MODELS
+                self.model = DEFAULT_MODELS["complex"]
             self._llm = LLMClient(model=self.model)
         return self._llm
 

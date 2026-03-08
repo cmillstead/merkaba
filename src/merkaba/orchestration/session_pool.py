@@ -105,7 +105,7 @@ class SessionPool:
             return PAIRING_PROMPT
 
         agent = self._get_or_create_agent(session_id)
-        agent.session_id = session_id
+        agent.attach_session(session_id)
 
         def handler(msg):
             return agent.run(msg, **kwargs)
@@ -142,3 +142,9 @@ class SessionPool:
     def active_session_count(self) -> int:
         with self._lock:
             return len(self._agents)
+
+    def set_active_skill(self, session_id: str, skill: Any) -> None:
+        """Set the active skill for a session's agent, creating it if needed."""
+        agent = self._get_or_create_agent(session_id)
+        agent.attach_session(session_id)
+        agent.active_skill = skill

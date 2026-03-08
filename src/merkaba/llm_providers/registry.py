@@ -11,7 +11,9 @@ from merkaba.llm_providers.base import LLMProvider, ProviderResponse
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
+from merkaba.paths import config_path as _config_path
+
+CONFIG_PATH = _config_path()
 
 # Cached provider instances (lazy-init)
 _providers: dict[str, LLMProvider] = {}
@@ -19,12 +21,10 @@ _providers: dict[str, LLMProvider] = {}
 
 def _load_cloud_config(config_path: str = CONFIG_PATH) -> dict[str, dict[str, str]]:
     """Load cloud_providers section from config.json."""
-    try:
-        with open(config_path) as f:
-            data = json.load(f)
-        return data.get("cloud_providers", {})
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return {}
+    from merkaba.config.loader import load_config
+
+    data = load_config(path=config_path, use_cache=False)
+    return data.get("cloud_providers", {})
 
 
 def _get_api_key(provider_name: str, provider_config: dict[str, str]) -> str | None:

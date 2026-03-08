@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface Props {
   size?: number
@@ -24,8 +24,8 @@ const EDGES: [number, number][] = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]]
 
 const STATUS_COLORS = {
   active: { up: '#6c63ff', down: '#00f0ff' },
-  idle: { up: '#3a3a5c', down: '#2a3a4c' },
-  scheduled: { up: '#4a4a6c', down: '#3a4a5c' },
+  idle: { up: '#6a6a8c', down: '#5a6a7c' },
+  scheduled: { up: '#707092', down: '#607080' },
   error: { up: '#ff6b35', down: '#ff6b35' },
 }
 
@@ -56,6 +56,20 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
   const elementsRef = useRef<GlyphElements | null>(null)
   // Track previous size so we know when to rebuild the cache
   const prevSizeRef = useRef<number | undefined>(undefined)
+
+  // Respect prefers-reduced-motion for WCAG 2.1 AA compliance
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false
+  )
+
+  useEffect(() => {
+    const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
 
   // Build (or rebuild) the static SVG structure — called once on mount and when size changes.
   // Status/color changes are handled separately via updateColors() to avoid DOM teardown.
@@ -159,8 +173,9 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
     }
   }, [size, status])
 
-  // Animation loop — depends only on speed; runs independently of status/size re-renders.
+  // Animation loop — depends on speed and reducedMotion; runs independently of status/size re-renders.
   // Uses elementsRef to access DOM nodes without recreating them.
+  // When reducedMotion is true, renders a single static frame instead of looping.
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
@@ -168,22 +183,18 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
     const tiltX = 0.35
     const baseSpeed = 0.008
 
-    function render() {
+    function drawFrame(animate: boolean) {
       const els = elementsRef.current
       if (!els) {
-        rafRef.current = requestAnimationFrame(render)
+        if (animate) rafRef.current = requestAnimationFrame(() => drawFrame(true))
         return
       }
 
-      angleRef.current += baseSpeed * speed
+      if (animate) angleRef.current += baseSpeed * speed
       const a = angleRef.current
 
-      function xform(verts: [number, number, number][]) {
-        return verts.map(v => rotateX(rotateY(v, a), tiltX))
-      }
-
-      const up = xform(UP_VERTS)
-      const down = xform(DOWN_VERTS)
+      const up = UP_VERTS.map(v => rotateX(rotateY(v, a), tiltX))
+      const down = DOWN_VERTS.map(v => rotateX(rotateY(v, a), tiltX))
       const { backGroup, frontGroup, orbCircle, edges, dots } = els
 
       // Clear z-sorted groups each frame — only group membership changes,
@@ -215,21 +226,27 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
         (p[2] > 0 ? frontGroup : backGroup).appendChild(d.circle)
       })
 
-      // Subtle pulse on orb radius
-      const pulse = 0.87 + 0.06 * Math.sin(a * 2)
+      // Subtle pulse on orb radius (static when reduced motion)
+      const pulse = reducedMotion ? 0.87 : 0.87 + 0.06 * Math.sin(a * 2)
       orbCircle.setAttribute('r', String(pulse))
 
-      rafRef.current = requestAnimationFrame(render)
+      if (animate) rafRef.current = requestAnimationFrame(() => drawFrame(true))
     }
 
-    // Cancel any existing RAF before starting a new loop (speed changed)
+    // Cancel any existing RAF before starting a new loop
     if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current)
-    rafRef.current = requestAnimationFrame(render)
+
+    if (reducedMotion) {
+      // Render one static frame at the current angle — no animation loop
+      drawFrame(false)
+    } else {
+      rafRef.current = requestAnimationFrame(() => drawFrame(true))
+    }
 
     return () => {
       if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current)
     }
-  }, [speed])
+  }, [speed, reducedMotion])
 
   return (
     <svg

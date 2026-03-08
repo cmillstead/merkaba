@@ -7,7 +7,7 @@ and inserting a summary node before the kept turns.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from merkaba.memory.context_budget import ContextWindowConfig, estimate_tokens
 from merkaba.memory.conversation import ConversationTree, Message
@@ -93,7 +93,7 @@ def compress_context(
         parent_id=first_kept.parent_id,
         role="system",
         content=f"[context optimized] {summary_text}",
-        timestamp=datetime.now().isoformat(),
+        timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         metadata={"type": "compression_summary"},
     )
     tree.messages[summary_msg.id] = summary_msg

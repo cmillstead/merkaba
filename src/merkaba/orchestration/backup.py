@@ -1,11 +1,20 @@
 # src/merkaba/orchestration/backup.py
+import json
 import logging
 import os
 import shutil
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+from merkaba.config.utils import deep_strip_secrets
+from merkaba.paths import merkaba_home as _merkaba_home
+
+try:
+    from merkaba.security.file_permissions import ensure_secure_permissions
+except ImportError:  # pragma: no cover
+    ensure_secure_permissions = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +57,7 @@ class BackupManager:
     """Manages backup and restore of Merkaba's SQLite databases and config."""
 
     merkaba_dir: Path = field(
-        default_factory=lambda: Path(os.path.expanduser("~/.merkaba"))
+        default_factory=lambda: Path(_merkaba_home())
     )
     backup_dir: Path = field(default=None)
     max_backups: int = 7
@@ -69,9 +78,14 @@ class BackupManager:
                 ``keyring`` packages; if either is missing a warning is logged and
                 the backup proceeds without encryption.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         dest = self.backup_dir / timestamp
         dest.mkdir(parents=True, exist_ok=True)
+
+        # Secure permissions on the backup directory tree.
+        if ensure_secure_permissions is not None:
+            ensure_secure_permissions(str(self.backup_dir))
+            ensure_secure_permissions(str(dest))
 
         # Resolve encryption key once (if requested).
         enc_key: bytes | None = None
@@ -85,6 +99,12 @@ class BackupManager:
                     exc,
                 )
                 enc_key = None
+
+        if enc_key is None:
+            logger.warning(
+                "Creating unencrypted backup. Sensitive data in databases "
+                "will not be encrypted at rest."
+            )
 
         # Backup SQLite databases using online backup API
         for db_name in DBS_TO_BACKUP:
@@ -108,11 +128,19 @@ class BackupManager:
                 dst_path = _encrypt_file(dst_path, enc_key)
             logger.info("Backed up %s", dst_path.name)
 
-        # Copy config.json if present
+        # Copy config.json if present, stripping sensitive keys
         config_src = self.merkaba_dir / "config.json"
         if config_src.exists():
             config_dst = dest / "config.json"
-            shutil.copy2(str(config_src), str(config_dst))
+            try:
+                raw_config = json.loads(config_src.read_text())
+                stripped = deep_strip_secrets(raw_config)
+                config_dst.write_text(json.dumps(stripped, indent=2))
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    "Skipping config backup — could not strip secrets: %s",
+                    exc,
+                )
             if enc_key is not None:
                 _encrypt_file(config_dst, enc_key)
 

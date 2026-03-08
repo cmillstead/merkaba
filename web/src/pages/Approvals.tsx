@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { getApprovals, approveAction, denyAction } from '../api/client'
 import type { Approval } from '../api/client'
 import { useToast } from '../context/ToastContext'
+import ApprovalConfirmDialog from '../components/ApprovalConfirmDialog'
+import type { ApprovalAction } from '../components/ApprovalConfirmDialog'
 
 interface ConfirmAction {
   id: number
-  type: 'approve' | 'deny'
+  type: ApprovalAction
   description: string
 }
 
@@ -15,44 +17,40 @@ export default function Approvals() {
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [loading, setLoading] = useState(true)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
-  const [totpCode, setTotpCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const { showToast } = useToast()
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true)
     const status = tab === 'pending' ? 'pending' : undefined
     getApprovals(status)
       .then(d => setApprovals(d.approvals))
       .catch(err => showToast(err.message || 'An error occurred', 'error'))
       .finally(() => setLoading(false))
-  }
+  }, [tab, showToast])
 
-  useEffect(() => { load() }, [tab])
+  useEffect(() => { load() }, [load])
 
-  function openConfirm(id: number, type: 'approve' | 'deny', description: string) {
+  function openConfirm(id: number, type: ApprovalAction, description: string) {
     setConfirmAction({ id, type, description })
-    setTotpCode('')
   }
 
-  function cancelConfirm() {
-    setConfirmAction(null)
-    setTotpCode('')
-  }
+  const cancelConfirm = useCallback(() => {
+    if (!submitting) setConfirmAction(null)
+  }, [submitting])
 
-  async function handleConfirm() {
+  const handleConfirm = useCallback(async (totp?: string) => {
     if (!confirmAction) return
     setSubmitting(true)
     try {
       if (confirmAction.type === 'approve') {
-        await approveAction(confirmAction.id, totpCode || undefined)
+        await approveAction(confirmAction.id, totp)
         showToast('Action approved', 'success')
-      } else {
+      } else if (confirmAction.type === 'reject') {
         await denyAction(confirmAction.id)
-        showToast('Action denied', 'success')
+        showToast('Action rejected', 'success')
       }
       setConfirmAction(null)
-      setTotpCode('')
       load()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An error occurred'
@@ -60,7 +58,7 @@ export default function Approvals() {
     } finally {
       setSubmitting(false)
     }
-  }
+  }, [confirmAction, showToast, load])
 
   function decisionBadge(status: string) {
     switch (status) {
@@ -90,44 +88,15 @@ export default function Approvals() {
         </button>
       </div>
 
-      {confirmAction && (
-        <div className="card" style={{ marginBottom: 16, padding: 16, border: '1px solid var(--border)', background: 'var(--surface)' }}>
-          <p style={{ marginBottom: 8, fontWeight: 500 }}>
-            {confirmAction.type === 'approve' ? 'Approve' : 'Deny'} this action?
-          </p>
-          <p style={{ marginBottom: 12, color: 'var(--text-dim)', fontSize: 13 }}>
-            {confirmAction.description}
-          </p>
-          {confirmAction.type === 'approve' && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>
-                TOTP Code (optional — required if 2FA is enabled)
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="6-digit code"
-                value={totpCode}
-                onChange={e => setTotpCode(e.target.value)}
-                style={{ width: 140, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }}
-              />
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              className={`btn ${confirmAction.type === 'approve' ? 'btn-green' : 'btn-red'}`}
-              onClick={handleConfirm}
-              disabled={submitting}
-            >
-              {submitting ? 'Submitting...' : confirmAction.type === 'approve' ? 'Confirm Approve' : 'Confirm Deny'}
-            </button>
-            <button className="btn btn-dim" onClick={cancelConfirm} disabled={submitting}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <ApprovalConfirmDialog
+        open={confirmAction !== null}
+        submitting={submitting}
+        action={confirmAction?.type ?? 'approve'}
+        itemDescription={confirmAction?.description ?? ''}
+        requireTotp={confirmAction?.type === 'approve'}
+        onConfirm={handleConfirm}
+        onCancel={cancelConfirm}
+      />
 
       {loading ? (
         <div className="empty">Loading...</div>
@@ -169,7 +138,7 @@ export default function Approvals() {
                         </button>
                         <button
                           className="btn btn-red"
-                          onClick={() => openConfirm(a.id, 'deny', a.description)}
+                          onClick={() => openConfirm(a.id, 'reject', a.description)}
                           disabled={submitting}
                           title="Deny"
                         >

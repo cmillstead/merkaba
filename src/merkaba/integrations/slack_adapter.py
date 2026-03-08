@@ -264,7 +264,8 @@ class SlackAdapter(IntegrationAdapter):
         from merkaba.orchestration.session import build_session_id
         session_id = build_session_id("slack", user_id, topic_id=channel_id)
 
-        logger.info("Slack message from %s in %s: %s", user_id, channel_id, text[:80])
+        logger.info("Slack message from %s in %s (length=%d)", user_id, channel_id, len(text))
+        logger.debug("Slack message content: %s", text[:80])
 
         # Route through pool or callback
         if self._pool is not None:

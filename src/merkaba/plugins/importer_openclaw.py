@@ -38,8 +38,9 @@ class OpenClawMigrator:
     """Migrates OpenClaw workspaces to Merkaba business directories."""
 
     def __init__(self, merkaba_home: Path | None = None):
+        from merkaba.paths import merkaba_home as _merkaba_home
         self.merkaba_home = (
-            Path(merkaba_home) if merkaba_home else Path("~/.merkaba").expanduser()
+            Path(merkaba_home) if merkaba_home else Path(_merkaba_home())
         )
 
     def detect(self, workspace_path: Path) -> bool:

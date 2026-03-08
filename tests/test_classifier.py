@@ -429,19 +429,10 @@ class TestInputClassifierFailMode:
         classifier2 = InputClassifier(classifier_required=False, fail_mode="closed")
         assert classifier2.fail_mode == "closed"
 
-    @patch("builtins.open")
+    @patch("merkaba.config.loader.load_config", return_value={"security": {"classifier_fail_mode": "closed"}})
     @patch("merkaba.security.classifier.InputClassifier._get_client")
-    def test_fail_mode_read_from_config(self, mock_get_client, mock_open):
+    def test_fail_mode_read_from_config(self, mock_get_client, mock_load):
         """fail_mode is read from config.json when not explicitly provided."""
-        import json
-
-        config_data = json.dumps({"security": {"classifier_fail_mode": "closed"}})
-        mock_open.return_value.__enter__ = lambda s: s
-        mock_open.return_value.__exit__ = MagicMock(return_value=False)
-        mock_open.return_value.read = MagicMock(return_value=config_data)
-
-        # Simulate json.load reading from the mock file
-        with patch("json.load", return_value={"security": {"classifier_fail_mode": "closed"}}):
-            classifier = InputClassifier()  # no explicit fail_mode
+        classifier = InputClassifier()  # no explicit fail_mode
 
         assert classifier.fail_mode == "closed"

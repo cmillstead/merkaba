@@ -18,12 +18,14 @@ logger = logging.getLogger(__name__)
 # Directories created inside MERKABA_HOME
 _SUBDIRS = ("conversations", "plugins", "businesses", "backups", "logs")
 
+from merkaba.config.defaults import DEFAULT_MODELS
+
 # Default config.json contents
 DEFAULT_CONFIG: dict = {
     "models": {
-        "complex": "qwen3.5:122b",
-        "simple": "qwen3:8b",
-        "classifier": "qwen3:4b",
+        "complex": DEFAULT_MODELS["complex"],
+        "simple": DEFAULT_MODELS["simple"],
+        "classifier": DEFAULT_MODELS["classifier"],
     },
     "auto_approve_level": "MODERATE",
 }
@@ -63,7 +65,8 @@ def run_init(
         InitResult summarizing what was created.
     """
     if merkaba_home is None:
-        merkaba_home = Path(os.path.expanduser("~/.merkaba"))
+        from merkaba.paths import merkaba_home as _merkaba_home
+        merkaba_home = Path(_merkaba_home())
 
     result = InitResult(home_dir=merkaba_home)
 

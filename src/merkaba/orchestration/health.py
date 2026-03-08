@@ -4,6 +4,8 @@ import shutil
 import sqlite3
 from dataclasses import dataclass, field
 
+from merkaba.paths import merkaba_home as _merkaba_home
+
 
 @dataclass
 class HealthCheck:
@@ -38,7 +40,7 @@ class HealthReport:
 class SystemHealthMonitor:
     """Checks system health: Ollama, databases, disk space, etc."""
 
-    merkaba_dir: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba"))
+    merkaba_dir: str = field(default_factory=_merkaba_home)
     ollama_url: str = "http://localhost:11434"
 
     def check_ollama(self) -> HealthCheck:

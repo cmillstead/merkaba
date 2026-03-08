@@ -3,7 +3,7 @@ import tempfile
 import os
 import json
 import pytest
-from merkaba.memory import ConversationLog
+from merkaba.memory import ConversationLog, ConversationTree
 
 
 def test_conversation_log_creation():
@@ -44,6 +44,30 @@ def test_conversation_log_clear():
         log.append("user", "Hello")
         log.clear()
         assert len(log.get_history()) == 0
+
+
+def test_conversation_log_persists_tree():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tree = ConversationTree(session_id="test-session")
+        root = tree.append("user", "A")
+        tree.append("assistant", "B")
+        tree.branch_from(root.id)
+        tree.append("assistant", "C")
+
+        log = ConversationLog(storage_dir=tmpdir, session_id="test-session")
+        log.append("user", "A")
+        log.append("assistant", "B")
+        log.append("assistant", "C")
+        log.save(tree=tree)
+
+        reloaded = ConversationLog(storage_dir=tmpdir, session_id="test-session")
+        restored = reloaded.get_tree()
+        assert restored is not None
+        assert restored.current_leaf_id == tree.current_leaf_id
+        assert len(restored.messages) == len(tree.messages)
+
+        branch = restored.get_active_branch()
+        assert [msg.content for msg in branch] == ["A", "C"]
 
 
 def test_conversation_log_get_history_with_limit():

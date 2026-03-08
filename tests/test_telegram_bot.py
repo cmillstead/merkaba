@@ -301,19 +301,12 @@ class TestMerkabaBot:
         msg = update.message.reply_text.call_args[0][0]
         assert "not authorized" in msg.lower()
 
-    # --- _get_agent fallback for skills ---
+    # --- SessionPool skill activation path ---
 
-    def test_get_agent_lazy_init(self):
-        """_get_agent should create fallback agent on first call and reuse it."""
+    def test_pool_skill_activation_api_exists(self):
+        """Skill activation should go through the SessionPool API."""
         bot = MerkabaBot(token="test", allowed_user_ids=[111])
-        assert not hasattr(bot, "_fallback_agent")
-
-        with patch("merkaba.agent.Agent") as MockAgent:
-            agent1 = bot._get_agent()
-            agent2 = bot._get_agent()
-
-        assert agent1 is agent2
-        MockAgent.assert_called_once()
+        assert hasattr(bot.pool, "set_active_skill")
 
     def test_pool_initialized_on_creation(self):
         """SessionPool should be initialized in __post_init__."""
@@ -343,15 +336,17 @@ class TestBotSkillInvocation:
         mock_update = MagicMock()
         mock_update.effective_user.id = 111
         mock_update.message.text = "/brainstorming"
+        mock_update.message.message_thread_id = None
         mock_update.message.reply_text = AsyncMock()
 
         mock_context = MagicMock()
         mock_context.args = []
 
+        bot.pool = MagicMock()
+
         await bot.handle_skill_command(mock_update, mock_context, "brainstorming")
 
-        # Verify skill was activated on the fallback agent
-        assert bot._fallback_agent.active_skill == mock_skill
+        bot.pool.set_active_skill.assert_called_once_with("telegram:111", mock_skill)
 
     @pytest.mark.asyncio
     async def test_skill_not_found(self):

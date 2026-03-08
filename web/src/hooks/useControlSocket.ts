@@ -235,6 +235,7 @@ export function useControlSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>(undefined)
   const retryDelay = useRef(1000)
+  const pendingCommands = useRef<Record<string, unknown>[]>([])
 
   const connect = useCallback(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -244,6 +245,11 @@ export function useControlSocket() {
       setConnected(true)
       setReconnecting(false)
       retryDelay.current = 1000
+      // Flush any commands that were queued while disconnected
+      for (const cmd of pendingCommands.current) {
+        ws.send(JSON.stringify(cmd))
+      }
+      pendingCommands.current = []
     }
 
     ws.onmessage = (e) => {
@@ -304,6 +310,8 @@ export function useControlSocket() {
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(cmd))
+    } else {
+      pendingCommands.current.push(cmd)
     }
   }, [])
 

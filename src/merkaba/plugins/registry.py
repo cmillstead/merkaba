@@ -4,6 +4,7 @@
 import os
 from dataclasses import dataclass, field
 
+from merkaba.paths import merkaba_home as _merkaba_home, subdir as _subdir
 from merkaba.plugins.skills import SkillManager
 from merkaba.plugins.commands import CommandManager
 from merkaba.plugins.hooks import HookManager
@@ -46,7 +47,7 @@ class PluginRegistry:
         """Create registry with default plugin directories."""
         registry = cls()
         registry.load_plugins([
-            "~/.merkaba/plugins",
+            _subdir("plugins"),
         ])
-        registry.load_skill_context("~/.merkaba/skill-context.md")
+        registry.load_skill_context(os.path.join(_merkaba_home(), "skill-context.md"))
         return registry

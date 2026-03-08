@@ -62,14 +62,16 @@ def test_backup_skips_missing_dbs(tmp_path):
 
 def test_backup_copies_config_json(tmp_path):
     _make_db(tmp_path / "memory.db")
-    config = {"api_key": "test123"}
+    config = {"api_key": "test123", "model": "qwen3:8b"}
     (tmp_path / "config.json").write_text(json.dumps(config))
 
     mgr = BackupManager(merkaba_dir=tmp_path)
     result = mgr.run_backup()
 
     backed_up = json.loads((result / "config.json").read_text())
-    assert backed_up == config
+    # Sensitive keys are stripped from backup copies
+    assert "api_key" not in backed_up
+    assert backed_up["model"] == "qwen3:8b"
 
 
 def test_backup_copies_conversations(tmp_path):
