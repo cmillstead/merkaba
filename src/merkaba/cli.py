@@ -134,13 +134,10 @@ def chat(
     from merkaba.config.defaults import DEFAULT_MODELS
     model = model or DEFAULT_MODELS["complex"]
 
-    config_path = os.path.expanduser("~/.merkaba/config.json")
-    try:
-        with open(config_path) as f:
-            config = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        config = {}
-    base_dir = _Path(os.path.expanduser("~/.merkaba"))
+    from merkaba.config.loader import load_config
+    from merkaba.paths import merkaba_home
+    config = load_config()
+    base_dir = _Path(merkaba_home())
     issues = validate_config(config, base_dir)
     if issues:
         print_startup_report(issues)
@@ -2804,19 +2801,18 @@ def security_status():
     console.print(f"Encryption: {enc_status}")
 
     # Load config for rate limit and threshold
-    config_path = os.path.expanduser("~/.merkaba/config.json")
+    from merkaba.config.loader import load_config
+    config = load_config()
     totp_threshold = 3
     max_approvals = 5
     window_seconds = 60
     try:
-        with open(config_path) as f:
-            config = json.load(f)
         security = config.get("security", {})
         totp_threshold = security.get("totp_threshold", 3)
         rl = security.get("approval_rate_limit", {})
         max_approvals = rl.get("max_approvals", 5)
         window_seconds = rl.get("window_seconds", 60)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (KeyError, AttributeError):
         pass
 
     console.print(f"TOTP threshold: autonomy_level >= {totp_threshold}")
@@ -2882,17 +2878,8 @@ def security_migrate_keys():
         console.print("Install it with: pip install keyring")
         raise typer.Exit(1)
 
-    config_path = os.path.expanduser("~/.merkaba/config.json")
-
-    try:
-        with open(config_path) as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        console.print("[dim]No config.json found at ~/.merkaba/config.json[/dim]")
-        return
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] Could not parse config.json: {exc}")
-        raise typer.Exit(1)
+    from merkaba.config.loader import load_config
+    config = load_config()
 
     cloud_providers = config.get("cloud_providers", {})
     if not cloud_providers:

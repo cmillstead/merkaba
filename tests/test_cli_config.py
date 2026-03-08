@@ -1,4 +1,6 @@
 # tests/test_cli_config.py
+import json
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -62,6 +64,57 @@ class TestConfigEditSoul:
         assert result.exit_code == 0
         biz_path = tmp_path / "businesses" / "5" / "SOUL.md"
         assert biz_path.exists()
+
+
+class TestMerkabaHomeOverride:
+    """Verify CLI functions respect MERKABA_HOME via load_config()."""
+
+    def test_security_status_reads_config_from_merkaba_home(self, tmp_path):
+        """security_status should read config from MERKABA_HOME, not ~/.merkaba."""
+        config_data = {
+            "security": {
+                "totp_threshold": 7,
+                "approval_rate_limit": {"max_approvals": 42, "window_seconds": 120},
+            }
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config_data))
+
+        from merkaba.config.loader import clear_cache
+
+        clear_cache()
+        with patch.dict(os.environ, {"MERKABA_HOME": str(tmp_path)}), \
+             patch("merkaba.security.secrets.get_secret", return_value=None):
+            result = runner.invoke(app, ["security", "status"])
+
+        clear_cache()
+        assert result.exit_code == 0
+        assert "42" in result.output
+        assert "120" in result.output
+        assert ">= 7" in result.output
+
+    def test_security_migrate_keys_reads_config_from_merkaba_home(self, tmp_path):
+        """security_migrate_keys should read config from MERKABA_HOME."""
+        config_data = {
+            "cloud_providers": {
+                "openai": {"api_key": "sk-test-key-123"}
+            }
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config_data))
+
+        from merkaba.config.loader import clear_cache
+
+        clear_cache()
+        mock_keyring = MagicMock()
+        with patch.dict(os.environ, {"MERKABA_HOME": str(tmp_path)}), \
+             patch.dict(sys.modules, {"keyring": mock_keyring}):
+            result = runner.invoke(app, ["security", "migrate-keys"], input="n\n")
+
+        clear_cache()
+        assert result.exit_code == 0
+        mock_keyring.set_password.assert_called_once_with(
+            "merkaba", "openai_api_key", "sk-test-key-123"
+        )
+        assert "openai" in result.output
 
 
 class TestConfigEditUser:
