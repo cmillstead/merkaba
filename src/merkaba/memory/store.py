@@ -22,16 +22,9 @@ class MemoryStore:
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
-        from merkaba.security.file_permissions import ensure_secure_permissions
-        db_dir = os.path.dirname(self.db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-            ensure_secure_permissions(db_dir)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        ensure_secure_permissions(self.db_path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.execute("PRAGMA journal_mode = WAL")
+        from merkaba.db import create_connection
+
+        self._conn = create_connection(self.db_path)
         self._create_tables()
 
     def _emit(self, event_name: str, data: dict) -> None:

@@ -1,5 +1,4 @@
 # src/merkaba/observability/tokens.py
-import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
@@ -7,10 +6,6 @@ from datetime import datetime, timezone
 
 from merkaba.paths import db_path as _db_path
 
-try:
-    from merkaba.security.file_permissions import ensure_secure_permissions as _secure
-except ImportError:  # pragma: no cover
-    _secure = None
 
 _SAFE_COLUMNS = {"model": "model", "worker_type": "worker_type"}
 
@@ -23,15 +18,10 @@ class TokenUsageStore:
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
-        db_dir = os.path.dirname(self.db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode = WAL")
+        from merkaba.db import create_connection
+
+        self._conn = create_connection(self.db_path, foreign_keys=False)
         self._create_tables()
-        if _secure:
-            _secure(self.db_path)
 
     def _create_tables(self):
         self._conn.execute("""
