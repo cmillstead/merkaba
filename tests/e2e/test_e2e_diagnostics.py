@@ -2,7 +2,6 @@
 """Tests for the DiagnosticsStore ring buffer and DiagnosticsMiddleware."""
 
 import os
-import sqlite3
 import sys
 import threading
 import urllib.parse
@@ -160,25 +159,12 @@ except ImportError:
     HAS_WEB_DEPS = False
 
 
-def _make_store(cls, db_path):
-    obj = object.__new__(cls)
-    obj.db_path = db_path
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
-    obj._conn.row_factory = sqlite3.Row
-    obj._conn.execute("PRAGMA foreign_keys = ON")
-    obj._create_tables()
-    return obj
-
-
 @pytest.fixture
-def app_client(tmp_path):
+def app_client(tmp_path, make_store):
     overrides = {
-        "memory_store": _make_store(MemoryStore, str(tmp_path / "memory.db")),
-        "task_queue": _make_store(TaskQueue, str(tmp_path / "tasks.db")),
-        "action_queue": _make_store(ActionQueue, str(tmp_path / "actions.db")),
+        "memory_store": make_store(MemoryStore, str(tmp_path / "memory.db")),
+        "task_queue": make_store(TaskQueue, str(tmp_path / "tasks.db")),
+        "action_queue": make_store(ActionQueue, str(tmp_path / "actions.db")),
         "merkaba_base_dir": str(tmp_path / "merkaba_home"),
     }
     os.makedirs(overrides["merkaba_base_dir"], exist_ok=True)

@@ -7,7 +7,6 @@ Only the LLM layer is mocked (via global conftest sys.modules trick).
 
 import json
 import os
-import sqlite3
 import sys
 from unittest.mock import patch, MagicMock
 
@@ -37,22 +36,8 @@ pytestmark = [
 # Helpers & Fixtures
 # ---------------------------------------------------------------------------
 
-def _make_store(cls, db_path):
-    """Create a store with check_same_thread=False for test cross-thread access."""
-    obj = object.__new__(cls)
-    obj.db_path = db_path
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
-    obj._conn.row_factory = sqlite3.Row
-    obj._conn.execute("PRAGMA foreign_keys = ON")
-    obj._create_tables()
-    return obj
-
-
 @pytest.fixture
-def app_client(tmp_path):
+def app_client(tmp_path, make_store):
     """Create a test client with temp databases."""
     memory_db = str(tmp_path / "memory.db")
     tasks_db = str(tmp_path / "tasks.db")
@@ -61,9 +46,9 @@ def app_client(tmp_path):
     os.makedirs(merkaba_dir, exist_ok=True)
 
     overrides = {
-        "memory_store": _make_store(MemoryStore, memory_db),
-        "task_queue": _make_store(TaskQueue, tasks_db),
-        "action_queue": _make_store(ActionQueue, actions_db),
+        "memory_store": make_store(MemoryStore, memory_db),
+        "task_queue": make_store(TaskQueue, tasks_db),
+        "action_queue": make_store(ActionQueue, actions_db),
         "merkaba_base_dir": merkaba_dir,
     }
 
@@ -779,7 +764,7 @@ def test_token_usage_accepts_valid_days(app_client):
 # 18. Test mode (db_overrides) should NOT emit spurious auth warning
 # ---------------------------------------------------------------------------
 
-def test_no_auth_warning_with_db_overrides(tmp_path, caplog):
+def test_no_auth_warning_with_db_overrides(tmp_path, caplog, make_store):
     """create_app() with db_overrides should NOT emit an auth warning.
 
     The 'running without authentication' warning is only appropriate in the
@@ -794,9 +779,9 @@ def test_no_auth_warning_with_db_overrides(tmp_path, caplog):
     actions_db = str(tmp_path / "actions.db")
 
     overrides = {
-        "memory_store": _make_store(MemoryStore, memory_db),
-        "task_queue": _make_store(TaskQueue, tasks_db),
-        "action_queue": _make_store(ActionQueue, actions_db),
+        "memory_store": make_store(MemoryStore, memory_db),
+        "task_queue": make_store(TaskQueue, tasks_db),
+        "action_queue": make_store(ActionQueue, actions_db),
     }
 
     app = create_app(db_overrides=overrides)

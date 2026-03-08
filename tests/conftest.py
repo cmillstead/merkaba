@@ -1,6 +1,9 @@
 # tests/conftest.py
 """Pytest configuration and shared fixtures."""
 
+import os
+import sqlite3
+
 import pytest
 import sys
 from unittest.mock import MagicMock
@@ -87,7 +90,46 @@ def pytest_runtest_setup(item):
             pytest.skip("Requires telegram module")
 
 
+# --- Shared helpers ---
+
+
+def _make_store_impl(cls, db_path):
+    """Create a store with check_same_thread=False for test cross-thread access.
+
+    Bypasses __init__/__post_init__ to avoid side effects (e.g. secure
+    permissions enforcement) and directly creates the SQLite connection with
+    ``check_same_thread=False`` so web-test threads can share the store.
+
+    Works with any dataclass store that has ``db_path``, ``_conn``, and
+    ``_create_tables`` (MemoryStore, TaskQueue, ActionQueue).
+    """
+    obj = object.__new__(cls)
+    obj.db_path = db_path
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
+    obj._conn.row_factory = sqlite3.Row
+    obj._conn.execute("PRAGMA foreign_keys = ON")
+    obj._create_tables()
+    return obj
+
+
+# Also expose as a module-level name for direct import (e.g. from conftest).
+make_store = _make_store_impl
+
+
 # --- Shared fixtures ---
+
+
+@pytest.fixture
+def make_store():
+    """Factory fixture: call make_store(StoreClass, db_path) to get a test store.
+
+    Bypasses __init__/__post_init__ and creates the SQLite connection with
+    check_same_thread=False for web-test cross-thread access.
+    """
+    return _make_store_impl
 
 
 @pytest.fixture

@@ -3,7 +3,6 @@
 
 import json
 import os
-import sqlite3
 import sys
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -32,26 +31,12 @@ pytestmark = pytest.mark.skipif(not HAS_DEPS, reason="Missing web dependencies")
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_store(cls, db_path):
-    """Create a store with check_same_thread=False for test cross-thread access."""
-    obj = object.__new__(cls)
-    obj.db_path = db_path
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    obj._conn = sqlite3.connect(db_path, check_same_thread=False)
-    obj._conn.row_factory = sqlite3.Row
-    obj._conn.execute("PRAGMA foreign_keys = ON")
-    obj._create_tables()
-    return obj
-
-
-def _make_app(tmp_path):
+def _make_app(tmp_path, store_factory):
     """Create a test app with isolated temp databases."""
     overrides = {
-        "memory_store": _make_store(MemoryStore, str(tmp_path / "memory.db")),
-        "task_queue": _make_store(TaskQueue, str(tmp_path / "tasks.db")),
-        "action_queue": _make_store(ActionQueue, str(tmp_path / "actions.db")),
+        "memory_store": store_factory(MemoryStore, str(tmp_path / "memory.db")),
+        "task_queue": store_factory(TaskQueue, str(tmp_path / "tasks.db")),
+        "action_queue": store_factory(ActionQueue, str(tmp_path / "actions.db")),
         "merkaba_base_dir": str(tmp_path / "merkaba_home"),
     }
     os.makedirs(overrides["merkaba_base_dir"], exist_ok=True)
@@ -67,9 +52,9 @@ class TestWebSocketQueryParamAuth:
     is configured, and that missing / wrong tokens are rejected."""
 
     @pytest.fixture
-    def auth_client(self, tmp_path):
+    def auth_client(self, tmp_path, make_store):
         """App client with api_key configured and a real mock agent."""
-        app = _make_app(tmp_path)
+        app = _make_app(tmp_path, make_store)
         with TestClient(app, raise_server_exceptions=False) as client:
             # Set an API key *after* the lifespan has run so the test controls it
             app.state.api_key = "test-secret-key"
@@ -138,10 +123,10 @@ class TestWebSocketQueryParamAuth:
                 assert msg2["type"] == "response"
                 assert msg2["content"] == "header-ok"
 
-    def test_websocket_no_auth_required_when_no_key_configured(self, tmp_path):
+    def test_websocket_no_auth_required_when_no_key_configured(self, tmp_path, make_store):
         """When no api_key is configured, WebSocket connects without any token
         should be accepted."""
-        app = _make_app(tmp_path)
+        app = _make_app(tmp_path, make_store)
         # api_key is None by default in db_overrides path (see lifespan)
 
         mock_agent = MagicMock()
@@ -166,9 +151,9 @@ class TestWebSocketErrorHandling:
     """Verify that agent errors and oversized messages produce error frames."""
 
     @pytest.fixture
-    def open_client(self, tmp_path):
+    def open_client(self, tmp_path, make_store):
         """App client without an API key (open access)."""
-        app = _make_app(tmp_path)
+        app = _make_app(tmp_path, make_store)
         with TestClient(app, raise_server_exceptions=False) as client:
             yield client, app
 
@@ -227,7 +212,7 @@ class TestWebSocketErrorHandling:
 class TestCorsOrigins:
     """Verify that cors_origins in config.json are merged into the middleware."""
 
-    def test_cors_default_origins_present(self, tmp_path):
+    def test_cors_default_origins_present(self, tmp_path, make_store):
         """Without a config.json the default dev origins should be active.
 
         We verify indirectly: an OPTIONS preflight to a default dev origin must
@@ -236,9 +221,9 @@ class TestCorsOrigins:
         # Patch load_config to return empty dict, simulating absent config.json.
         with patch("merkaba.config.loader.load_config", return_value={}):
             app = create_app(db_overrides={
-                "memory_store": _make_store(MemoryStore, str(tmp_path / "m.db")),
-                "task_queue": _make_store(TaskQueue, str(tmp_path / "t.db")),
-                "action_queue": _make_store(ActionQueue, str(tmp_path / "a.db")),
+                "memory_store": make_store(MemoryStore, str(tmp_path / "m.db")),
+                "task_queue": make_store(TaskQueue, str(tmp_path / "t.db")),
+                "action_queue": make_store(ActionQueue, str(tmp_path / "a.db")),
                 "merkaba_base_dir": str(tmp_path),
             })
 
@@ -252,15 +237,15 @@ class TestCorsOrigins:
             )
         assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
-    def test_cors_user_configured_origins_merged(self, tmp_path):
+    def test_cors_user_configured_origins_merged(self, tmp_path, make_store):
         """User-configured cors_origins in config.json should be included."""
         mock_cfg = {"cors_origins": ["https://app.example.com", "https://staging.example.com"]}
 
         with patch("merkaba.config.loader.load_config", return_value=mock_cfg):
             app = create_app(db_overrides={
-                "memory_store": _make_store(MemoryStore, str(tmp_path / "m.db")),
-                "task_queue": _make_store(TaskQueue, str(tmp_path / "t.db")),
-                "action_queue": _make_store(ActionQueue, str(tmp_path / "a.db")),
+                "memory_store": make_store(MemoryStore, str(tmp_path / "m.db")),
+                "task_queue": make_store(TaskQueue, str(tmp_path / "t.db")),
+                "action_queue": make_store(ActionQueue, str(tmp_path / "a.db")),
                 "merkaba_base_dir": str(tmp_path),
             })
 
