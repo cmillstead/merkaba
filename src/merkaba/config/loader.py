@@ -34,31 +34,30 @@ def load_config(
     """
     global _cache, _cache_mtime
 
+    import copy
+
     resolved = path or _default_config_path()
 
     if not os.path.isfile(resolved):
         return {}
 
-    mtime = os.path.getmtime(resolved)
-
     with _lock:
-        if use_cache and _cache is not None and mtime == _cache_mtime and path is None:
-            import copy
+        mtime = os.path.getmtime(resolved)
 
+        if use_cache and _cache is not None and mtime == _cache_mtime and path is None:
             return copy.deepcopy(_cache)
 
-    try:
-        with open(resolved, encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
+        try:
+            with open(resolved, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
 
-    with _lock:
         if use_cache and path is None:
             _cache = data
             _cache_mtime = mtime
 
-    return data
+    return copy.deepcopy(data)
 
 
 def clear_cache() -> None:
