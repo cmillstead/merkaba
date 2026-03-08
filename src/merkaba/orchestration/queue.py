@@ -28,7 +28,7 @@ class TaskQueue:
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
             ensure_secure_permissions(db_dir)
-        self._conn = sqlite3.connect(self.db_path)
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         ensure_secure_permissions(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")

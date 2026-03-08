@@ -1,6 +1,7 @@
 # tests/test_action_queue.py
 import tempfile
 import os
+import threading
 
 import pytest
 
@@ -266,3 +267,32 @@ def test_context_manager_closes_on_exception():
                 q.add_action(business_id=1, action_type="a", description="X")
                 raise RuntimeError("boom")
         assert q._conn is None
+
+
+# --- Cross-thread access ---
+
+
+def test_actionqueue_cross_thread_access():
+    """ActionQueue must be usable from a different thread than the one that created it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "actions.db")
+        q = ActionQueue(db_path=db_path)
+        aid = q.add_action(business_id=1, action_type="send_email", description="Cross-thread")
+
+        result = {}
+        error = {}
+
+        def read_from_thread():
+            try:
+                action = q.get_action(aid)
+                result["action"] = action
+            except Exception as exc:
+                error["exc"] = exc
+
+        t = threading.Thread(target=read_from_thread)
+        t.start()
+        t.join(timeout=5)
+
+        assert "exc" not in error, f"Cross-thread access failed: {error.get('exc')}"
+        assert result["action"]["description"] == "Cross-thread"
+        q.close()

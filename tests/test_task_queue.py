@@ -1,6 +1,7 @@
 # tests/test_task_queue.py
 import tempfile
 import os
+import threading
 from datetime import datetime, timedelta
 
 import pytest
@@ -536,3 +537,32 @@ def test_count_by_status(queue):
     assert isinstance(result, dict)
     assert result.get("pending") == 2
     assert result.get("paused") == 1
+
+
+# --- Cross-thread access ---
+
+
+def test_taskqueue_cross_thread_access():
+    """TaskQueue must be usable from a different thread than the one that created it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "tasks.db")
+        q = TaskQueue(db_path=db_path)
+        task_id = q.add_task("Cross-thread Task", "check")
+
+        result = {}
+        error = {}
+
+        def read_from_thread():
+            try:
+                task = q.get_task(task_id)
+                result["task"] = task
+            except Exception as exc:
+                error["exc"] = exc
+
+        t = threading.Thread(target=read_from_thread)
+        t.start()
+        t.join(timeout=5)
+
+        assert "exc" not in error, f"Cross-thread access failed: {error.get('exc')}"
+        assert result["task"]["name"] == "Cross-thread Task"
+        q.close()
