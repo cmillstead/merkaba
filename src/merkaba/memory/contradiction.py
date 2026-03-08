@@ -116,10 +116,11 @@ class ContradictionDetector:
                 f"Reply with exactly YES or NO."
             )
             from merkaba.llm import RequestPriority
+            from merkaba.config.defaults import DEFAULT_MODELS
             response = self._llm.chat_with_retry(
                 message=prompt,
                 system_prompt="You detect contradictions. Reply YES or NO only.",
-                model_override="qwen3:4b",
+                model_override=DEFAULT_MODELS["classifier"],
                 priority=RequestPriority.BACKGROUND,
             )
             answer = (response.content or "").strip().upper()

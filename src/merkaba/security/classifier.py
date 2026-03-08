@@ -29,8 +29,10 @@ Respond with EXACTLY two words. Examples:
 User message:
 {message}"""
 
-# Short enough that qwen3:4b handles it fast
-CLASSIFIER_MODEL = "qwen3:4b"
+from merkaba.config.defaults import DEFAULT_MODELS
+
+# Short enough that the classifier tier model handles it fast
+CLASSIFIER_MODEL = DEFAULT_MODELS["classifier"]
 
 
 class InputClassifier:
@@ -83,18 +85,12 @@ class InputClassifier:
 
     def _load_fail_mode_from_config(self) -> str:
         """Read classifier_fail_mode from ~/.merkaba/config.json, with fallback."""
-        import json
-        import os
+        from merkaba.config.loader import load_config
 
-        config_path = os.path.expanduser("~/.merkaba/config.json")
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-            mode = config.get("security", {}).get("classifier_fail_mode")
-            if mode in self._VALID_FAIL_MODES:
-                return mode
-        except (FileNotFoundError, json.JSONDecodeError, PermissionError, OSError):
-            pass
+        config = load_config()
+        mode = config.get("security", {}).get("classifier_fail_mode")
+        if mode in self._VALID_FAIL_MODES:
+            return mode
 
         # Legacy fallback: derive from classifier_required
         return "no_tools" if self.classifier_required else "open"
@@ -138,7 +134,7 @@ class InputClassifier:
             is_safe = "UNSAFE" not in verdict
             reason = ""
             if not is_safe:
-                logger.warning("Input classifier flagged message as UNSAFE: %s", message[:100])
+                logger.warning("Input classifier flagged message as UNSAFE (length=%d)", len(message))
                 reason = "Message flagged as potential prompt injection"
 
             # Parse complexity — default to complex if unclear

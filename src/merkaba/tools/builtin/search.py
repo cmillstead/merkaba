@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from merkaba.tools.base import Tool, PermissionTier
+from merkaba.paths import config_path as _config_path
 
 
 # Denied directory/file paths — any path under these is blocked for searching
@@ -13,7 +14,7 @@ DENIED_SEARCH_PATHS = [
     os.path.expanduser("~/.config/gcloud"),
     os.path.expanduser("~/.kube"),
     os.path.expanduser("~/.azure"),
-    os.path.expanduser("~/.merkaba/config.json"),
+    _config_path(),
     "/etc/shadow",
 ]
 

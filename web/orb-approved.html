@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Merkaba Orb — Clean 3D</title>
+<style>
+  body { margin: 0; background: #0a0a14; font-family: monospace; color: #e0e0ff; padding: 30px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .row { display: flex; gap: 50px; align-items: flex-end; }
+  .panel { text-align: center; }
+  .panel h3 { margin: 0 0 8px; font-size: 12px; opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <div class="panel">
+    <h3>Small (constellation)</h3>
+    <svg width="120" height="140" viewBox="0 0 120 140">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1a1a3e" stroke-width="0.5" />
+        </pattern>
+      </defs>
+      <rect width="120" height="140" fill="url(#grid)" />
+      <circle cx="60" cy="60" r="40" fill="#12121a" stroke="#00f0ff" stroke-width="1.5" />
+      <svg x="25" y="25" width="70" height="70" viewBox="-1.3 -1.3 2.6 2.6" id="glyph-sm"></svg>
+      <text x="60" y="125" text-anchor="middle" fill="#e0e0ff" font-size="11">Merkaba</text>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <h3>Large</h3>
+    <svg width="300" height="320" viewBox="0 0 300 320">
+      <rect width="300" height="320" fill="url(#grid)" />
+      <circle cx="150" cy="150" r="100" fill="#12121a" stroke="#00f0ff" stroke-width="1.5" />
+      <svg x="50" y="50" width="200" height="200" viewBox="-1.3 -1.3 2.6 2.6" id="glyph-lg"></svg>
+      <text x="150" y="295" text-anchor="middle" fill="#e0e0ff" font-size="13">Merkaba</text>
+    </svg>
+  </div>
+</div>
+
+<script>
+const S = 1.0;
+const UP = [[0,-S,0],[-S*0.943,S*0.333,-S*0.544],[S*0.943,S*0.333,-S*0.544],[0,S*0.333,S*1.089]];
+const DOWN = [[0,S,0],[-S*0.943,-S*0.333,S*0.544],[S*0.943,-S*0.333,S*0.544],[0,-S*0.333,-S*1.089]];
+const EDGES = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
+const ns = 'http://www.w3.org/2000/svg';
+
+function rotY(p,a){return[p[0]*Math.cos(a)+p[2]*Math.sin(a),p[1],-p[0]*Math.sin(a)+p[2]*Math.cos(a)];}
+function rotX(p,a){return[p[0],p[1]*Math.cos(a)-p[2]*Math.sin(a),p[1]*Math.sin(a)+p[2]*Math.cos(a)];}
+
+function setupGlyph(svgId) {
+  const svg = document.getElementById(svgId);
+
+  const backGroup = document.createElementNS(ns, 'g');
+  const orbGroup = document.createElementNS(ns, 'g');
+  const frontGroup = document.createElementNS(ns, 'g');
+  svg.appendChild(backGroup);
+  svg.appendChild(orbGroup);
+  svg.appendChild(frontGroup);
+
+  const orbDefs = document.createElementNS(ns, 'defs');
+
+  // The orb — same style as the ConstellationMap orb-fill that looked good
+  // Centered, bright purple core, tight natural falloff
+  const orbGrad = document.createElementNS(ns, 'radialGradient');
+  orbGrad.id = svgId + '-orb';
+  [
+    ['0%',   'rgba(210,200,255,1)'],
+    ['10%',  'rgba(150,130,240,0.9)'],
+    ['22%',  'rgba(90,70,200,0.6)'],
+    ['38%',  'rgba(50,38,140,0.3)'],
+    ['58%',  'rgba(30,22,90,0.1)'],
+    ['100%', 'rgba(20,16,60,0.0)']
+  ].forEach(([off, col]) => {
+    const st = document.createElementNS(ns, 'stop');
+    st.setAttribute('offset', off);
+    st.setAttribute('stop-color', col);
+    orbGrad.appendChild(st);
+  });
+  orbDefs.appendChild(orbGrad);
+  svg.insertBefore(orbDefs, backGroup);
+
+  // Single orb circle
+  const orbCircle = document.createElementNS(ns, 'circle');
+  orbCircle.setAttribute('cx', '0');
+  orbCircle.setAttribute('cy', '0');
+  orbCircle.setAttribute('r', '0.9');
+  orbCircle.setAttribute('fill', `url(#${svgId}-orb)`);
+  orbGroup.appendChild(orbCircle);
+
+  const sw = '0.045';
+  const allEdges = [];
+  EDGES.forEach(([ia, ib]) => {
+    const l = document.createElementNS(ns, 'line');
+    l.setAttribute('stroke', '#6c63ff');
+    l.setAttribute('stroke-width', sw);
+    allEdges.push({ line: l, type: 'up', ia, ib });
+  });
+  EDGES.forEach(([ia, ib]) => {
+    const l = document.createElementNS(ns, 'line');
+    l.setAttribute('stroke', '#00f0ff');
+    l.setAttribute('stroke-width', sw);
+    allEdges.push({ line: l, type: 'down', ia, ib });
+  });
+
+  const dr = '0.06';
+  const allDots = [];
+  UP.forEach((_, i) => {
+    const c = document.createElementNS(ns, 'circle');
+    c.setAttribute('r', dr);
+    c.setAttribute('fill', '#6c63ff');
+    allDots.push({ circle: c, type: 'up', idx: i });
+  });
+  DOWN.forEach((_, i) => {
+    const c = document.createElementNS(ns, 'circle');
+    c.setAttribute('r', dr);
+    c.setAttribute('fill', '#00f0ff');
+    allDots.push({ circle: c, type: 'down', idx: i });
+  });
+
+  return { backGroup, frontGroup, orbCircle, allEdges, allDots };
+}
+
+const g1 = setupGlyph('glyph-sm');
+const g2 = setupGlyph('glyph-lg');
+let angle = 0;
+
+function animate() {
+  angle += 0.008;
+  const tiltX = 0.35;
+  function xform(verts) { return verts.map(v => rotX(rotY(v, angle), tiltX)); }
+
+  [g1, g2].forEach(({ backGroup, frontGroup, orbCircle, allEdges, allDots }) => {
+    const up = xform(UP);
+    const down = xform(DOWN);
+
+    while (backGroup.firstChild) backGroup.removeChild(backGroup.firstChild);
+    while (frontGroup.firstChild) frontGroup.removeChild(frontGroup.firstChild);
+
+    allEdges.forEach(e => {
+      const verts = e.type === 'up' ? up : down;
+      const avgZ = (verts[e.ia][2] + verts[e.ib][2]) / 2;
+      const opacity = 0.4 + 0.5 * (avgZ + 1.2) / 2.4;
+
+      e.line.setAttribute('x1', verts[e.ia][0]);
+      e.line.setAttribute('y1', verts[e.ia][1]);
+      e.line.setAttribute('x2', verts[e.ib][0]);
+      e.line.setAttribute('y2', verts[e.ib][1]);
+      e.line.setAttribute('stroke-opacity', opacity);
+
+      (avgZ > 0 ? frontGroup : backGroup).appendChild(e.line);
+    });
+
+    allDots.forEach(d => {
+      const verts = d.type === 'up' ? up : down;
+      const p = verts[d.idx];
+      d.circle.setAttribute('cx', p[0]);
+      d.circle.setAttribute('cy', p[1]);
+      (p[2] > 0 ? frontGroup : backGroup).appendChild(d.circle);
+    });
+
+    const pulse = 0.87 + 0.06 * Math.sin(angle * 2);
+    orbCircle.setAttribute('r', String(pulse));
+  });
+
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>

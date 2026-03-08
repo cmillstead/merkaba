@@ -1,10 +1,20 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { KanbanState, KanbanCard } from '../hooks/useControlSocket'
+import { approveAction, denyAction } from '../api/client'
+import { useToast } from '../context/ToastContext'
+import ApprovalConfirmDialog from './ApprovalConfirmDialog'
+import type { ApprovalAction } from './ApprovalConfirmDialog'
 
 interface Props {
   kanban: KanbanState | null
   onSubscribe: () => void
   onUnsubscribe: () => void
+}
+
+interface PendingConfirm {
+  cardId: number
+  action: ApprovalAction
+  description: string
 }
 
 const COLUMNS: { key: keyof KanbanState; label: string }[] = [
@@ -62,45 +72,29 @@ function computeDuration(startedAt?: string, finishedAt?: string): string {
 function CardComponent({
   card,
   columnKey,
+  decidedIds,
+  onRequestApproval,
 }: {
   card: KanbanCard
   columnKey: keyof KanbanState
+  decidedIds: Set<number>
+  onRequestApproval: (cardId: number, action: ApprovalAction, description: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [actionState, setActionState] = useState<'idle' | 'approving' | 'rejecting' | 'done'>('idle')
 
-  const handleApprove = useCallback(async (e: React.MouseEvent) => {
+  const handleApprove = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    setActionState('approving')
-    try {
-      await fetch(`/api/approvals/${card.id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decided_by: 'mission-control' }),
-      })
-      setActionState('done')
-    } catch {
-      setActionState('idle')
-    }
-  }, [card.id])
+    onRequestApproval(card.id, 'approve', card.description || card.name || `Action #${card.id}`)
+  }, [card.id, card.description, card.name, onRequestApproval])
 
-  const handleReject = useCallback(async (e: React.MouseEvent) => {
+  const handleReject = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    setActionState('rejecting')
-    try {
-      await fetch(`/api/approvals/${card.id}/deny`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decided_by: 'mission-control' }),
-      })
-      setActionState('done')
-    } catch {
-      setActionState('idle')
-    }
-  }, [card.id])
+    onRequestApproval(card.id, 'reject', card.description || card.name || `Action #${card.id}`)
+  }, [card.id, card.description, card.name, onRequestApproval])
 
   const isApproval = columnKey === 'awaiting_approval'
   const isRun = columnKey === 'completed' || columnKey === 'failed'
+  const isDone = decidedIds.has(card.id)
 
   return (
     <div
@@ -144,25 +138,23 @@ function CardComponent({
       )}
 
       {/* Approval buttons */}
-      {isApproval && actionState !== 'done' && (
+      {isApproval && !isDone && (
         <div className="kanban-card-actions">
           <button
             className="kanban-approve-btn"
             onClick={handleApprove}
-            disabled={actionState !== 'idle'}
           >
-            {actionState === 'approving' ? '...' : 'Approve'}
+            Approve
           </button>
           <button
             className="kanban-reject-btn"
             onClick={handleReject}
-            disabled={actionState !== 'idle'}
           >
-            {actionState === 'rejecting' ? '...' : 'Reject'}
+            Reject
           </button>
         </div>
       )}
-      {isApproval && actionState === 'done' && (
+      {isApproval && isDone && (
         <div className="kanban-card-decided">Decided</div>
       )}
 
@@ -234,10 +226,44 @@ function CardComponent({
 }
 
 export default function KanbanBoard({ kanban, onSubscribe, onUnsubscribe }: Props) {
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [decidedIds, setDecidedIds] = useState<Set<number>>(new Set())
+  const { showToast } = useToast()
+
   useEffect(() => {
     onSubscribe()
     return () => { onUnsubscribe() }
   }, [onSubscribe, onUnsubscribe])
+
+  const handleRequestApproval = useCallback((cardId: number, action: ApprovalAction, description: string) => {
+    setPendingConfirm({ cardId, action, description })
+  }, [])
+
+  const handleConfirm = useCallback(async (totp?: string) => {
+    if (!pendingConfirm) return
+    setSubmitting(true)
+    try {
+      if (pendingConfirm.action === 'approve') {
+        await approveAction(pendingConfirm.cardId, totp)
+        showToast('Action approved', 'success')
+      } else {
+        await denyAction(pendingConfirm.cardId)
+        showToast('Action rejected', 'success')
+      }
+      setDecidedIds(prev => new Set(prev).add(pendingConfirm.cardId))
+      setPendingConfirm(null)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred'
+      showToast(message, 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }, [pendingConfirm, showToast])
+
+  const handleCancel = useCallback(() => {
+    if (!submitting) setPendingConfirm(null)
+  }, [submitting])
 
   if (!kanban) {
     return (
@@ -248,27 +274,44 @@ export default function KanbanBoard({ kanban, onSubscribe, onUnsubscribe }: Prop
   }
 
   return (
-    <div className="kanban-board">
-      {COLUMNS.map(({ key, label }) => {
-        const cards = kanban[key]
-        return (
-          <div key={key} className="kanban-column">
-            <div className="kanban-column-header">
-              <span>{label}</span>
-              <span className="kanban-count-badge">{cards.length}</span>
+    <>
+      <div className="kanban-board">
+        {COLUMNS.map(({ key, label }) => {
+          const cards = kanban[key]
+          return (
+            <div key={key} className="kanban-column">
+              <div className="kanban-column-header">
+                <span>{label}</span>
+                <span className="kanban-count-badge">{cards.length}</span>
+              </div>
+              <div className="kanban-column-body">
+                {cards.length === 0 ? (
+                  <div className="kanban-empty">No items</div>
+                ) : (
+                  cards.map(card => (
+                    <CardComponent
+                      key={`${key}-${card.id}`}
+                      card={card}
+                      columnKey={key}
+                      decidedIds={decidedIds}
+                      onRequestApproval={handleRequestApproval}
+                    />
+                  ))
+                )}
+              </div>
             </div>
-            <div className="kanban-column-body">
-              {cards.length === 0 ? (
-                <div className="kanban-empty">No items</div>
-              ) : (
-                cards.map(card => (
-                  <CardComponent key={`${key}-${card.id}`} card={card} columnKey={key} />
-                ))
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+      <ApprovalConfirmDialog
+        open={pendingConfirm !== null}
+        submitting={submitting}
+        action={pendingConfirm?.action ?? 'approve'}
+        itemDescription={pendingConfirm?.description ?? ''}
+        requireTotp={pendingConfirm?.action === 'approve'}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+    </>
   )
 }

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from merkaba.orchestration.queue import TaskQueue
+from merkaba.config.defaults import DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,11 @@ class Heartbeat:
     """Light model triage — runs periodically to check if Merkaba needs to act."""
 
     queue: TaskQueue
-    model: str = "qwen3:4b"
+    model: str = None
+
+    def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["classifier"]
 
     def check(self) -> str:
         """Run heartbeat triage. Returns: IDLE | INVESTIGATE <topic> | ACT <action>"""
@@ -74,12 +79,7 @@ class Heartbeat:
         }
 
     def _get_recent_runs(self, limit: int = 10) -> list[dict[str, Any]]:
-        cursor = self.queue._conn.cursor()
-        cursor.execute(
-            "SELECT * FROM task_runs ORDER BY started_at DESC LIMIT ?",
-            (limit,),
-        )
-        return [dict(row) for row in cursor.fetchall()]
+        return self.queue.get_recent_runs(limit=limit)
 
     def _parse_response(self, raw: str) -> str:
         # Extract the first line that starts with IDLE, INVESTIGATE, or ACT

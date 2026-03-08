@@ -4,12 +4,14 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
-UPLOAD_DIR = os.path.expanduser("~/.merkaba/uploads")
-CONVERSATIONS_DIR = os.path.expanduser("~/.merkaba/conversations")
+from merkaba.paths import subdir as _subdir
+
+UPLOAD_DIR = _subdir("uploads")
+CONVERSATIONS_DIR = _subdir("conversations")
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_WS_MESSAGE_SIZE = 64 * 1024  # 64 KB
@@ -104,10 +106,11 @@ async def upload_file(file: UploadFile):
     from merkaba.security.file_permissions import ensure_secure_permissions
     ensure_secure_permissions(UPLOAD_DIR)
     # Prefix with timestamp + uuid to avoid collisions
-    stem = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    stem = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     dest = os.path.join(UPLOAD_DIR, f"{stem}{ext}")
     with open(dest, "wb") as f:
         f.write(content)
+    ensure_secure_permissions(dest)
     return {"filename": os.path.basename(dest), "size": len(content)}
 
 

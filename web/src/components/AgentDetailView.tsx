@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import MerkabaGlyph from './MerkabaGlyph'
 import type { AgentState, SystemState, KanbanCard } from '../hooks/useControlSocket'
-import { getModels } from '../api/client'
+import { getModels, approveAction, denyAction } from '../api/client'
+import { useToast } from '../context/ToastContext'
+import ApprovalConfirmDialog from './ApprovalConfirmDialog'
+import type { ApprovalAction } from './ApprovalConfirmDialog'
 
 interface Props {
   agent: AgentState
@@ -31,8 +34,11 @@ function truncate(text: string, max: number): string {
 export default function AgentDetailView({ agent, system, pendingApprovals, onBack, onModelChange }: Props) {
   const [availableModels, setAvailableModels] = useState<string[]>(FALLBACK_MODELS)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [approvalStates, setApprovalStates] = useState<Record<number, 'loading' | 'approved' | 'denied' | 'error'>>({})
+  const [approvalStates, setApprovalStates] = useState<Record<number, 'approved' | 'denied' | 'error'>>({})
+  const [pendingConfirm, setPendingConfirm] = useState<{ id: number; action: ApprovalAction; description: string } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const { showToast } = useToast()
 
   // Load available models from the API on mount
   useEffect(() => {
@@ -63,41 +69,36 @@ export default function AgentDetailView({ agent, system, pendingApprovals, onBac
     setDropdownOpen(false)
   }, [onModelChange])
 
-  const handleApprove = useCallback(async (id: number) => {
-    setApprovalStates(prev => ({ ...prev, [id]: 'loading' }))
-    try {
-      const res = await fetch(`/api/approvals/${id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decided_by: 'mission-control' }),
-      })
-      if (res.ok) {
-        setApprovalStates(prev => ({ ...prev, [id]: 'approved' }))
-      } else {
-        setApprovalStates(prev => ({ ...prev, [id]: 'error' }))
-      }
-    } catch {
-      setApprovalStates(prev => ({ ...prev, [id]: 'error' }))
-    }
+  const handleRequestApproval = useCallback((id: number, action: ApprovalAction, description: string) => {
+    setPendingConfirm({ id, action, description })
   }, [])
 
-  const handleDeny = useCallback(async (id: number) => {
-    setApprovalStates(prev => ({ ...prev, [id]: 'loading' }))
+  const handleConfirmApproval = useCallback(async (totp?: string) => {
+    if (!pendingConfirm) return
+    setSubmitting(true)
     try {
-      const res = await fetch(`/api/approvals/${id}/deny`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decided_by: 'mission-control' }),
-      })
-      if (res.ok) {
-        setApprovalStates(prev => ({ ...prev, [id]: 'denied' }))
+      if (pendingConfirm.action === 'approve') {
+        await approveAction(pendingConfirm.id, totp)
+        setApprovalStates(prev => ({ ...prev, [pendingConfirm.id]: 'approved' }))
+        showToast('Action approved', 'success')
       } else {
-        setApprovalStates(prev => ({ ...prev, [id]: 'error' }))
+        await denyAction(pendingConfirm.id)
+        setApprovalStates(prev => ({ ...prev, [pendingConfirm.id]: 'denied' }))
+        showToast('Action denied', 'success')
       }
-    } catch {
-      setApprovalStates(prev => ({ ...prev, [id]: 'error' }))
+      setPendingConfirm(null)
+    } catch (err: unknown) {
+      setApprovalStates(prev => ({ ...prev, [pendingConfirm.id]: 'error' }))
+      const message = err instanceof Error ? err.message : 'An error occurred'
+      showToast(message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-  }, [])
+  }, [pendingConfirm, showToast])
+
+  const handleCancelApproval = useCallback(() => {
+    if (!submitting) setPendingConfirm(null)
+  }, [submitting])
 
   // Determine orb speed based on agent activity
   const orbSpeed = agent.current_task ? 2 : agent.active_skill ? 1.5 : 0.7
@@ -110,6 +111,7 @@ export default function AgentDetailView({ agent, system, pendingApprovals, onBac
   const recentActivity = agent.recent_activity?.slice(-5) ?? []
 
   return (
+    <>
     <div className="agent-detail-view">
       <button className="btn btn-dim harness-back" onClick={onBack}>
         &larr; Back
@@ -231,17 +233,15 @@ export default function AgentDetailView({ agent, system, pendingApprovals, onBac
                         <>
                           <button
                             className="agent-detail-approve-btn"
-                            onClick={() => handleApprove(approval.id)}
-                            disabled={state === 'loading'}
+                            onClick={() => handleRequestApproval(approval.id, 'approve', approval.description || `Action #${approval.id}`)}
                           >
-                            {state === 'loading' ? '...' : 'Approve'}
+                            Approve
                           </button>
                           <button
                             className="agent-detail-reject-btn"
-                            onClick={() => handleDeny(approval.id)}
-                            disabled={state === 'loading'}
+                            onClick={() => handleRequestApproval(approval.id, 'reject', approval.description || `Action #${approval.id}`)}
                           >
-                            {state === 'loading' ? '...' : 'Reject'}
+                            Reject
                           </button>
                         </>
                       )}
@@ -254,5 +254,14 @@ export default function AgentDetailView({ agent, system, pendingApprovals, onBac
         </div>
       </div>
     </div>
+    <ApprovalConfirmDialog
+      open={pendingConfirm !== null && !submitting}
+      action={pendingConfirm?.action ?? 'approve'}
+      itemDescription={pendingConfirm?.description ?? ''}
+      requireTotp={pendingConfirm?.action === 'approve'}
+      onConfirm={handleConfirmApproval}
+      onCancel={handleCancelApproval}
+    />
+    </>
   )
 }

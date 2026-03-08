@@ -4,7 +4,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
@@ -22,14 +22,18 @@ class DispatchMode(Enum):
     COMPETITIVE = "competitive"
 
 
-MODEL_DEFAULTS: dict[str, str] = {
-    "health_check": "phi4:14b",
-    "code": "qwen3.5:122b",
-}
-DEFAULT_MODEL = "qwen3.5:122b"
-CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
+from merkaba.config.defaults import DEFAULT_MODELS
 
-INTEGRATION_CHECK_MODEL = "qwen3:4b"
+MODEL_DEFAULTS: dict[str, str] = {
+    "health_check": DEFAULT_MODELS["health_check"],
+    "code": DEFAULT_MODELS["complex"],
+}
+DEFAULT_MODEL = DEFAULT_MODELS["complex"]
+from merkaba.paths import config_path as _config_path
+
+CONFIG_PATH = _config_path()
+
+INTEGRATION_CHECK_MODEL = DEFAULT_MODELS["classifier"]
 INTEGRATION_CACHE_TTL = timedelta(minutes=30)
 SIMPLE_TASK_TYPES = {"health_check"}
 CREATIVE_TASK_TYPES: set[str] = set()  # Extenders can add task types that use competitive dispatch
@@ -39,14 +43,12 @@ VARIANT_EMPHASES = ["creativity", "clarity", "engagement"]
 
 def load_model_config(config_path: str = CONFIG_PATH) -> dict[str, str]:
     """Load model routing overrides from config.json and merge with defaults."""
+    from merkaba.config.loader import load_config
+
     mapping = dict(MODEL_DEFAULTS)
-    try:
-        with open(config_path) as f:
-            data = json.load(f)
-        overrides = data.get("models", {}).get("task_types", {})
-        mapping.update(overrides)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        pass
+    data = load_config(path=config_path, use_cache=False)
+    overrides = data.get("models", {}).get("task_types", {})
+    mapping.update(overrides)
     return mapping
 
 
@@ -241,7 +243,7 @@ class Supervisor:
         # Check cache with TTL
         if cache_key in self._integration_cache:
             cached_status, cached_at = self._integration_cache[cache_key]
-            if datetime.now() - cached_at < INTEGRATION_CACHE_TTL:
+            if datetime.now(timezone.utc) - cached_at < INTEGRATION_CACHE_TTL:
                 logger.debug("Integration check cache hit for %s", cache_key)
                 return cached_status
             else:
@@ -268,11 +270,11 @@ class Supervisor:
             )
             answer = (response.content or "").strip().upper()
             if answer in ("CONNECTED", "PARTIAL", "DISCONNECTED"):
-                self._integration_cache[cache_key] = (answer, datetime.now())
+                self._integration_cache[cache_key] = (answer, datetime.now(timezone.utc))
                 return answer
             # If LLM gives unexpected output, assume connected
             logger.warning("Unexpected integration check response: %s", answer)
-            self._integration_cache[cache_key] = ("CONNECTED", datetime.now())
+            self._integration_cache[cache_key] = ("CONNECTED", datetime.now(timezone.utc))
             return "CONNECTED"
         except Exception as e:
             logger.warning("Integration check failed, assuming CONNECTED: %s", e)

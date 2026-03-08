@@ -152,6 +152,7 @@ export function connectChat(options: ConnectChatOptions): ChatConnection {
 // Types
 export interface SystemStatus {
   ollama: boolean;
+  version?: string;
   databases: Record<string, number | null>;
   counts: {
     memory: Record<string, number>;
@@ -301,4 +302,39 @@ export interface AnalyticsOverview {
 export const getAnalytics = (days?: number) => {
   const params = days ? `?days=${days}` : ''
   return request<AnalyticsOverview>(`/api/analytics/overview${params}`)
+}
+
+export const triggerWorker = (workerId: string) =>
+  request<{ status: string }>(`/api/control/worker/${workerId}/trigger`, { method: 'POST' })
+
+// Chat sessions
+export interface ChatSession {
+  id: string
+  saved_at: string | null
+  message_count: number
+  preview: string
+}
+
+export interface ChatSessionDetail {
+  messages: { role: string; content: string }[]
+}
+
+export const getChatSessions = () =>
+  request<{ sessions: ChatSession[] }>('/api/chat/sessions')
+
+export const getChatSession = (id: string) =>
+  request<ChatSessionDetail>(`/api/chat/sessions/${id}`)
+
+// File upload (uses FormData — must not set Content-Type so browser sets multipart boundary)
+export async function uploadFile(form: FormData): Promise<{ path: string }> {
+  const headers: HeadersInit = {}
+  const key = localStorage.getItem('merkaba_api_key')
+  if (key) headers['X-API-Key'] = key
+  const resp = await fetch(`${BASE}/api/upload`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
+  return resp.json()
 }

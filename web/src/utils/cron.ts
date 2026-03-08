@@ -9,13 +9,57 @@ export function parseCronField(field: string, max: number): number[] {
     for (let i = 0; i < max; i += step) result.push(i)
     return result
   }
+
+  // Handle comma-separated list: 1,3,5
+  if (field.includes(',')) {
+    const result: number[] = []
+    for (const part of field.split(',')) {
+      const parsed = parseCronField(part.trim(), max)
+      result.push(...parsed)
+    }
+    return [...new Set(result)].sort((a, b) => a - b)
+  }
+
+  // Handle range: 1-5 or 1-5/2
+  if (field.includes('-')) {
+    const [rangePart, stepPart] = field.split('/')
+    const [startStr, endStr] = rangePart.split('-')
+    const start = parseInt(startStr, 10)
+    const end = parseInt(endStr, 10)
+    const step = stepPart ? parseInt(stepPart, 10) : 1
+
+    if (isNaN(start) || isNaN(end) || isNaN(step) || step <= 0) return []
+    if (start < 0 || end >= max || start > end) return []
+
+    const result: number[] = []
+    for (let i = start; i <= end; i += step) result.push(i)
+    return result
+  }
+
   const n = parseInt(field, 10)
   if (isNaN(n) || n < 0 || n >= max) return []
   return [n]
 }
 
 export function cronOccurrences(cronExpr: string, start: Date, end: Date): Date[] {
-  const parts = cronExpr.trim().split(/\s+/)
+  let expr = cronExpr.trim()
+
+  // Handle cron aliases
+  const aliases: Record<string, string> = {
+    '@yearly': '0 0 1 1 *',
+    '@annually': '0 0 1 1 *',
+    '@monthly': '0 0 1 * *',
+    '@weekly': '0 0 * * 0',
+    '@daily': '0 0 * * *',
+    '@midnight': '0 0 * * *',
+    '@hourly': '0 * * * *',
+  }
+
+  if (expr.startsWith('@')) {
+    expr = aliases[expr] || expr
+  }
+
+  const parts = expr.split(/\s+/)
   if (parts.length !== 5) return []
 
   const minutes = parseCronField(parts[0], 60)

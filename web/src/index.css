@@ -40,7 +40,8 @@ a:hover { color: var(--accent-hover); }
   flex-direction: column;
   padding: 20px 0;
   flex-shrink: 0;
-  overflow: visible;
+  overflow-x: visible;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -79,7 +80,7 @@ a:hover { color: var(--accent-hover); }
 }
 
 .sidebar nav a svg {
-  opacity: 0.5;
+  opacity: 0.7;
   transition: opacity 0.2s ease;
 }
 
@@ -117,7 +118,7 @@ a:hover { color: var(--accent-hover); }
   border: none;
   cursor: pointer;
   width: 100%;
-  opacity: 0.6;
+  opacity: 0.85;
   transition: opacity 0.2s;
 }
 .sidebar-group-header:hover { opacity: 1; }
@@ -408,7 +409,7 @@ input:focus, textarea:focus {
 }
 
 .hud-label {
-  color: #8080a0;
+  color: #9090b0;
   font-weight: 600;
 }
 
@@ -591,7 +592,7 @@ input:focus, textarea:focus {
 }
 
 .detail-hint {
-  color: #8080a0;
+  color: #9090b0;
   font-style: italic;
 }
 
@@ -610,7 +611,7 @@ input:focus, textarea:focus {
 }
 
 .detail-fields dt {
-  color: #8080a0;
+  color: #9090b0;
   text-transform: uppercase;
   font-size: 10px;
   font-weight: 600;
@@ -635,7 +636,7 @@ input:focus, textarea:focus {
 .command-hint {
   font-family: monospace;
   font-size: 10px;
-  color: #8080a0;
+  color: #9090b0;
   letter-spacing: 0.05em;
 }
 
@@ -740,7 +741,7 @@ input:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8080a0;
+  color: #9090b0;
   font-family: monospace;
   font-style: italic;
 }
@@ -760,7 +761,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-heading {
-  color: #8080a0;
+  color: #9090b0;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -769,7 +770,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-empty {
-  color: #3a3a5c;
+  color: #8585a8;
   font-style: italic;
   font-size: 11px;
 }
@@ -794,7 +795,7 @@ input:focus, textarea:focus {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #3a3a5c;
+  background: #6a6a8c;
 }
 
 .diagnostics-dot--active {
@@ -803,7 +804,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-conn-stats {
-  color: #8080a0;
+  color: #9090b0;
   font-size: 10px;
 }
 
@@ -815,7 +816,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-summary dt {
-  color: #8080a0;
+  color: #9090b0;
   text-transform: uppercase;
   font-size: 10px;
   font-weight: 600;
@@ -844,7 +845,7 @@ input:focus, textarea:focus {
   background: transparent;
   border: none;
   border-right: 1px solid #2a2a3e;
-  color: #8080a0;
+  color: #9090b0;
   font-family: monospace;
   font-size: 10px;
   cursor: pointer;
@@ -906,7 +907,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-req-time {
-  color: #8080a0;
+  color: #9090b0;
   min-width: 70px;
 }
 
@@ -931,13 +932,13 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-req-duration {
-  color: #8080a0;
+  color: #9090b0;
   min-width: 48px;
   text-align: right;
 }
 
 .diagnostics-req-route {
-  color: #3a3a5c;
+  color: #8585a8;
   font-size: 10px;
   max-width: 180px;
   overflow: hidden;
@@ -961,7 +962,7 @@ input:focus, textarea:focus {
 }
 
 .diagnostics-label {
-  color: #8080a0;
+  color: #9090b0;
   text-transform: uppercase;
   font-size: 10px;
   font-weight: 600;
@@ -1019,7 +1020,7 @@ input:focus, textarea:focus {
 }
 
 .worker-detail-heading {
-  color: #8080a0;
+  color: #9090b0;
   font-family: monospace;
   font-size: 10px;
   font-weight: 600;
@@ -1037,7 +1038,7 @@ input:focus, textarea:focus {
 }
 
 .worker-detail-fields dt {
-  color: #8080a0;
+  color: #9090b0;
   text-transform: uppercase;
   font-size: 10px;
   font-weight: 600;
@@ -1060,7 +1061,7 @@ input:focus, textarea:focus {
 }
 
 .worker-detail-empty {
-  color: #3a3a5c;
+  color: #8585a8;
   font-family: monospace;
   font-size: 12px;
   font-style: italic;
@@ -1176,7 +1177,7 @@ input:focus, textarea:focus {
 }
 
 .agent-detail-panel-heading {
-  color: #8080a0;
+  color: #9090b0;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 10px;
   font-weight: 600;
@@ -1193,7 +1194,7 @@ input:focus, textarea:focus {
 }
 
 .agent-detail-panel-empty {
-  color: #3a3a5c;
+  color: #8585a8;
   font-family: monospace;
   font-size: 12px;
   font-style: italic;
@@ -1229,7 +1230,7 @@ input:focus, textarea:focus {
 
 .agent-detail-model-arrow {
   font-size: 9px;
-  color: #8080a0;
+  color: #9090b0;
 }
 
 .agent-detail-model-dropdown {
@@ -1294,7 +1295,7 @@ input:focus, textarea:focus {
 }
 
 .agent-detail-activity-time {
-  color: #8080a0;
+  color: #9090b0;
   font-family: monospace;
   font-size: 10px;
 }
@@ -1312,7 +1313,7 @@ input:focus, textarea:focus {
 }
 
 .agent-detail-stat-label {
-  color: #8080a0;
+  color: #9090b0;
   font-family: monospace;
   font-size: 10px;
   font-weight: 600;
@@ -1467,7 +1468,7 @@ input:focus, textarea:focus {
 }
 
 .kanban-loading {
-  color: #8080a0;
+  color: #9090b0;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 13px;
   font-style: italic;
@@ -1494,7 +1495,7 @@ input:focus, textarea:focus {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #8080a0;
+  color: #9090b0;
   background: rgba(18, 18, 26, 0.8);
   border-bottom: 1px solid #1a1a3e;
   position: sticky;
@@ -1527,7 +1528,7 @@ input:focus, textarea:focus {
 }
 
 .kanban-empty {
-  color: #3a3a5c;
+  color: #8585a8;
   font-family: monospace;
   font-size: 11px;
   font-style: italic;
@@ -1593,7 +1594,7 @@ input:focus, textarea:focus {
 }
 
 .kanban-card-time {
-  color: #8080a0;
+  color: #9090b0;
   font-size: 10px;
   margin-top: 4px;
 }
@@ -1653,7 +1654,7 @@ input:focus, textarea:focus {
 }
 
 .kanban-card-decided {
-  color: #8080a0;
+  color: #9090b0;
   font-size: 10px;
   font-style: italic;
   margin-top: 6px;
@@ -1677,7 +1678,7 @@ input:focus, textarea:focus {
 }
 
 .kanban-card-detail-label {
-  color: #8080a0;
+  color: #9090b0;
   text-transform: uppercase;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -2364,6 +2365,40 @@ input:focus, textarea:focus {
   .sidebar nav a { border-radius: 6px; }
   .sidebar nav a.active { border-bottom: 2px solid var(--accent); }
   .main { padding: 16px; }
+
+  /* Dashboard KPI cards: 2-column at tablet */
+  .dashboard-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Dashboard panels: stack vertically at tablet */
+  .dashboard-panels {
+    grid-template-columns: 1fr;
+  }
+
+  /* Calendar header: wrap controls */
+  .calendar-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* Calendar week grid: horizontal scroll at tablet */
+  .calendar-grid {
+    overflow-x: auto;
+    min-width: 0;
+  }
+
+  /* HUD status bar: wrap items */
+  .hud-status-bar {
+    flex-wrap: wrap;
+    gap: 12px 24px;
+  }
+
+  /* Command bar: wrap hints */
+  .command-bar {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -2378,4 +2413,218 @@ input:focus, textarea:focus {
   }
   .sidebar-brand { display: none; }
   .main { padding-bottom: 3.5rem; }
+
+  /* NotificationBell: move to fixed top-right when sidebar brand is hidden */
+  .notification-bell {
+    position: fixed;
+    top: 8px;
+    right: 12px;
+    z-index: 101;
+    margin-left: 0;
+  }
+
+  .notification-bell-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    padding: 8px;
+  }
+
+  .notification-dropdown {
+    left: auto;
+    right: 0;
+    width: calc(100vw - 24px);
+    max-width: 320px;
+  }
+
+  /* Dashboard KPI cards: single column on mobile */
+  .dashboard-kpis {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .kpi-card {
+    padding: 16px;
+  }
+
+  /* Dashboard panels: stack with reduced padding */
+  .dashboard-panels {
+    grid-template-columns: 1fr;
+    padding: 0 12px;
+  }
+
+  .dashboard-panel {
+    padding: 16px;
+  }
+
+  /* Calendar week grid: allow horizontal scroll with minimum column width */
+  .calendar-grid {
+    overflow-x: auto;
+    min-width: 600px;
+  }
+
+  /* Wrap calendar page for scroll */
+  .calendar-page {
+    overflow-x: auto;
+  }
+
+  /* Calendar month grid: reduce cell height */
+  .calendar-month-day {
+    min-height: 56px;
+    padding: 4px;
+  }
+
+  /* Calendar header: stack vertically */
+  .calendar-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* Main content: tighter padding */
+  .main {
+    padding: 12px;
+    padding-bottom: 3.5rem;
+  }
+
+  /* HUD status bar: compact */
+  .hud-status-bar {
+    padding: 6px 12px;
+    gap: 8px 16px;
+    flex-wrap: wrap;
+  }
+
+  /* Command bar: smaller on mobile */
+  .command-bar {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 4px 12px;
+  }
+
+  .command-hint {
+    font-size: 9px;
+  }
+}
+
+/* ---- Approval Confirm Dialog ---- */
+.approval-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 20vh;
+  z-index: 200;
+}
+
+.approval-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.approval-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.approval-dialog-description {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.approval-dialog-totp {
+  margin-bottom: 16px;
+}
+
+.approval-dialog-totp-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.approval-dialog-totp-input {
+  width: 160px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.approval-dialog-totp-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.25);
+}
+
+.approval-dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Reduced-motion accessibility (WCAG 2.1 AA) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  /* Constellation dash-flow */
+  .constellation-line {
+    stroke-dasharray: none !important;
+    animation: none !important;
+  }
+
+  /* Error node shake */
+  .error {
+    animation: none !important;
+  }
+
+  /* HUD approval pulse-glow */
+  .hud-approval-count {
+    animation: none !important;
+  }
+
+  /* Kanban running dot pulse */
+  .run-dot.running {
+    animation: none !important;
+  }
+
+  /* View transitions — show instantly */
+  .mc-view-enter {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .mc-view-active {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  /* Toast slide-in */
+  .toast {
+    animation: none !important;
+  }
 }

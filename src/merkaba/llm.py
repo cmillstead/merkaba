@@ -10,7 +10,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.expanduser("~/.merkaba/config.json")
+from merkaba.paths import config_path as _config_path
+
+CONFIG_PATH = _config_path()
 
 
 # --- Rate Limiting & Resource Management ---
@@ -110,16 +112,16 @@ class LLMGate:
 
 def _load_gate_config() -> GateConfig:
     """Load gate config from ~/.merkaba/config.json if available."""
-    try:
-        with open(CONFIG_PATH) as f:
-            data = json.load(f)
-        rl = data.get("rate_limiting", {})
+    from merkaba.config.loader import load_config
+
+    data = load_config()
+    rl = data.get("rate_limiting", {})
+    if rl:
         return GateConfig(
             max_concurrent=rl.get("max_concurrent", 2),
             queue_depth_warning=rl.get("queue_depth_warning", 5),
         )
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return GateConfig()
+    return GateConfig()
 
 
 _llm_gate: LLMGate | None = None
@@ -172,10 +174,11 @@ class ModelTier:
     timeout: float = 120.0
 
 
+from merkaba.config.defaults import DEFAULT_MODELS, FALLBACK_CHAINS
+
 MODEL_CHAINS: dict[str, ModelTier] = {
-    "complex": ModelTier(primary="qwen3.5:122b", fallbacks=["qwen3:8b"], timeout=120.0),
-    "simple": ModelTier(primary="qwen3:8b", fallbacks=["qwen3:4b"], timeout=30.0),
-    "classifier": ModelTier(primary="qwen3:4b", fallbacks=[], timeout=10.0),
+    tier: ModelTier(primary=cfg["primary"], fallbacks=cfg["fallbacks"], timeout=cfg["timeout"])
+    for tier, cfg in FALLBACK_CHAINS.items()
 }
 
 
@@ -184,21 +187,24 @@ def load_fallback_chains(config_path: str = CONFIG_PATH) -> dict[str, ModelTier]
 
     Config format: {"models": {"fallback_chains": {"complex": {"primary": "...", "fallbacks": [...]}}}}
     """
+    from merkaba.config.loader import load_config
+
     chains = {k: ModelTier(primary=v.primary, fallbacks=list(v.fallbacks), timeout=v.timeout)
               for k, v in MODEL_CHAINS.items()}
-    try:
-        with open(config_path) as f:
-            data = json.load(f)
-        overrides = data.get("models", {}).get("fallback_chains", {})
-        for tier_name, tier_data in overrides.items():
-            if isinstance(tier_data, dict):
-                primary = tier_data.get("primary")
-                if primary:
-                    fallbacks = tier_data.get("fallbacks", [])
-                    timeout = tier_data.get("timeout", 120.0)
-                    chains[tier_name] = ModelTier(primary=primary, fallbacks=fallbacks, timeout=timeout)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        pass
+    data = load_config(path=config_path, use_cache=False)
+    model_overrides = data.get("models", {})
+    for tier_name in ("complex", "simple", "classifier"):
+        primary = model_overrides.get(tier_name)
+        if primary and tier_name in chains:
+            chains[tier_name].primary = primary
+    overrides = data.get("models", {}).get("fallback_chains", {})
+    for tier_name, tier_data in overrides.items():
+        if isinstance(tier_data, dict):
+            primary = tier_data.get("primary")
+            if primary:
+                fallbacks = tier_data.get("fallbacks", [])
+                timeout = tier_data.get("timeout", 120.0)
+                chains[tier_name] = ModelTier(primary=primary, fallbacks=fallbacks, timeout=timeout)
     return chains
 
 
@@ -214,12 +220,14 @@ class RetryConfig:
 class LLMClient:
     """Client for interacting with Ollama LLM."""
 
-    model: str = "qwen3.5:122b"
+    model: str = None
     base_url: str = "http://localhost:11434"
     _client: Any = field(default=None, init=False, repr=False)
     last_fallback: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["complex"]
         import ollama
         self._client = ollama.Client(host=self.base_url)
 

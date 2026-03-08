@@ -7,6 +7,8 @@ from pathlib import Path
 
 import frontmatter
 
+from merkaba.config.defaults import DEFAULT_MODELS
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class AgentConfig:
         return cls(
             name=post.get("name", "unnamed"),
             description=post.get("description", ""),
-            model=post.get("model", "qwen3.5:122b"),
+            model=post.get("model", DEFAULT_MODELS["complex"]),
             system_prompt=post.content,
             max_iterations=post.get("max_iterations", 10),
             plugin_name=plugin_name,

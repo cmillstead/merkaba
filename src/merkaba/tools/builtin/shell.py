@@ -31,8 +31,10 @@ _FIND_DANGEROUS_FLAGS = {"-exec", "-execdir", "-ok", "-okdir", "-delete"}
 # Paths that cp/mv must never read from or write to (H2).
 # Expanduser is called at module load time so the check is path-based, not
 # pattern-based, and is immune to tilde-expansion tricks.
+from merkaba.paths import merkaba_home as _merkaba_home
+
 _FORBIDDEN_CP_MV_PATHS = [
-    os.path.expanduser("~/.merkaba"),
+    _merkaba_home(),
     os.path.expanduser("~/.ssh"),
     os.path.expanduser("~/.aws"),
     os.path.expanduser("~/.gnupg"),

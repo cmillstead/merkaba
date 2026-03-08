@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { WorkerState, WorkerRun } from '../hooks/useControlSocket'
+import { triggerWorker } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 interface Props {
   worker: WorkerState
@@ -20,7 +22,7 @@ function runDotColor(status: string): string {
   if (status === 'completed' || status === 'success') return '#4ade80'
   if (status === 'failed' || status === 'error') return '#f87171'
   if (status === 'running') return '#00f0ff'
-  return '#3a3a5c'
+  return '#6a6a8c'
 }
 
 function isRunning(status: string): boolean {
@@ -36,32 +38,27 @@ function runDotLabel(run: WorkerRun): string {
 export default function WorkerDetailView({ worker, onBack }: Props) {
   const [triggerState, setTriggerState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [triggerMessage, setTriggerMessage] = useState('')
+  const { showToast } = useToast()
 
   const handleRunNow = useCallback(async () => {
     setTriggerState('loading')
     setTriggerMessage('')
     try {
-      const res = await fetch(`/api/control/worker/${worker.id}/trigger`, {
-        method: 'POST',
-      })
-      if (res.ok) {
-        setTriggerState('success')
-        setTriggerMessage('Triggered successfully')
-      } else {
-        const text = await res.text()
-        setTriggerState('error')
-        setTriggerMessage(text || `Error ${res.status}`)
-      }
+      await triggerWorker(worker.id)
+      setTriggerState('success')
+      setTriggerMessage('Triggered successfully')
     } catch (err) {
       setTriggerState('error')
-      setTriggerMessage(err instanceof Error ? err.message : 'Network error')
+      const msg = err instanceof Error ? err.message : 'Network error'
+      setTriggerMessage(msg)
+      showToast(msg, 'error')
     }
     // Reset after 3 seconds
     setTimeout(() => {
       setTriggerState('idle')
       setTriggerMessage('')
     }, 3000)
-  }, [worker.id])
+  }, [worker.id, showToast])
 
   const recentRuns = worker.run_history.slice(-5)
 
@@ -94,7 +91,7 @@ export default function WorkerDetailView({ worker, onBack }: Props) {
                   background:
                     worker.status === 'active' ? '#00f0ff' :
                     worker.status === 'idle' ? '#4ade80' :
-                    '#3a3a5c',
+                    '#6a6a8c',
                 }}
               />
               {worker.status}

@@ -9,6 +9,8 @@ import KanbanBoard from '../components/KanbanBoard'
 import WorkerDetailView from '../components/WorkerDetailView'
 import CommandPalette from '../components/CommandPalette'
 import { useNotificationDetection } from '../hooks/useNotifications'
+import { getConfig, triggerWorker, updateConfig } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 type View =
   | { mode: 'dashboard' }
@@ -21,6 +23,7 @@ type View =
 export default function MissionControl() {
   const { state, connected, subscribeDiagnostics, unsubscribeDiagnostics, subscribeKanban, unsubscribeKanban, setTraceDepth } = useControlSocket()
   useNotificationDetection(state)
+  const { showToast } = useToast()
   const [view, setView] = useState<View>({ mode: 'constellation' })
   const [viewReady, setViewReady] = useState(false)
 
@@ -44,12 +47,22 @@ export default function MissionControl() {
   }, [])
 
   const handleModelChange = useCallback((model: string) => {
-    fetch('/api/control/model', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: 'merkaba-prime', model }),
-    })
-  }, [])
+    getConfig()
+      .then(cfg => {
+        const currentModels = typeof cfg.models === 'object' && cfg.models !== null
+          ? cfg.models as Record<string, unknown>
+          : {}
+        return updateConfig({
+          models: {
+            ...currentModels,
+            complex: model,
+          },
+        })
+      })
+      .catch(err => {
+        showToast(err instanceof Error ? err.message : 'Failed to change model', 'error')
+      })
+  }, [showToast])
 
   const commands = useMemo(() => [
     { id: 'nav-dashboard', label: 'Go to Dashboard', action: () => setView({ mode: 'dashboard' }) },
@@ -64,9 +77,11 @@ export default function MissionControl() {
     ...state.workers.map(w => ({
       id: `trigger-${w.id}`,
       label: `Trigger Worker: ${w.name}`,
-      action: () => { fetch(`/api/control/worker/${w.id}/trigger`, { method: 'POST' }) },
+      action: () => { triggerWorker(w.id).catch(err => {
+        showToast(err instanceof Error ? err.message : 'Failed to trigger worker', 'error')
+      }) },
     })),
-  ], [state.workers])
+  ], [state.workers, showToast])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Send, Paperclip, History, Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { connectChat } from '../api/client'
+import { connectChat, getChatSessions, getChatSession, uploadFile } from '../api/client'
 import type { ChatMessage, ChatConnection } from '../api/client'
 import { useToast } from '../context/ToastContext'
 
@@ -95,12 +95,10 @@ export default function Chat() {
 
     async function loadLastChat() {
       try {
-        const resp = await fetch('/api/chat/sessions')
-        const data = await resp.json()
+        const data = await getChatSessions()
         if (data.sessions?.length > 0) {
           const latest = data.sessions[0]
-          const sessionResp = await fetch(`/api/chat/sessions/${latest.id}`)
-          const sessionData = await sessionResp.json()
+          const sessionData = await getChatSession(latest.id)
           const loaded: DisplayMsg[] = sessionData.messages
             .filter((m: { role: string }) => m.role === 'user' || m.role === 'assistant')
             .map((m: { role: string; content: string }) => ({
@@ -120,18 +118,16 @@ export default function Chat() {
 
   async function loadSessions() {
     try {
-      const resp = await fetch('/api/chat/sessions')
-      const data = await resp.json()
+      const data = await getChatSessions()
       setSessions(data.sessions)
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+      showToast(err instanceof Error ? err.message : 'Failed to load sessions', 'error')
     }
   }
 
   async function loadSession(id: string) {
     try {
-      const resp = await fetch(`/api/chat/sessions/${id}`)
-      const data = await resp.json()
+      const data = await getChatSession(id)
       const loaded: DisplayMsg[] = data.messages
         .filter((m: { role: string }) => m.role === 'user' || m.role === 'assistant')
         .map((m: { role: string; content: string }) => ({
@@ -141,7 +137,7 @@ export default function Chat() {
       setMessages(loaded)
       setShowHistory(false)
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+      showToast(err instanceof Error ? err.message : 'Failed to load session', 'error')
     }
   }
 
@@ -171,12 +167,10 @@ export default function Chat() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const resp = await fetch('/api/upload', { method: 'POST', body: form })
-      if (!resp.ok) throw new Error('Upload failed')
-      const data = await resp.json()
+      const data = await uploadFile(form)
       setAttachedFile({ path: data.path, name: file.name })
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'An error occurred', 'error')
+      showToast(err instanceof Error ? err.message : 'Upload failed', 'error')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -184,7 +178,7 @@ export default function Chat() {
   }
 
   function send() {
-    let text = input.trim()
+    const text = input.trim()
     if (!text && !attachedFile) return
     if (!wsRef.current) return
 
@@ -229,6 +223,9 @@ export default function Chat() {
               <div
                 key={s.id}
                 onClick={() => loadSession(s.id)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadSession(s.id) } }}
+                tabIndex={0}
+                role="button"
                 style={{
                   padding: '8px 12px',
                   cursor: 'pointer',

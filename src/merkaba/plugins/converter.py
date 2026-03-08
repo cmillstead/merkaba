@@ -3,7 +3,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import frontmatter
 
@@ -38,7 +38,12 @@ class SkillConverter:
     """Converts skill content to Merkaba-compatible format."""
 
     content: str
-    model: str = "qwen3.5:122b"
+    model: str = None
+
+    def __post_init__(self):
+        if self.model is None:
+            from merkaba.config.defaults import DEFAULT_MODELS
+            self.model = DEFAULT_MODELS["complex"]
 
     def apply_rule_based(self) -> str:
         """Apply rule-based tool name mapping."""
@@ -67,7 +72,7 @@ class SkillConverter:
         post = frontmatter.loads(self.content)
 
         post.metadata["imported_from"] = imported_from
-        post.metadata["imported_at"] = datetime.now().isoformat()
+        post.metadata["imported_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         post.metadata["compatibility"] = compatibility
         post.metadata["conversion"] = conversion
 

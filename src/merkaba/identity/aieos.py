@@ -51,7 +51,11 @@ def import_aieos(
     Creates SOUL.md from the identity data and stores the original
     JSON for lossless round-trip on export.
     """
-    merkaba_home = Path(merkaba_home) if merkaba_home else Path("~/.merkaba").expanduser()
+    if merkaba_home:
+        merkaba_home = Path(merkaba_home)
+    else:
+        from merkaba.paths import merkaba_home as _merkaba_home
+        merkaba_home = Path(_merkaba_home())
 
     try:
         data = json.loads(Path(aieos_path).read_text())
@@ -136,7 +140,11 @@ def export_aieos(
     edits back into the original. Otherwise, reconstructs AIEOS from SOUL.md.
     Always includes extensions.merkaba.raw_soul_md as a fallback field.
     """
-    merkaba_home = Path(merkaba_home) if merkaba_home else Path("~/.merkaba").expanduser()
+    if merkaba_home:
+        merkaba_home = Path(merkaba_home)
+    else:
+        from merkaba.paths import merkaba_home as _mh
+        merkaba_home = Path(_mh())
     output_path = Path(output_path) if output_path else None
 
     biz_dir = merkaba_home / "businesses" / business_name

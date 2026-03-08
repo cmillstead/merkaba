@@ -186,19 +186,19 @@ def test_data_delete_all_no_confirm_aborts(cli_runner, seeded_memory):
 # ---------------------------------------------------------------------------
 
 def test_data_delete_all_removes_file_directories(cli_runner, seeded_memory):
-    """delete-all should also remove conversations/ and uploads/ from MERKABA_DIR."""
+    """delete-all should remove conversations/ and uploads/ directories (flat layout)."""
     runner, app = cli_runner
     business_id = seeded_memory["business_id"]
     merkaba_home = seeded_memory["merkaba_home"]
 
-    # Create fake conversation and upload files inside the temp merkaba_home
+    # Create flat conversation and upload files (not business-scoped)
     convos_dir = merkaba_home / "conversations"
-    convos_dir.mkdir(exist_ok=True)
+    convos_dir.mkdir(parents=True, exist_ok=True)
     (convos_dir / "session_abc.json").write_text('{"messages": []}')
     (convos_dir / "session_def.json").write_text('{"messages": []}')
 
     uploads_dir = merkaba_home / "uploads"
-    uploads_dir.mkdir(exist_ok=True)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     (uploads_dir / "photo.png").write_bytes(b"\x89PNG\r\n")
     (uploads_dir / "doc.pdf").write_bytes(b"%PDF-1.4")
 
@@ -216,7 +216,7 @@ def test_data_delete_all_removes_file_directories(cli_runner, seeded_memory):
     assert result.exit_code == 0, result.output
     assert "Deleted all data" in result.output
 
-    # Both directories must have been removed
+    # Directories should have been cleaned up
     assert not convos_dir.exists(), "conversations/ should be removed by delete-all"
     assert not uploads_dir.exists(), "uploads/ should be removed by delete-all"
 
@@ -298,3 +298,107 @@ def test_data_export_includes_state_by_business(cli_runner, tmp_path):
     # biz1 has exactly one state entry
     assert len(data["state"]) == 1
     assert data["state"][0]["value"] == "running"
+
+
+# ---------------------------------------------------------------------------
+# 7. data delete-all attempts ChromaDB vector cleanup (mocked)
+# ---------------------------------------------------------------------------
+
+def test_data_delete_all_cleans_vectors(cli_runner, seeded_memory):
+    """delete-all should attempt to clean up ChromaDB vectors for the business."""
+    from unittest.mock import MagicMock
+
+    runner, app = cli_runner
+    business_id = seeded_memory["business_id"]
+    merkaba_home = seeded_memory["merkaba_home"]
+
+    mock_vm = MagicMock()
+    mock_vm.delete_vectors_for_business.return_value = {"facts": 3, "decisions": 1}
+
+    with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
+        with patch("merkaba.memory.vectors.VectorMemory", return_value=mock_vm):
+            result = runner.invoke(
+                app,
+                ["data", "delete-all", "--business-id", str(business_id), "--yes"],
+            )
+
+    assert result.exit_code == 0, result.output
+    assert "Deleted all data" in result.output
+
+    # VectorMemory should have been asked to delete vectors for this business
+    mock_vm.delete_vectors_for_business.assert_called_once_with(business_id)
+    mock_vm.close.assert_called_once()
+
+    # Vector counts should appear in output
+    assert "vectors_facts" in result.output
+    assert "vectors_decisions" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 8. data delete-all handles missing ChromaDB gracefully
+# ---------------------------------------------------------------------------
+
+def test_data_delete_all_handles_missing_chromadb(cli_runner, seeded_memory):
+    """delete-all should print a warning when ChromaDB is not available."""
+    runner, app = cli_runner
+    business_id = seeded_memory["business_id"]
+    merkaba_home = seeded_memory["merkaba_home"]
+
+    with patch("merkaba.cli.MERKABA_DIR", str(merkaba_home)):
+        with patch.dict("sys.modules", {"merkaba.memory.vectors": None}):
+            result = runner.invoke(
+                app,
+                ["data", "delete-all", "--business-id", str(business_id), "--yes"],
+            )
+
+    assert result.exit_code == 0, result.output
+    assert "Deleted all data" in result.output
+    assert "ChromaDB not available" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 8. data vacuum — runs VACUUM on all databases
+# ---------------------------------------------------------------------------
+
+def test_data_vacuum(cli_runner, seeded_memory):
+    """data vacuum should vacuum each database and report success."""
+    runner, app = cli_runner
+    merkaba_home = seeded_memory["merkaba_home"]
+
+    # Ensure tasks.db and actions.db exist alongside memory.db
+    import sqlite3
+
+    for db_name in ("tasks.db", "actions.db"):
+        db_path = str(merkaba_home / db_name)
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE IF NOT EXISTS _dummy (id INTEGER)")
+        conn.close()
+
+    with patch("merkaba.paths.merkaba_home", return_value=str(merkaba_home)):
+        result = runner.invoke(app, ["data", "vacuum"])
+
+    assert result.exit_code == 0, result.output
+    assert "Vacuumed memory" in result.output
+    assert "Vacuumed tasks" in result.output
+    assert "Vacuumed actions" in result.output
+
+
+def test_data_vacuum_skips_missing(cli_runner, patched_dbs):
+    """data vacuum skips databases that do not exist on disk."""
+    runner, app = cli_runner
+    merkaba_home = patched_dbs
+
+    # Only create memory.db — tasks.db and actions.db intentionally absent
+    import sqlite3
+
+    conn = sqlite3.connect(str(merkaba_home / "memory.db"))
+    conn.execute("CREATE TABLE IF NOT EXISTS _dummy (id INTEGER)")
+    conn.close()
+
+    with patch("merkaba.paths.merkaba_home", return_value=str(merkaba_home)):
+        result = runner.invoke(app, ["data", "vacuum"])
+
+    assert result.exit_code == 0, result.output
+    assert "Vacuumed memory" in result.output
+    assert "Skipped tasks" in result.output
+    assert "Skipped actions" in result.output

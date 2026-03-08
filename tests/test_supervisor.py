@@ -397,7 +397,7 @@ def test_verify_integration_cache_key_includes_sorted_targets(supervisor, memory
 
 def test_verify_integration_cache_expires_after_ttl(supervisor, memory):
     """Cache entries older than 30 minutes should be evicted, triggering a new LLM call."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     bid = memory.add_business(name="TestBiz", type="test")
     task = {
@@ -422,7 +422,7 @@ def test_verify_integration_cache_expires_after_ttl(supervisor, memory):
 
         # Manually expire the cache entry
         cache_key = "_stub:target_x"
-        old_time = datetime.now() - timedelta(minutes=31)
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=31)
         supervisor._integration_cache[cache_key] = ("CONNECTED", old_time)
 
         # Second call — cache expired, should call LLM again

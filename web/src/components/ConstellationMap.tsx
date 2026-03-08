@@ -59,12 +59,12 @@ export default function ConstellationMap({ agents, workers, connections, system,
 
   const healthRingColor = useCallback((id: string): string => {
     const worker = workers.find(w => w.id === id)
-    if (!worker) return '#3a3a5c'
+    if (!worker) return '#6a6a8c'
     const lastRun = worker.run_history?.[0]
     if (lastRun?.status === 'success') return '#4ade80'
     if (lastRun?.status === 'failed') return '#f87171'
     if (worker.scheduled && (!worker.run_history || worker.run_history.length === 0)) return '#fbbf24'
-    return '#3a3a5c'
+    return '#6a6a8c'
   }, [workers])
 
   const workerTooltip = useCallback((id: string): string => {
@@ -178,7 +178,7 @@ export default function ConstellationMap({ agents, workers, connections, system,
             x1={from.x} y1={from.y}
             x2={to.x} y2={to.y}
             className="constellation-line"
-            stroke="#3a3a5c"
+            stroke="#6a6a8c"
             strokeWidth="1"
             strokeDasharray="6 4"
           />
@@ -234,7 +234,7 @@ export default function ConstellationMap({ agents, workers, connections, system,
               <circle
                 r={isAgent ? 40 : 28}
                 fill={isAgent ? 'url(#orb-fill)' : '#12121a'}
-                stroke={status === 'active' ? '#00f0ff' : '#3a3a5c'}
+                stroke={status === 'active' ? '#00f0ff' : '#6a6a8c'}
                 strokeWidth="1.5"
               />
             </g>

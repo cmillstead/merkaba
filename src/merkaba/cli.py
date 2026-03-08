@@ -74,22 +74,13 @@ _load_cli_extensions()
 
 
 def _atomic_write_json(path: str, data: dict, **kwargs) -> None:
-    """Write JSON to a file atomically via tmp+rename."""
-    import tempfile
-    dir_ = os.path.dirname(path) or "."
-    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2, **kwargs)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    """Write JSON to a file atomically via tmp+rename.
+
+    Delegates to the shared utility in merkaba.config.utils.
+    """
+    from merkaba.config.utils import atomic_write_json
+
+    atomic_write_json(path, data, **kwargs)
 
 
 def version_callback(value: bool):
@@ -135,11 +126,13 @@ def main(
 @app.command(rich_help_panel="Core")
 def chat(
     message: str = typer.Argument(None, help="Message to send to Merkaba"),
-    model: str = typer.Option("qwen3.5:122b", "--model", "-m", help="LLM model to use"),
+    model: str = typer.Option(None, "--model", "-m", help="LLM model to use"),
 ):
     """Start a conversation with Merkaba."""
     from pathlib import Path as _Path
     from merkaba.config.validation import validate_config, print_startup_report, Severity
+    from merkaba.config.defaults import DEFAULT_MODELS
+    model = model or DEFAULT_MODELS["complex"]
 
     config_path = os.path.expanduser("~/.merkaba/config.json")
     try:
@@ -2358,11 +2351,39 @@ def data_delete_all(
     finally:
         store.close()
 
-    # Also remove conversation and upload files
+    # Clean up ChromaDB vector embeddings for this business
+    try:
+        from merkaba.memory.vectors import VectorMemory
+
+        vm = VectorMemory()
+        try:
+            vec_counts = vm.delete_vectors_for_business(business_id)
+            for col_name, n in vec_counts.items():
+                if n > 0:
+                    counts[f"vectors_{col_name}"] = n
+        finally:
+            vm.close()
+    except ImportError:
+        console.print(
+            "[yellow]ChromaDB not available — vector embeddings may remain. "
+            "Run 'merkaba memory rebuild-vectors' after installing chromadb.[/yellow]"
+        )
+    except Exception as exc:
+        console.print(
+            f"[yellow]Vector cleanup failed ({exc}). "
+            "Run 'merkaba memory rebuild-vectors' to fix.[/yellow]"
+        )
+
+    # Remove conversation and upload files
+    # Conversations are stored flat in ~/.merkaba/conversations/ (not business-scoped)
     import shutil as _shutil
+
     convos_dir = os.path.join(MERKABA_DIR, "conversations")
     uploads_dir = os.path.join(MERKABA_DIR, "uploads")
-    for dir_path, label in [(convos_dir, "conversations"), (uploads_dir, "uploads")]:
+    for dir_path, label in [
+        (convos_dir, "conversations"),
+        (uploads_dir, "uploads"),
+    ]:
         if os.path.isdir(dir_path):
             count = len(os.listdir(dir_path))
             _shutil.rmtree(dir_path)
@@ -2371,6 +2392,28 @@ def data_delete_all(
     console.print(f"[green]Deleted all data for business {business_id}:[/green]")
     for table, count in counts.items():
         console.print(f"  {table}: {count} row(s) deleted")
+
+
+@data_app.command("vacuum")
+def data_vacuum():
+    """Run VACUUM on all Merkaba databases to reclaim disk space."""
+    import sqlite3 as _sqlite3
+
+    from merkaba.paths import db_path as get_db_path
+
+    db_names = ("memory", "tasks", "actions")
+    for db_name in db_names:
+        db_path = get_db_path(db_name)
+        if not os.path.exists(db_path):
+            console.print(f"[yellow]Skipped {db_name} (not found)[/yellow]")
+            continue
+        try:
+            conn = _sqlite3.connect(db_path)
+            conn.execute("VACUUM")
+            conn.close()
+            console.print(f"[green]Vacuumed {db_name}[/green]")
+        except Exception as exc:
+            console.print(f"[red]Failed to vacuum {db_name}: {exc}[/red]")
 
 
 # --- Code agent commands ---

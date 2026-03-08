@@ -97,7 +97,7 @@ class DiagnosticsStore:
         with self._lock:
             self._connections[conn_id] = {
                 "path": path,
-                "connected_at": datetime.now(timezone.utc).isoformat(),
+                "connected_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "frames_sent": 0,
                 "frames_received": 0,
             }
@@ -173,7 +173,7 @@ class DiagnosticsMiddleware:
             duration = (time.monotonic() - start) * 1000
             try:
                 entry = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                     "scope_type": "http",
                     "method": scope.get("method", "?"),
                     "path": scope.get("path", "?"),
@@ -231,7 +231,7 @@ class DiagnosticsMiddleware:
                         conn_info = c
                         break
                 self.store.record_request({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                     "scope_type": "websocket",
                     "method": "WS",
                     "path": path,

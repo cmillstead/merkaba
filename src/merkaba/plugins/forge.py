@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from html.parser import HTMLParser
 from pathlib import Path
@@ -371,7 +371,7 @@ def scan_and_write(
     post = frontmatter.loads(skill_md)
     if source_url:
         post.metadata["forged_from"] = source_url
-    post.metadata["forged_at"] = datetime.now().isoformat()
+    post.metadata["forged_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     skill_md = frontmatter.dumps(post)
 
     # Scan
@@ -402,7 +402,8 @@ def forge(
     import os
 
     if dest_dir is None:
-        dest_dir = os.path.expanduser("~/.merkaba/plugins")
+        from merkaba.paths import subdir as _subdir
+        dest_dir = _subdir("plugins")
 
     try:
         # 1. Scrape

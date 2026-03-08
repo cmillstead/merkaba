@@ -41,8 +41,15 @@ export default function NotificationBell() {
         setOpen(false)
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const label = unreadCount > 0
@@ -65,7 +72,12 @@ export default function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="notification-dropdown" role="region" aria-live="polite" aria-label="Notifications">
+        <div
+          className="notification-dropdown"
+          role="region"
+          aria-live="polite"
+          aria-label="Notifications"
+        >
           <div className="notification-dropdown-header">
             <span>Notifications</span>
             <button className="notification-clear" onClick={clearAll}>Clear</button>
@@ -75,7 +87,7 @@ export default function NotificationBell() {
           ) : (
             <div className="notification-list">
               {notifications.map(n => (
-                <div key={n.id} className={`notification-item${n.read ? '' : ' notification-unread'}`}>
+                <div key={n.id} className={`notification-item${n.read ? '' : ' notification-unread'}`} aria-label={`${n.read ? '' : '(unread) '}${n.title}`}>
                   <span className={`notification-type-dot ${TYPE_COLORS[n.type]}`} />
                   <div className="notification-content">
                     <div className="notification-title">{n.title}</div>

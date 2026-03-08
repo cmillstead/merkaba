@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useControlSocket } from '../hooks/useControlSocket.ts'
 import type { WorkerState } from '../hooks/useControlSocket.ts'
 import { cronOccurrences } from '../utils/cron.ts'
+import { triggerWorker } from '../api/client'
+import { useToast } from '../context/ToastContext'
 
 type ViewMode = 'week' | 'month'
 
@@ -86,6 +88,7 @@ interface PopoverData {
 
 export default function Calendar() {
   const { state, connected } = useControlSocket()
+  const { showToast } = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [popover, setPopover] = useState<PopoverData | null>(null)
@@ -168,13 +171,14 @@ export default function Calendar() {
   const handleTrigger = useCallback(async (workerId: string) => {
     setTriggerState('loading')
     try {
-      const res = await fetch(`/api/control/worker/${workerId}/trigger`, { method: 'POST' })
-      setTriggerState(res.ok ? 'success' : 'error')
-    } catch {
+      await triggerWorker(workerId)
+      setTriggerState('success')
+    } catch (err) {
       setTriggerState('error')
+      showToast(err instanceof Error ? err.message : 'Failed to trigger worker', 'error')
     }
     setTimeout(() => setTriggerState('idle'), 3000)
-  }, [])
+  }, [showToast])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -225,11 +229,21 @@ export default function Calendar() {
     if (!popover) return null
     const { worker, schedule, colorType } = popover
     const lastRun = worker.run_history.length > 0 ? worker.run_history[worker.run_history.length - 1] : null
+
+    // Clamp position so the popover stays within the viewport
+    const popoverWidth = 260
+    const popoverHeight = 180
+    const pad = 8
+    const clampedX = Math.min(popover.x, window.innerWidth - popoverWidth - pad)
+    const clampedY = popover.y + popoverHeight > window.innerHeight - pad
+      ? popover.y - popoverHeight - 8  // flip above the block
+      : popover.y
+
     return (
       <div
         ref={popoverRef}
         className="calendar-popover"
-        style={{ left: popover.x, top: popover.y, position: 'fixed' }}
+        style={{ left: Math.max(pad, clampedX), top: Math.max(pad, clampedY), position: 'fixed' }}
         role="dialog"
         aria-label={`${worker.name} details`}
       >

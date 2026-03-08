@@ -6,12 +6,19 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from merkaba.paths import db_path as _db_path
+
+try:
+    from merkaba.security.file_permissions import ensure_secure_permissions as _secure
+except ImportError:  # pragma: no cover
+    _secure = None
+
 
 @dataclass
 class DecisionAuditStore:
     """SQLite-backed decision audit trail."""
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/memory.db"))
+    db_path: str = field(default_factory=lambda: _db_path("memory"))
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -20,7 +27,10 @@ class DecisionAuditStore:
             os.makedirs(db_dir, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode = WAL")
         self._create_tables()
+        if _secure:
+            _secure(self.db_path)
 
     def _create_tables(self):
         self._conn.execute("""
@@ -50,7 +60,7 @@ class DecisionAuditStore:
     ) -> str:
         """Record a decision. Returns the record ID."""
         record_id = uuid.uuid4().hex[:12]
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
         self._conn.execute(
             """INSERT INTO decision_audit

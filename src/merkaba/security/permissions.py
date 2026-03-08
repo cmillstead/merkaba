@@ -1,6 +1,6 @@
 # src/merkaba/security.py
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable
 from merkaba.tools.base import PermissionTier
 
@@ -53,7 +53,7 @@ class PermissionManager:
     def _log_attempt(self, tool_name: str, tier: PermissionTier):
         """Log a permission check attempt."""
         self._audit_log.append({
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "tool": tool_name,
             "tier": tier.name,
             "type": "attempt",
@@ -62,7 +62,7 @@ class PermissionManager:
     def _log_decision(self, tool_name: str, tier: PermissionTier, decision: str):
         """Log a permission decision."""
         self._audit_log.append({
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "tool": tool_name,
             "tier": tier.name,
             "type": "decision",

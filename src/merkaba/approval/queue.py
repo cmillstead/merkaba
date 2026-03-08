@@ -3,8 +3,10 @@ import json
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from merkaba.paths import db_path as _db_path
 
 
 @dataclass
@@ -12,7 +14,7 @@ class ActionQueue:
     """SQLite-backed approval queue for pending actions."""
 
     db_path: str = field(
-        default_factory=lambda: os.path.expanduser("~/.merkaba/actions.db")
+        default_factory=lambda: _db_path("actions")
     )
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
@@ -68,7 +70,7 @@ class ActionQueue:
         self._conn.commit()
 
     def _now(self) -> str:
-        return datetime.now().isoformat()
+        return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # --- Action CRUD ---
 
@@ -188,7 +190,7 @@ class ActionQueue:
 
     def count_recent_approvals(self, window_seconds: int = 60) -> int:
         """Count approvals within the given time window."""
-        cutoff = (datetime.now() - timedelta(seconds=window_seconds)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=window_seconds)).replace(tzinfo=None).isoformat()
         cursor = self._conn.cursor()
         cursor.execute(
             "SELECT COUNT(*) FROM actions WHERE status = 'approved' AND decided_at >= ?",

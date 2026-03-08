@@ -64,7 +64,8 @@ class Scheduler:
 
     def __post_init__(self):
         if self.merkaba_home is None:
-            self.merkaba_home = Path(os.path.expanduser("~/.merkaba"))
+            from merkaba.paths import merkaba_home as _merkaba_home
+            self.merkaba_home = Path(_merkaba_home())
         else:
             self.merkaba_home = Path(self.merkaba_home)
         # Seed known heartbeat names from existing tasks in the queue

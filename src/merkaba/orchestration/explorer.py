@@ -6,12 +6,14 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from merkaba.config.defaults import DEFAULT_MODELS
+
 logger = logging.getLogger(__name__)
 
 MAX_DIR_DEPTH = 2
 MAX_FILES_PER_DIR = 50
 FILE_PREVIEW_BYTES = 2048
-EXPLORATION_MODEL = "qwen3:4b"
+EXPLORATION_MODEL = DEFAULT_MODELS["classifier"]
 
 
 @dataclass

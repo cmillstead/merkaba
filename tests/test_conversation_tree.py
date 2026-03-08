@@ -149,6 +149,29 @@ def agent(tmp_path):
 
 
 class TestAgentTreeIntegration:
+    def test_attach_session_restores_persisted_tree(self, agent):
+        """attach_session should restore a saved branching tree when available."""
+        root = agent._tree.append("user", "A")
+        agent._tree.append("assistant", "B")
+        agent._tree.branch_from(root.id)
+        agent._tree.append("assistant", "C")
+        agent.memory.append("user", "A")
+        agent.memory.append("assistant", "B")
+        agent.memory.append("assistant", "C")
+        agent.memory.save(tree=agent._tree)
+
+        with patch("merkaba.agent.SecurityScanner") as MockScanner:
+            MockScanner.return_value.quick_scan.return_value = MagicMock(has_issues=False)
+            restored = Agent(
+                plugins_enabled=False,
+                memory_storage_dir=agent.memory.storage_dir,
+            )
+        restored.input_classifier.enabled = False
+        restored.attach_session(agent.memory.session_id)
+
+        branch = restored._tree.get_active_branch()
+        assert [msg.content for msg in branch] == ["A", "C"]
+
     def test_agent_uses_tree(self, agent):
         """After run(), agent._tree has messages."""
         agent.llm.chat_with_retry = MagicMock(

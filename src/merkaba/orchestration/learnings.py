@@ -6,6 +6,7 @@ from typing import Any
 
 from merkaba.memory.store import MemoryStore
 from merkaba.orchestration.workers import WorkerResult
+from merkaba.config.defaults import DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,11 @@ class LearningExtractor:
     """Extracts cross-business learnings from task execution results."""
 
     memory_store: MemoryStore
-    model: str = "qwen3:4b"
+    model: str = None
+
+    def __post_init__(self):
+        if self.model is None:
+            self.model = DEFAULT_MODELS["classifier"]
     batch_threshold: int = 10
     _completed_count: int = field(default=0, init=False)
     _recent_results: list[dict[str, Any]] = field(default_factory=list, init=False)

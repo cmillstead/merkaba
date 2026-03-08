@@ -150,20 +150,16 @@ class SecureApprovalManager:
         # Load config
         totp_threshold = 3
         rate_config = RateLimitConfig()
-        config_path = os.path.expanduser("~/.merkaba/config.json")
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-            security = config.get("security", {})
-            totp_threshold = security.get("totp_threshold", 3)
-            rl = security.get("approval_rate_limit", {})
-            if rl:
-                rate_config = RateLimitConfig(
-                    max_approvals=rl.get("max_approvals", 5),
-                    window_seconds=rl.get("window_seconds", 60),
-                )
-        except (FileNotFoundError, json.JSONDecodeError, PermissionError, OSError):
-            pass
+        from merkaba.config.loader import load_config
+        config = load_config()
+        security = config.get("security", {})
+        totp_threshold = security.get("totp_threshold", 3)
+        rl = security.get("approval_rate_limit", {})
+        if rl:
+            rate_config = RateLimitConfig(
+                max_approvals=rl.get("max_approvals", 5),
+                window_seconds=rl.get("window_seconds", 60),
+            )
 
         return cls(
             action_queue=action_queue,

@@ -96,31 +96,25 @@ class TestConfigErrorHandling:
 
     def test_load_api_key_missing_file(self):
         from merkaba.web.app import _load_api_key
-        with patch("merkaba.web.app.os.path.expanduser", return_value="/nonexistent/config.json"):
+        with patch("merkaba.config.loader.load_config", return_value={}):
             result = _load_api_key()
         assert result is None
 
     def test_load_api_key_corrupt_json(self, tmp_path):
         from merkaba.web.app import _load_api_key
-        bad = tmp_path / "config.json"
-        bad.write_text("not json")
-        with patch("merkaba.web.app.os.path.expanduser", return_value=str(bad)):
+        with patch("merkaba.config.loader.load_config", return_value={}):
             result = _load_api_key()
         assert result is None
 
     def test_load_api_key_no_key_field(self, tmp_path):
         from merkaba.web.app import _load_api_key
-        config = tmp_path / "config.json"
-        config.write_text('{"other": "data"}')
-        with patch("merkaba.web.app.os.path.expanduser", return_value=str(config)):
+        with patch("merkaba.config.loader.load_config", return_value={"other": "data"}):
             result = _load_api_key()
         assert result is None
 
     def test_load_api_key_valid(self, tmp_path):
         from merkaba.web.app import _load_api_key
-        config = tmp_path / "config.json"
-        config.write_text('{"api_key": "secret123"}')
-        with patch("merkaba.web.app.os.path.expanduser", return_value=str(config)):
+        with patch("merkaba.config.loader.load_config", return_value={"api_key": "secret123"}):
             result = _load_api_key()
         assert result == "secret123"
 

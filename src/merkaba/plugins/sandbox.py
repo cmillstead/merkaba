@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
 
+from merkaba.paths import merkaba_home as _merkaba_home
+
 
 PROTECTED_PATHS = [
     "**/merkaba/security/*",
@@ -25,7 +27,7 @@ PROTECTED_PATHS = [
 # Used as a defense-in-depth layer alongside the fnmatch check — path
 # traversal tricks that defeat fnmatch (e.g. symlinks, ``..`` segments)
 # are still caught here because we compare fully-resolved strings.
-_MERKABA_HOME = Path(os.path.expanduser("~/.merkaba")).resolve()
+_MERKABA_HOME = Path(_merkaba_home()).resolve()
 _RESOLVED_PROTECTED_DIRS: list[str] = [
     str(_MERKABA_HOME / "conversations"),
     str(_MERKABA_HOME / "memory_vectors"),

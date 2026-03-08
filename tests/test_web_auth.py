@@ -233,9 +233,8 @@ class TestCorsOrigins:
         We verify indirectly: an OPTIONS preflight to a default dev origin must
         receive Access-Control-Allow-Origin back from the CORS middleware.
         """
-        # Patch the config open specifically inside app.py's create_app so that
-        # it looks like ~/.merkaba/config.json is absent.
-        with patch("merkaba.web.app.open", side_effect=FileNotFoundError):
+        # Patch load_config to return empty dict, simulating absent config.json.
+        with patch("merkaba.config.loader.load_config", return_value={}):
             app = create_app(db_overrides={
                 "memory_store": _make_store(MemoryStore, str(tmp_path / "m.db")),
                 "task_queue": _make_store(TaskQueue, str(tmp_path / "t.db")),
@@ -255,12 +254,9 @@ class TestCorsOrigins:
 
     def test_cors_user_configured_origins_merged(self, tmp_path):
         """User-configured cors_origins in config.json should be included."""
-        config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps({
-            "cors_origins": ["https://app.example.com", "https://staging.example.com"]
-        }))
+        mock_cfg = {"cors_origins": ["https://app.example.com", "https://staging.example.com"]}
 
-        with patch("os.path.expanduser", return_value=str(config_path)):
+        with patch("merkaba.config.loader.load_config", return_value=mock_cfg):
             app = create_app(db_overrides={
                 "memory_store": _make_store(MemoryStore, str(tmp_path / "m.db")),
                 "task_queue": _make_store(TaskQueue, str(tmp_path / "t.db")),

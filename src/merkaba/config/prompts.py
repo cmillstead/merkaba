@@ -30,7 +30,8 @@ class PromptLoader:
     """Loads SOUL.md and USER.md with per-business fallback."""
 
     def __init__(self, base_dir: str | None = None):
-        self.base_dir = Path(base_dir or os.path.expanduser("~/.merkaba"))
+        from merkaba.paths import merkaba_home as _merkaba_home
+        self.base_dir = Path(base_dir or _merkaba_home())
 
     def _read_file(self, path: Path) -> str | None:
         if path.is_file():

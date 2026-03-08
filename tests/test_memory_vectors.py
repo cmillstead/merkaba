@@ -184,3 +184,60 @@ def test_rebuild_from_store_excludes_archived(tmp_path):
     assert f2 not in ids
 
     store.close()
+
+
+@requires_chromadb_and_real_ollama
+@pytest.mark.integration
+def test_delete_vectors_for_business(tmp_path):
+    """delete_vectors_for_business removes all vectors for a specific business."""
+    from merkaba.memory.vectors import VectorMemory
+
+    try:
+        vm = VectorMemory(persist_dir=str(tmp_path / "vectors"))
+    except (ImportError, Exception):
+        pytest.skip("ChromaDB or Ollama not available")
+
+    # Index facts and decisions for two businesses
+    vm.index_fact(1, 1, "business 1 fact alpha")
+    vm.index_fact(2, 1, "business 1 fact beta")
+    vm.index_fact(3, 2, "business 2 fact gamma")
+    vm.index_decision(10, 1, "business 1 decision one")
+    vm.index_decision(11, 2, "business 2 decision two")
+
+    # Delete vectors for business 1
+    counts = vm.delete_vectors_for_business(1)
+    assert counts["facts"] == 2
+    assert counts["decisions"] == 1
+
+    # Business 2 vectors should still exist
+    facts_results = vm.search_facts("business fact", limit=10)
+    fact_ids = [r["id"] for r in facts_results]
+    assert 1 not in fact_ids
+    assert 2 not in fact_ids
+    assert 3 in fact_ids
+
+    decision_results = vm.search_decisions("business decision", limit=10)
+    dec_ids = [r["id"] for r in decision_results]
+    assert 10 not in dec_ids
+    assert 11 in dec_ids
+
+    vm.close()
+
+
+@requires_chromadb_and_real_ollama
+@pytest.mark.integration
+def test_delete_vectors_for_business_empty(tmp_path):
+    """delete_vectors_for_business returns zero counts for nonexistent business."""
+    from merkaba.memory.vectors import VectorMemory
+
+    try:
+        vm = VectorMemory(persist_dir=str(tmp_path / "vectors"))
+    except (ImportError, Exception):
+        pytest.skip("ChromaDB or Ollama not available")
+
+    vm.index_fact(1, 1, "some fact")
+
+    counts = vm.delete_vectors_for_business(999)
+    assert counts["facts"] == 0
+    assert counts["decisions"] == 0
+    vm.close()

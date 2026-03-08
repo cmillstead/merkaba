@@ -4,10 +4,11 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from croniter import croniter
+from merkaba.paths import db_path as _db_path
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class TaskQueue:
 
     MAX_TASK_FAILURES = 3
 
-    db_path: str = field(default_factory=lambda: os.path.expanduser("~/.merkaba/tasks.db"))
+    db_path: str = field(default_factory=lambda: _db_path("tasks"))
     _conn: sqlite3.Connection = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -74,6 +75,24 @@ class TaskQueue:
             except sqlite3.OperationalError:
                 logger.debug("Column %s already exists in task_runs", col)
 
+        # Indexes for common query patterns
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tasks_status_next_run
+            ON tasks(status, next_run)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tasks_task_type
+            ON tasks(task_type)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_runs_task_id
+            ON task_runs(task_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task_runs_status
+            ON task_runs(status)
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS dead_letter_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +111,7 @@ class TaskQueue:
         self._conn.commit()
 
     def _now(self) -> str:
-        return datetime.now().isoformat()
+        return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # --- Task CRUD ---
 
@@ -108,7 +127,7 @@ class TaskQueue:
         now = self._now()
         next_run = None
         if schedule:
-            next_run = croniter(schedule, datetime.now()).get_next(datetime).isoformat()
+            next_run = croniter(schedule, datetime.now(timezone.utc)).get_next(datetime).replace(tzinfo=None).isoformat()
 
         cursor = self._conn.cursor()
         cursor.execute(
@@ -209,7 +228,7 @@ class TaskQueue:
             return
         updates: dict[str, Any] = {"status": "pending"}
         if task["schedule"]:
-            updates["next_run"] = croniter(task["schedule"], datetime.now()).get_next(datetime).isoformat()
+            updates["next_run"] = croniter(task["schedule"], datetime.now(timezone.utc)).get_next(datetime).replace(tzinfo=None).isoformat()
         self.update_task(task_id, **updates)
 
     # --- Due task detection ---
@@ -233,7 +252,7 @@ class TaskQueue:
         task = self.get_task(task_id)
         if not task or not task["schedule"]:
             return None
-        next_run = croniter(task["schedule"], datetime.now()).get_next(datetime).isoformat()
+        next_run = croniter(task["schedule"], datetime.now(timezone.utc)).get_next(datetime).replace(tzinfo=None).isoformat()
         self.update_task(task_id, next_run=next_run, last_run=self._now())
         return next_run
 
@@ -291,6 +310,49 @@ class TaskQueue:
             rows.append(d)
         return rows
 
+    def get_runs_for_tasks(
+        self,
+        task_ids: list[int],
+        limit_per_task: int = 5,
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Batch-fetch recent runs for multiple tasks in a single query.
+
+        Returns a dict mapping each task_id to its list of runs (most recent
+        first), capped at ``limit_per_task`` per task.  Uses a window function
+        so only one round-trip to the database is needed regardless of how many
+        task_ids are provided.
+        """
+        if not task_ids:
+            return {}
+
+        placeholders = ",".join("?" for _ in task_ids)
+        cursor = self._conn.cursor()
+        cursor.execute(
+            f"""SELECT * FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY task_id ORDER BY started_at DESC
+                           ) AS rn
+                    FROM task_runs
+                    WHERE task_id IN ({placeholders})
+                ) sub
+                WHERE rn <= ?
+                ORDER BY task_id, started_at DESC""",
+            (*task_ids, limit_per_task),
+        )
+
+        result: dict[int, list[dict[str, Any]]] = {tid: [] for tid in task_ids}
+        for row in cursor.fetchall():
+            d = dict(row)
+            d.pop("rn", None)  # Remove the window-function helper column
+            if d.get("result"):
+                try:
+                    d["result"] = json.loads(d["result"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result.setdefault(d["task_id"], []).append(d)
+        return result
+
     # --- Dead letter queue ---
 
     def record_failure(self, run_id: int, task_id: int, error: str | None) -> None:
@@ -343,6 +405,62 @@ class TaskQueue:
             (notes, dlq_id),
         )
         self._conn.commit()
+
+    # --- Aggregate Queries ---
+
+    def get_recent_runs(
+        self,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return recent task runs, optionally filtered by status.
+
+        Joins with the tasks table to include task name and task_type.
+        Returns plain dicts (not Row objects) for JSON serialization.
+        """
+        cursor = self._conn.cursor()
+        if status:
+            cursor.execute(
+                """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at,
+                          tr.status, tr.result, tr.error,
+                          t.name, t.task_type
+                   FROM task_runs tr
+                   LEFT JOIN tasks t ON tr.task_id = t.id
+                   WHERE tr.status = ?
+                   ORDER BY tr.started_at DESC
+                   LIMIT ?""",
+                (status, limit),
+            )
+        else:
+            cursor.execute(
+                """SELECT tr.id, tr.task_id, tr.started_at, tr.finished_at,
+                          tr.status, tr.result, tr.error,
+                          t.name, t.task_type
+                   FROM task_runs tr
+                   LEFT JOIN tasks t ON tr.task_id = t.id
+                   ORDER BY tr.started_at DESC
+                   LIMIT ?""",
+                (limit,),
+            )
+        rows = []
+        for row in cursor.fetchall():
+            d = dict(row)
+            if d.get("result"):
+                try:
+                    d["result"] = json.loads(d["result"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            rows.append(d)
+        return rows
+
+    def count_by_status(self) -> dict[str, int]:
+        """Return a dict mapping each task status to its count.
+
+        Example: {"pending": 3, "running": 1, "failed": 0, "dead_letter": 0}
+        """
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT status, COUNT(*) FROM tasks GROUP BY status")
+        return {row[0]: row[1] for row in cursor.fetchall()}
 
     # --- Stats ---
 

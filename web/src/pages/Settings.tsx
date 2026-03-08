@@ -221,7 +221,7 @@ export default function Settings() {
         <h2 id="section-system">System Info</h2>
         <div className="settings-row">
           <span className="settings-label">Version</span>
-          <span className="settings-value">0.1.0</span>
+          <span className="settings-value">{status?.version || 'Unknown'}</span>
         </div>
         <div className="settings-row">
           <span className="settings-label">Ollama</span>
