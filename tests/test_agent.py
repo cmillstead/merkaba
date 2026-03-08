@@ -231,8 +231,12 @@ def test_agent_warns_on_encryption_failure(temp_memory_dir, caplog):
 def test_agent_vector_init_failure_logged(temp_memory_dir, caplog):
     """VectorMemory init failure should be logged at DEBUG level."""
     import logging
-    caplog.set_level(logging.DEBUG)
-    with patch("merkaba.memory.vectors.VectorMemory", side_effect=RuntimeError("chromadb unavailable")):
+    import sys
+    caplog.set_level(logging.DEBUG, logger="merkaba.agent")
+    # Use sys.modules to force re-import path in agent's try block
+    fake_vectors = type(sys)("merkaba.memory.vectors")
+    fake_vectors.VectorMemory = MagicMock(side_effect=RuntimeError("chromadb unavailable"))
+    with patch.dict(sys.modules, {"merkaba.memory.vectors": fake_vectors}):
         agent = Agent(memory_storage_dir=temp_memory_dir, plugins_enabled=False)
     assert any(
         "VectorMemory init failed" in r.message and "chromadb unavailable" in r.message

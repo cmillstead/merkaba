@@ -107,16 +107,9 @@ def test_security_status_custom_config(cli_runner):
         }
     }
 
-    with patch("merkaba.security.secrets.get_secret", return_value=None):
-        real_open = open
-
-        def mock_open(path, *args, **kwargs):
-            if isinstance(path, str) and path.endswith("merkaba/config.json"):
-                return io.StringIO(json.dumps(config))
-            return real_open(path, *args, **kwargs)
-
-        with patch("builtins.open", side_effect=mock_open):
-            result = runner.invoke(app, ["security", "status"])
+    with patch("merkaba.security.secrets.get_secret", return_value=None), \
+         patch("merkaba.config.loader.load_config", return_value=config):
+        result = runner.invoke(app, ["security", "status"])
 
     assert result.exit_code == 0
     assert "TOTP threshold: autonomy_level >= 5" in result.output
