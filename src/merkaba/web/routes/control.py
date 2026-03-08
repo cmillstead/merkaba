@@ -22,6 +22,8 @@ ws_router = APIRouter(tags=["control-ws"])
 
 HEARTBEAT_INTERVAL = 2  # seconds
 
+VALID_CHANNELS = {"diagnostics", "kanban"}
+
 WORKER_DESCRIPTIONS = {
     "health_check": "Analyzes business health metrics and generates reports",
     "research": "Performs research using web and document tools",
@@ -545,12 +547,20 @@ async def websocket_control(websocket: WebSocket):
                 msg_type = data.get("type")
                 if msg_type == "subscribe":
                     channel = data.get("channel")
-                    if channel:
+                    if channel and channel in VALID_CHANNELS:
                         subscriptions.add(channel)
+                    elif channel:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"Unknown channel: {channel}"}
+                        )
                 elif msg_type == "unsubscribe":
                     channel = data.get("channel")
-                    if channel:
+                    if channel and channel in VALID_CHANNELS:
                         subscriptions.discard(channel)
+                    elif channel:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"Unknown channel: {channel}"}
+                        )
                 elif msg_type == "set_trace_depth":
                     level = data.get("level", "full")
                     try:

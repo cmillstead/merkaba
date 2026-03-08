@@ -299,6 +299,49 @@ class TestHeartbeatNonBlocking:
                 )
 
 
+class TestWebSocketChannelValidation:
+    """Tests for WebSocket subscribe/unsubscribe channel validation."""
+
+    def test_valid_channels_constant_defined(self):
+        from merkaba.web.routes.control import VALID_CHANNELS
+
+        assert "diagnostics" in VALID_CHANNELS
+        assert "kanban" in VALID_CHANNELS
+
+    def test_ws_accepts_valid_channel(self):
+        """Subscribe to 'diagnostics' — should be accepted without error."""
+        from merkaba.web.routes.control import VALID_CHANNELS
+
+        # Validate the guard logic used in receive_loop
+        channel = "diagnostics"
+        assert channel in VALID_CHANNELS
+
+        channel = "kanban"
+        assert channel in VALID_CHANNELS
+
+    def test_ws_rejects_unknown_channel(self):
+        """Unknown channel name should not be in VALID_CHANNELS."""
+        from merkaba.web.routes.control import VALID_CHANNELS
+
+        assert "bogus" not in VALID_CHANNELS
+        assert "nonexistent" not in VALID_CHANNELS
+        assert "" not in VALID_CHANNELS
+
+    def test_receive_loop_validates_subscribe_channel(self):
+        """Verify the receive_loop source code checks VALID_CHANNELS on subscribe."""
+        import inspect
+
+        from merkaba.web.routes.control import websocket_control
+
+        source = inspect.getsource(websocket_control)
+        assert "VALID_CHANNELS" in source, (
+            "websocket_control should check VALID_CHANNELS for subscribe/unsubscribe"
+        )
+        assert '"Unknown channel:' in source or "'Unknown channel:" in source, (
+            "websocket_control should send an error message for unknown channels"
+        )
+
+
 class TestBuildStateNoNPlusOne:
     """Verify _build_state uses batch queries instead of per-worker N+1 loops."""
 

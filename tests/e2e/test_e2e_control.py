@@ -842,15 +842,15 @@ class TestControlKanbanWebSocket:
             assert "kanban" in msg
             assert "diagnostics" in msg
 
-    def test_subscribe_unknown_channel_ignored(self, app_client):
-        """Subscribing to an unknown channel should not crash."""
+    def test_subscribe_unknown_channel_rejected(self, app_client):
+        """Subscribing to an unknown channel should return an error message."""
         client, app = app_client
         with client.websocket_connect("/ws/control") as ws:
             ws.receive_json()  # initial state
             ws.send_json({"type": "subscribe", "channel": "nonexistent"})
             msg = ws.receive_json()
-            # Only known channels appear in heartbeat
-            assert "nonexistent" not in msg
+            assert msg["type"] == "error"
+            assert "nonexistent" in msg["message"]
 
 
 @pytest.mark.e2e
