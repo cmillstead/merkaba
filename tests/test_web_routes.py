@@ -966,3 +966,51 @@ class TestAnalytics:
         client, app = app_client
         resp = client.get("/api/analytics/overview?days=7")
         assert resp.status_code == 200
+
+
+# --- Lifespan auth warning tests ---
+
+
+class TestLifespanAuthWarning:
+    """Verify auth warning only fires in production path, not test/db_overrides path."""
+
+    def test_lifespan_no_warning_with_overrides(self, app_client, caplog):
+        """With db_overrides (test mode), no auth warning should be emitted."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="merkaba.web.app"):
+            # app_client already started the app with db_overrides — just use it
+            client, app = app_client
+            client.get("/api/system/status")
+
+        auth_warnings = [
+            r for r in caplog.records
+            if "running without authentication" in r.message
+        ]
+        assert auth_warnings == [], (
+            f"Unexpected auth warning in test mode: {auth_warnings}"
+        )
+
+    def test_lifespan_warns_without_api_key(self, caplog):
+        """Without db_overrides and no API key, auth warning should be emitted."""
+        import logging
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, "config.json")
+            with open(config_path, "w") as f:
+                json.dump({}, f)
+
+            with (
+                caplog.at_level(logging.WARNING, logger="merkaba.web.app"),
+                patch("merkaba.web.app._load_api_key", return_value=None),
+                patch("merkaba.web.app._merkaba_home", return_value=tmpdir),
+            ):
+                app = create_app()
+                with TestClient(app, raise_server_exceptions=False):
+                    pass  # lifespan runs on enter/exit
+
+        auth_warnings = [
+            r for r in caplog.records
+            if "running without authentication" in r.message
+        ]
+        assert len(auth_warnings) == 1

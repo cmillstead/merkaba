@@ -776,15 +776,15 @@ def test_token_usage_accepts_valid_days(app_client):
     assert resp.status_code in (200, 503)
 
 # ---------------------------------------------------------------------------
-# 18. No API key configured logs a startup warning (H15)
+# 18. Test mode (db_overrides) should NOT emit spurious auth warning
 # ---------------------------------------------------------------------------
 
-def test_no_api_key_logs_startup_warning(tmp_path, caplog):
-    """create_app() with no API key set emits a WARNING at lifespan startup.
+def test_no_auth_warning_with_db_overrides(tmp_path, caplog):
+    """create_app() with db_overrides should NOT emit an auth warning.
 
-    Verifies finding H15: when no api_key is configured the web server is
-    wide-open to anyone on the network.  A clear warning must be logged so
-    operators are not surprised by the insecure default.
+    The 'running without authentication' warning is only appropriate in the
+    production code path.  In test mode (db_overrides), api_key is always None
+    by design — emitting the warning is spurious noise.
     """
     import logging
     from fastapi.testclient import TestClient
@@ -806,10 +806,10 @@ def test_no_api_key_logs_startup_warning(tmp_path, caplog):
             pass  # lifespan runs during context-manager entry
 
     warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-    assert any(
+    assert not any(
         "without authentication" in msg for msg in warning_messages
     ), (
-        f"Expected a 'without authentication' warning in startup logs; got: {warning_messages}"
+        f"Auth warning should NOT appear in test mode (db_overrides); got: {warning_messages}"
     )
 
 
