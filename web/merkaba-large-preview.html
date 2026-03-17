@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Merkaba — Large Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(100,100,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(100,100,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  svg { filter: drop-shadow(0 0 30px rgba(100,80,255,0.2)); }
+  .label {
+    color: rgba(150,140,200,0.4);
+    font-size: 13px;
+    text-align: center;
+    margin-top: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <svg id="glyph" width="600" height="600" viewBox="-1.3 -1.3 2.6 2.6"></svg>
+  <div class="label">merkaba</div>
+</div>
+
+<script>
+const S = 1.0;
+const UP = [[0,-S,0],[-S*0.943,S*0.333,-S*0.544],[S*0.943,S*0.333,-S*0.544],[0,S*0.333,S*1.089]];
+const DOWN = [[0,S,0],[-S*0.943,-S*0.333,S*0.544],[S*0.943,-S*0.333,S*0.544],[0,-S*0.333,-S*1.089]];
+const EDGES = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
+const ns = 'http://www.w3.org/2000/svg';
+
+function rotY(p,a){return[p[0]*Math.cos(a)+p[2]*Math.sin(a),p[1],-p[0]*Math.sin(a)+p[2]*Math.cos(a)];}
+function rotX(p,a){return[p[0],p[1]*Math.cos(a)-p[2]*Math.sin(a),p[1]*Math.sin(a)+p[2]*Math.cos(a)];}
+
+const svg = document.getElementById('glyph');
+const id = 'glyph';
+const defs = document.createElementNS(ns, 'defs');
+
+// Orb gradient — opaque center to occlude back edges, soft transparent edge
+const orbGrad = document.createElementNS(ns, 'radialGradient');
+orbGrad.id = `${id}-orb`;
+[
+  ['0%',   'rgba(230,220,255,1)'],
+  ['4%',   'rgba(190,170,255,1)'],
+  ['10%',  'rgba(140,120,240,0.95)'],
+  ['20%',  'rgba(80,60,180,0.85)'],
+  ['35%',  'rgba(40,30,100,0.65)'],
+  ['55%',  'rgba(16,14,40,0.35)'],
+  ['100%', 'rgba(10,10,20,0)'],
+].forEach(([off, col]) => {
+  const st = document.createElementNS(ns, 'stop');
+  st.setAttribute('offset', off);
+  st.setAttribute('stop-color', col);
+  orbGrad.appendChild(st);
+});
+defs.appendChild(orbGrad);
+
+svg.appendChild(defs);
+
+// Layer order: back edges → orb fill → front edges
+
+const backGroup = document.createElementNS(ns, 'g');
+svg.appendChild(backGroup);
+
+const orbCircle = document.createElementNS(ns, 'circle');
+orbCircle.setAttribute('cx', '0');
+orbCircle.setAttribute('cy', '0');
+orbCircle.setAttribute('r', '0.9');
+orbCircle.setAttribute('fill', `url(#${id}-orb)`);
+svg.appendChild(orbCircle);
+
+const frontGroup = document.createElementNS(ns, 'g');
+svg.appendChild(frontGroup);
+
+const sw = '0.025';
+const dr = '0.04';
+
+const COLORS_MAP = { up: '#6c63ff', down: '#00f0ff' };
+const allEdges = [];
+EDGES.forEach(([ia, ib]) => {
+  const p = document.createElementNS(ns, 'polygon');
+  p.setAttribute('fill', COLORS_MAP.up);
+  allEdges.push({ poly: p, type: 'up', ia, ib });
+});
+EDGES.forEach(([ia, ib]) => {
+  const p = document.createElementNS(ns, 'polygon');
+  p.setAttribute('fill', COLORS_MAP.down);
+  allEdges.push({ poly: p, type: 'down', ia, ib });
+});
+
+const allDots = [];
+UP.forEach((_, i) => {
+  const c = document.createElementNS(ns, 'circle');
+  c.setAttribute('r', dr);
+  c.setAttribute('fill', '#6c63ff');
+  allDots.push({ circle: c, type: 'up', idx: i });
+});
+DOWN.forEach((_, i) => {
+  const c = document.createElementNS(ns, 'circle');
+  c.setAttribute('r', dr);
+  c.setAttribute('fill', '#00f0ff');
+  allDots.push({ circle: c, type: 'down', idx: i });
+});
+
+let angle = 0;
+const tiltX = 0.35;
+
+function animate() {
+  angle += 0.008;
+  const up = UP.map(v => rotX(rotY(v, -angle), tiltX));    // clockwise
+  const down = DOWN.map(v => rotX(rotY(v, angle), tiltX));  // counter-clockwise
+
+  while (backGroup.firstChild) backGroup.removeChild(backGroup.firstChild);
+  while (frontGroup.firstChild) frontGroup.removeChild(frontGroup.firstChild);
+
+  allEdges.forEach(e => {
+    const verts = e.type === 'up' ? up : down;
+    const pa = verts[e.ia], pb = verts[e.ib];
+    const avgZ = (pa[2] + pb[2]) / 2;
+    const opacity = 0.4 + 0.5 * (avgZ + 1.2) / 2.4;
+
+    // Depth-based half-widths for taper
+    const depthA = (pa[2] + 1.2) / 2.4;
+    const depthB = (pb[2] + 1.2) / 2.4;
+    const wA = 0.008 + 0.017 * depthA;
+    const wB = 0.008 + 0.017 * depthB;
+
+    // Perpendicular direction to the edge
+    const dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+
+    // Four corners of the tapered quad
+    const points = [
+      (pa[0] + nx * wA) + ',' + (pa[1] + ny * wA),
+      (pb[0] + nx * wB) + ',' + (pb[1] + ny * wB),
+      (pb[0] - nx * wB) + ',' + (pb[1] - ny * wB),
+      (pa[0] - nx * wA) + ',' + (pa[1] - ny * wA),
+    ].join(' ');
+
+    e.poly.setAttribute('points', points);
+    e.poly.setAttribute('fill-opacity', String(opacity));
+    (avgZ > 0 ? frontGroup : backGroup).appendChild(e.poly);
+  });
+
+  allDots.forEach(d => {
+    const verts = d.type === 'up' ? up : down;
+    const p = verts[d.idx];
+    const depth = (p[2] + 1.2) / 2.4; // 0 (far) to 1 (near)
+    const r = 0.025 + 0.025 * depth;   // smaller when far
+    const opacity = 0.5 + 0.5 * depth; // dimmer when far
+    d.circle.setAttribute('cx', p[0]);
+    d.circle.setAttribute('cy', p[1]);
+    d.circle.setAttribute('r', String(r));
+    d.circle.setAttribute('fill-opacity', String(opacity));
+    (p[2] > 0 ? frontGroup : backGroup).appendChild(d.circle);
+  });
+
+  const pulse = 0.87 + 0.06 * Math.sin(angle * 2);
+  orbCircle.setAttribute('r', String(pulse));
+
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>

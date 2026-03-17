@@ -37,27 +37,22 @@ function rotateX(p: [number, number, number], a: number): [number, number, numbe
   return [p[0], p[1]*Math.cos(a)-p[2]*Math.sin(a), p[1]*Math.sin(a)+p[2]*Math.cos(a)]
 }
 
-// Shared SVG element cache — created once per component instance via useRef,
-// then only setAttribute is called each frame (no DOM creation in the render loop).
 interface GlyphElements {
   backGroup: SVGGElement
   orbGroup: SVGGElement
   frontGroup: SVGGElement
   orbCircle: SVGCircleElement
-  edges: Array<{ line: SVGLineElement; type: 'up' | 'down'; ia: number; ib: number }>
+  edges: Array<{ poly: SVGPolygonElement; type: 'up' | 'down'; ia: number; ib: number }>
   dots: Array<{ circle: SVGCircleElement; type: 'up' | 'down'; idx: number }>
 }
 
-export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 }: Props) {
+export default function MerkabaGlyphV2({ size = 120, status = 'active', speed = 1 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const angleRef = useRef(0)
   const rafRef = useRef<number | undefined>(undefined)
-  // Cache DOM elements across renders — rebuilt only when size changes (strokeWidth changes)
   const elementsRef = useRef<GlyphElements | null>(null)
-  // Track previous size so we know when to rebuild the cache
   const prevSizeRef = useRef<number | undefined>(undefined)
 
-  // Respect prefers-reduced-motion for WCAG 2.1 AA compliance
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== 'undefined'
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -71,36 +66,31 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
     return () => mql.removeEventListener('change', handler)
   }, [])
 
-  // Build (or rebuild) the static SVG structure — called once on mount and when size changes.
-  // Status/color changes are handled separately via updateColors() to avoid DOM teardown.
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
 
     const ns = 'http://www.w3.org/2000/svg'
     const colors = STATUS_COLORS[status]
-    const id = svg.id || `mg-${Math.random().toString(36).slice(2, 8)}`
+    const id = svg.id || `mg2-${Math.random().toString(36).slice(2, 8)}`
     svg.id = id
 
-    // Only rebuild DOM structure when size changes (affects strokeWidth/dotRadius).
-    // On status-only changes we skip the teardown and just recolor below.
     const sizeChanged = prevSizeRef.current !== size
     if (sizeChanged || !elementsRef.current) {
-      // Clear previous content
       while (svg.firstChild) svg.removeChild(svg.firstChild)
 
       const defs = document.createElementNS(ns, 'defs')
 
-      // 1) Orb core gradient — opaque center to occlude back edges, soft transparent edge
+      // Bright orb gradient — opaque center, soft transparent edge
       const orbGrad = document.createElementNS(ns, 'radialGradient')
       orbGrad.id = `${id}-orb`
       ;([
-        ['0%',   'rgba(176,160,255,1)'],
-        ['6%',   'rgba(120,104,216,1)'],
-        ['15%',  'rgba(58,46,128,0.95)'],
-        ['30%',  'rgba(22,22,56,0.85)'],
-        ['50%',  'rgba(14,14,30,0.6)'],
-        ['70%',  'rgba(10,10,20,0.3)'],
+        ['0%',   'rgba(230,220,255,1)'],
+        ['4%',   'rgba(190,170,255,1)'],
+        ['10%',  'rgba(140,120,240,0.95)'],
+        ['20%',  'rgba(80,60,180,0.85)'],
+        ['35%',  'rgba(40,30,100,0.65)'],
+        ['55%',  'rgba(16,14,40,0.35)'],
         ['100%', 'rgba(10,10,20,0)'],
       ] as [string, string][]).forEach(([off, col]) => {
         const st = document.createElementNS(ns, 'stop')
@@ -109,16 +99,12 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
         orbGrad.appendChild(st)
       })
       defs.appendChild(orbGrad)
-
       svg.appendChild(defs)
 
-      // Layer order: back edges → orb fill → front edges
-      // Back edges render behind the orb, front edges render on top — orb appears INSIDE
-
+      // Layer order: back edges → orb → front edges
       const backGroup = document.createElementNS(ns, 'g')
       svg.appendChild(backGroup)
 
-      // Orb fill circle — opaque center occludes back edges, soft transparent edge
       const orbGroup = document.createElementNS(ns, 'g')
       svg.appendChild(orbGroup)
       const orbCircle = document.createElementNS(ns, 'circle')
@@ -131,35 +117,28 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
       const frontGroup = document.createElementNS(ns, 'g')
       svg.appendChild(frontGroup)
 
-      const strokeWidth = size < 100 ? '0.045' : '0.025'
-      const dotRadius = size < 100 ? '0.06' : '0.04'
-
-      // Create edge line elements once — positions updated via setAttribute each frame
+      // Tapered edges — polygons instead of lines
       const edges: GlyphElements['edges'] = []
       EDGES.forEach(([ia, ib]) => {
-        const l = document.createElementNS(ns, 'line')
-        l.setAttribute('stroke', colors.up)
-        l.setAttribute('stroke-width', strokeWidth)
-        edges.push({ line: l, type: 'up', ia, ib })
+        const p = document.createElementNS(ns, 'polygon')
+        p.setAttribute('fill', colors.up)
+        edges.push({ poly: p, type: 'up', ia, ib })
       })
       EDGES.forEach(([ia, ib]) => {
-        const l = document.createElementNS(ns, 'line')
-        l.setAttribute('stroke', colors.down)
-        l.setAttribute('stroke-width', strokeWidth)
-        edges.push({ line: l, type: 'down', ia, ib })
+        const p = document.createElementNS(ns, 'polygon')
+        p.setAttribute('fill', colors.down)
+        edges.push({ poly: p, type: 'down', ia, ib })
       })
 
-      // Create dot circle elements once — cx/cy updated each frame
+      // Vertex dots — size/opacity vary with depth
       const dots: GlyphElements['dots'] = []
       UP_VERTS.forEach((_, i) => {
         const c = document.createElementNS(ns, 'circle')
-        c.setAttribute('r', dotRadius)
         c.setAttribute('fill', colors.up)
         dots.push({ circle: c, type: 'up', idx: i })
       })
       DOWN_VERTS.forEach((_, i) => {
         const c = document.createElementNS(ns, 'circle')
-        c.setAttribute('r', dotRadius)
         c.setAttribute('fill', colors.down)
         dots.push({ circle: c, type: 'down', idx: i })
       })
@@ -167,10 +146,9 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
       elementsRef.current = { backGroup, orbGroup, frontGroup, orbCircle, edges, dots }
       prevSizeRef.current = size
     } else {
-      // Size unchanged — only update colors on the already-created elements
       const { edges, dots } = elementsRef.current
       edges.forEach(e => {
-        e.line.setAttribute('stroke', e.type === 'up' ? colors.up : colors.down)
+        e.poly.setAttribute('fill', e.type === 'up' ? colors.up : colors.down)
       })
       dots.forEach(d => {
         d.circle.setAttribute('fill', d.type === 'up' ? colors.up : colors.down)
@@ -178,9 +156,6 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
     }
   }, [size, status])
 
-  // Animation loop — depends on speed and reducedMotion; runs independently of status/size re-renders.
-  // Uses elementsRef to access DOM nodes without recreating them.
-  // When reducedMotion is true, renders a single static frame instead of looping.
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
@@ -198,51 +173,68 @@ export default function MerkabaGlyph({ size = 120, status = 'active', speed = 1 
       if (animate) angleRef.current += baseSpeed * speed
       const a = angleRef.current
 
-      const up = UP_VERTS.map(v => rotateX(rotateY(v, a), tiltX))
+      // Counter-rotating tetrahedra
+      const up = UP_VERTS.map(v => rotateX(rotateY(v, -a), tiltX))
       const down = DOWN_VERTS.map(v => rotateX(rotateY(v, a), tiltX))
       const { backGroup, frontGroup, orbCircle, edges, dots } = els
 
-      // Clear z-sorted groups each frame — only group membership changes,
-      // the elements themselves are reused (no createElement in hot path)
       while (backGroup.firstChild) backGroup.removeChild(backGroup.firstChild)
       while (frontGroup.firstChild) frontGroup.removeChild(frontGroup.firstChild)
 
-      // Update edge positions and sort into front/back groups by z-depth
+      // Tapered edges — polygon quads with depth-based width
       edges.forEach(e => {
         const verts = e.type === 'up' ? up : down
-        const avgZ = (verts[e.ia][2] + verts[e.ib][2]) / 2
+        const pa = verts[e.ia], pb = verts[e.ib]
+        const avgZ = (pa[2] + pb[2]) / 2
         const opacity = 0.4 + 0.5 * (avgZ + 1.2) / 2.4
 
-        e.line.setAttribute('x1', String(verts[e.ia][0]))
-        e.line.setAttribute('y1', String(verts[e.ia][1]))
-        e.line.setAttribute('x2', String(verts[e.ib][0]))
-        e.line.setAttribute('y2', String(verts[e.ib][1]))
-        e.line.setAttribute('stroke-opacity', String(opacity));
+        const depthA = (pa[2] + 1.2) / 2.4
+        const depthB = (pb[2] + 1.2) / 2.4
+        const wA = 0.008 + 0.017 * depthA
+        const wB = 0.008 + 0.017 * depthB
 
-        (avgZ > 0 ? frontGroup : backGroup).appendChild(e.line)
+        const dx = pb[0] - pa[0], dy = pb[1] - pa[1]
+        const len = Math.sqrt(dx * dx + dy * dy) || 1
+        const nx = -dy / len, ny = dx / len
+
+        const points = [
+          `${pa[0] + nx * wA},${pa[1] + ny * wA}`,
+          `${pb[0] + nx * wB},${pb[1] + ny * wB}`,
+          `${pb[0] - nx * wB},${pb[1] - ny * wB}`,
+          `${pa[0] - nx * wA},${pa[1] - ny * wA}`,
+        ].join(' ')
+
+        e.poly.setAttribute('points', points)
+        e.poly.setAttribute('fill-opacity', String(opacity));
+
+        (avgZ > 0 ? frontGroup : backGroup).appendChild(e.poly)
       })
 
-      // Update dot positions and sort by z-depth
+      // Depth-scaled dots
       dots.forEach(d => {
         const verts = d.type === 'up' ? up : down
         const p = verts[d.idx]
+        const depth = (p[2] + 1.2) / 2.4
+        const r = 0.025 + 0.025 * depth
+        const opacity = 0.5 + 0.5 * depth
+
         d.circle.setAttribute('cx', String(p[0]))
-        d.circle.setAttribute('cy', String(p[1]));
+        d.circle.setAttribute('cy', String(p[1]))
+        d.circle.setAttribute('r', String(r))
+        d.circle.setAttribute('fill-opacity', String(opacity));
+
         (p[2] > 0 ? frontGroup : backGroup).appendChild(d.circle)
       })
 
-      // Subtle pulse on orb radius (static when reduced motion)
       const pulse = reducedMotion ? 0.87 : 0.87 + 0.06 * Math.sin(a * 2)
       orbCircle.setAttribute('r', String(pulse))
 
       if (animate) rafRef.current = requestAnimationFrame(() => drawFrame(true))
     }
 
-    // Cancel any existing RAF before starting a new loop
     if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current)
 
     if (reducedMotion) {
-      // Render one static frame at the current angle — no animation loop
       drawFrame(false)
     } else {
       rafRef.current = requestAnimationFrame(() => drawFrame(true))
