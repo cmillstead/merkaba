@@ -92,3 +92,4 @@ src/merkaba/integrations/twitter_adapter.py
 src/merkaba/orchestration/ecommerce_worker.py
 src/merkaba/orchestration/content_worker.py
 src/merkaba/telegram/briefing.py
+.harness-verified
